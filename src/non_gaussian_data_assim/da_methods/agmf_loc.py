@@ -53,8 +53,8 @@ def localization(
 
     # Apply the localization mask to the prior covariance matrix
     cov_prior_loc = np.zeros(cov_prior.shape)
-    for i in range(1, 4):
-        for j in range(1, 4):
+    for i in range(1, 2):
+        for j in range(1, 2):
             cov_prior_loc[(i - 1) * N : i * N, (j - 1) * N : j * N] = np.multiply(
                 cov_prior[(i - 1) * N : i * N, (j - 1) * N : j * N], mask
             )
@@ -172,7 +172,7 @@ def agmf(
     obs_vect_perturbed = np.zeros((num_obs, mem))
     for i in range(mem):
         for j in range(num_obs):
-            obs_vect_perturbed[j, i] = obs_vect_filtered[j, 0]
+            obs_vect_perturbed[j, i] = obs_vect_filtered[j]
 
     # Observation error covariance matrix
     cov_obs = R[:, :]

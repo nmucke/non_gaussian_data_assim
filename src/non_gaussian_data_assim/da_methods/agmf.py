@@ -132,7 +132,7 @@ def agmf(
     obs_vect_perturbed = np.zeros((num_obs, mem))
     for i in range(mem):
         for j in range(num_obs):
-            obs_vect_perturbed[j, i] = obs_vect_filtered[j, 0]
+            obs_vect_perturbed[j, i] = obs_vect_filtered[j]
 
     # Observation error covariance matrix
     cov_obs = R[:, :]

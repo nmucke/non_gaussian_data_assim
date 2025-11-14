@@ -41,13 +41,16 @@ def localization(
         )
     mask = tmp + np.diag(np.ones(N))
 
+
     # Apply the mask to the prior covariance matrix
     cov_prior_loc = np.zeros(cov_prior.shape)
-    for i in range(1, 4):
-        for j in range(1, 4):
+    for i in range(1, 2):
+        for j in range(1, 2):
             block = (i - 1) * N, i * N, (j - 1) * N, j * N
-            cov_prior_loc[block[0] : block[1], block[2] : block[3]] = np.multiply(
-                cov_prior[block[0] : block[1], block[2] : block[3]], mask
+            cov_prior_loc[block[0] : block[1], block[2] : block[3]] = \
+                np.multiply(
+                    cov_prior[block[0] : block[1], block[2] : block[3]], 
+                    mask#[block[0] : block[1], block[2] : block[3]]
             )
     return cov_prior_loc
 

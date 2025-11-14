@@ -88,13 +88,13 @@ def particle_filter(
         w_t[i] = observation_likelihood(obs_vect[index_obs], pred_vect[:, 0], R)
 
     # Normalize the weights
-    w_t /= np.sum(w_t)
+    w_t /= np.sum(w_t) + 1e-10
 
     # Compute covariance before resampling
     cov_posterior = np.cov(particles)
 
     # Degeneracy evaluation to determine if resampling is needed
-    N_eff = 1 / np.sum(w_t**2)
+    N_eff = 1 / (np.sum(w_t**2) + 1e-10)
     nc_threshold = 0.8 * mem
     resamp = 0
     if N_eff < nc_threshold:
