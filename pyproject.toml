@@ -69,4 +69,3 @@ strict_equality = true
 [[tool.mypy.overrides]]
 module = "scisi.metrics.LSIM.*"
 ignore_errors = true
-

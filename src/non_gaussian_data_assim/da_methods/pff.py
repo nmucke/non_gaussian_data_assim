@@ -1,13 +1,17 @@
-import numpy as np
+from typing import Any, Dict
 
-def h_operator(nx, obs_vect):
+import numpy as np
+from numpy.typing import NDArray
+
+
+def h_operator(nx: int, obs_vect: NDArray[np.float64]) -> NDArray[np.float64]:
     """
     Create the observation operator matrix H.
-    
+
     Args:
     nx (int): Size of the state vector.
     obs_vect (numpy.array): Observation vector, where -999 indicates missing data.
-    
+
     Returns:
     numpy.array: The observation operator matrix.
     """
@@ -24,7 +28,17 @@ def h_operator(nx, obs_vect):
 
     return h_matrix
 
-def grad_log_post(H, R, R_inv, y, y_i, B, x_s_i, x0_mean):
+
+def grad_log_post(
+    H: NDArray[np.float64],
+    R: NDArray[np.float64],
+    R_inv: NDArray[np.float64],
+    y: NDArray[np.float64],
+    y_i: NDArray[np.float64],
+    B: NDArray[np.float64],
+    x_s_i: NDArray[np.float64],
+    x0_mean: NDArray[np.float64],
+) -> NDArray[np.float64]:
     """
     Calculate the gradient of the log posterior distribution.
 
@@ -47,7 +61,15 @@ def grad_log_post(H, R, R_inv, y, y_i, B, x_s_i, x0_mean):
 
     return grad_log_post_est
 
-def pff(n_mem, n_states, ensemble, obs_vect, index_obs):
+
+def pff(
+    n_mem: int,
+    n_states: int,
+    ensemble: NDArray[np.float64],
+    obs_vect: NDArray[np.float64],
+    index_obs: NDArray[np.int64],
+    R: NDArray[np.float64],
+) -> Dict[str, Any]:
     """
     Implement the Particle Flow Filter.
 
@@ -57,6 +79,7 @@ def pff(n_mem, n_states, ensemble, obs_vect, index_obs):
     ensemble (numpy.array): Initial ensemble of states.
     obs_vect (numpy.array): Observation vector.
     index_obs (numpy.array): Indices of valid observations.
+    R (numpy.array): Observation error covariance matrix.
 
     Returns:
     dict: Dictionary containing the posterior ensemble, mean, and covariance.
@@ -75,14 +98,16 @@ def pff(n_mem, n_states, ensemble, obs_vect, index_obs):
     python_pseudoflow[:, :, 0] = x_s.copy()
 
     n_obs = np.sum(obs_vect > -999)
+    R_inv = np.linalg.inv(R)
 
     # Pseudo-time for data assimilation
     while s < max_s:
-        print(f'Iteration: {s}')
+        print(f"Iteration: {s}")
 
         H = np.zeros((n_obs, n_states))
         Hx = np.zeros((n_obs, n_mem))
         dHdx = np.zeros((n_obs, n_states, n_mem))
+        dpdx = np.zeros((n_states, n_mem))
 
         for i in range(n_mem):
             H = h_operator(n_states, obs_vect)
@@ -105,11 +130,13 @@ def pff(n_mem, n_states, ensemble, obs_vect, index_obs):
 
         for i in range(n_mem):
             for j in range(i, n_mem):
-                kernel[:, i, j] = np.exp((-1 / 2) * ((x_s[:, i] - x_s[:, j]) ** 2) / (alpha * B_d[:]))
+                kernel[:, i, j] = np.exp(
+                    (-1 / 2) * ((x_s[:, i] - x_s[:, j]) ** 2) / (alpha * B_d[:])
+                )
                 dkdx[:, i, j] = ((x_s[:, i] - x_s[:, j]) / alpha) * kernel[:, i, j]
                 if j != i:
-                kernel[:, i, j] = kernel[:, j, i]
-                dkdx[:, i, j] = -dkdx[:, j, i]
+                    kernel[:, i, j] = kernel[:, j, i]
+                    dkdx[:, i, j] = -dkdx[:, j, i]
 
             attractive_term = (1 / n_mem) * (kernel[:, i, :] * dpdx)
             repelling_term = (1 / n_mem) * dkdx[:, i, :]
@@ -126,8 +153,11 @@ def pff(n_mem, n_states, ensemble, obs_vect, index_obs):
     posterior_vect = python_pseudoflow[:, :, -1]
     mean_posterior = np.mean(posterior_vect, axis=1)
     cov_posterior = np.cov(posterior_vect)
-            
-    pff_pseudoflow = {"posterior": posterior_vect, "mean_post": mean_posterior, "cov_post": cov_posterior}
-        
-    return pff_pseudoflow
 
+    pff_pseudoflow = {
+        "posterior": posterior_vect,
+        "mean_post": mean_posterior,
+        "cov_post": cov_posterior,
+    }
+
+    return pff_pseudoflow

@@ -1,6 +1,8 @@
 import numpy as np
+from numpy.typing import NDArray
 
-def h_operator(nx, obs_vect):
+
+def h_operator(nx: int, obs_vect: NDArray[np.float64]) -> NDArray[np.float64]:
     """
     Creates an observation operator matrix for mapping state space to observation space.
 
@@ -22,17 +24,16 @@ def h_operator(nx, obs_vect):
     - The function assumes that the indices in the observation vector correspond to the state variables' indices in the state space.
     - The function uses numpy for matrix operations.
     """
-    
+
     # Identify indices of valid observations
     index_obs = np.where(obs_vect > -999)[0]
     num_obs = len(index_obs)
-    
+
     # Initialize the observation operator matrix
     h_matrix = np.zeros((num_obs, nx))
-    
+
     # Set the corresponding entries in the matrix to 1
     for i in range(num_obs):
         h_matrix[i, index_obs[i]] = 1
-        
-    return h_matrix
 
+    return h_matrix

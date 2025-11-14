@@ -1,6 +1,10 @@
-import numpy as np
+from typing import Any, Dict
 
-def h_operator(nx, obs_vect):
+import numpy as np
+from numpy.typing import NDArray
+
+
+def h_operator(nx: int, obs_vect: NDArray[np.float64]) -> NDArray[np.float64]:
     """
     Create the observation operator matrix H.
     Args:
@@ -16,11 +20,14 @@ def h_operator(nx, obs_vect):
         h_matrix[i, index_obs[i]] = 1
     return h_matrix
 
-def localization(r_influ, N, cov_prior):
+
+def localization(
+    r_influ: int, N: int, cov_prior: NDArray[np.float64]
+) -> NDArray[np.float64]:
     """
     Apply localization to the covariance matrix using Gaussian-like decay.
     Args:
-    r_influ (float): Radius of influence for localization.
+    r_influ (int): Radius of influence for localization -- grid cells.
     N (int): The number of grid points.
     cov_prior (numpy.array): Prior covariance matrix.
     Returns:
@@ -29,7 +36,9 @@ def localization(r_influ, N, cov_prior):
     # Create a mask for localization based on Gaussian decay
     tmp = np.zeros((N, N))
     for i in range(1, 3 * r_influ + 1):
-        tmp += np.exp(-i**2 / r_influ**2) * (np.diag(np.ones(N - i), i) + np.diag(np.ones(N - i), -i))
+        tmp += np.exp(-(i**2) / r_influ**2) * (
+            np.diag(np.ones(N - i), i) + np.diag(np.ones(N - i), -i)
+        )
     mask = tmp + np.diag(np.ones(N))
 
     # Apply the mask to the prior covariance matrix
@@ -37,10 +46,21 @@ def localization(r_influ, N, cov_prior):
     for i in range(1, 4):
         for j in range(1, 4):
             block = (i - 1) * N, i * N, (j - 1) * N, j * N
-            cov_prior_loc[block[0]:block[1], block[2]:block[3]] = np.multiply(cov_prior[block[0]:block[1], block[2]:block[3]], mask)
+            cov_prior_loc[block[0] : block[1], block[2] : block[3]] = np.multiply(
+                cov_prior[block[0] : block[1], block[2] : block[3]], mask
+            )
     return cov_prior_loc
 
-def enkf(mem, nx, ensemble, obs_vect, R, N, r_influ):
+
+def enkf(
+    mem: int,
+    nx: int,
+    ensemble: NDArray[np.float64],
+    obs_vect: NDArray[np.float64],
+    R: NDArray[np.float64],
+    N: int,
+    r_influ: int,
+) -> Dict[str, Any]:
     """
     Implement the Ensemble Kalman Filter with localization.
     Args:
@@ -50,7 +70,7 @@ def enkf(mem, nx, ensemble, obs_vect, R, N, r_influ):
     obs_vect (numpy.array): Observation vector.
     R (numpy.array): Observation error covariance matrix.
     N (int): The number of grid points.
-    r_influ (float): Radius of influence for localization.
+    r_influ (int): Radius of influence for localization -- grid cells.
     Returns:
     dict: Posterior ensemble, Kalman gain, innovation, mean and covariance of the posterior.
     """
@@ -62,7 +82,7 @@ def enkf(mem, nx, ensemble, obs_vect, R, N, r_influ):
     mean_prior = np.mean(prior_vect, axis=1)
     cov_prior = np.cov(prior_vect)
     cov_prior = localization(r_influ, N, cov_prior)
-    
+
     # Perturb the observation vector
     obs_vect_filtered = obs_vect[index_obs]
     obs_vect_perturbed = np.zeros((len(index_obs), mem))
@@ -92,6 +112,6 @@ def enkf(mem, nx, ensemble, obs_vect, R, N, r_influ):
         "kalman_gain": kalman_gain,
         "innovation": innovation,
         "mean_post": mean_posterior,
-        "cov_post": cov_posterior
+        "cov_post": cov_posterior,
     }
     return enkf_output

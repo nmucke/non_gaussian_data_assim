@@ -1,13 +1,17 @@
-import numpy as np
+from typing import Any, Dict
 
-def h_operator(nx, obs_vect):
+import numpy as np
+from numpy.typing import NDArray
+
+
+def h_operator(nx: int, obs_vect: NDArray[np.float64]) -> NDArray[np.float64]:
     """
     Create the observation operator matrix H.
-    
+
     Args:
     nx (int): Size of the state vector.
     obs_vect (numpy.array): Observation vector, where -999 indicates missing data.
-    
+
     Returns:
     numpy.array: The observation operator matrix.
     """
@@ -24,7 +28,12 @@ def h_operator(nx, obs_vect):
 
     return h_matrix
 
-def observation_likelihood(obs_vect, pred_vect, R):
+
+def observation_likelihood(
+    obs_vect: NDArray[np.float64],
+    pred_vect: NDArray[np.float64],
+    R: NDArray[np.float64],
+) -> Any:
     """
     Compute the likelihood of an observation given a predicted state.
 
@@ -43,7 +52,14 @@ def observation_likelihood(obs_vect, pred_vect, R):
     likelihood = np.exp(-0.5 * np.dot(residual.T, np.linalg.inv(R)).dot(residual))
     return likelihood
 
-def particle_filter(mem, nx, particles, obs_vect, R):
+
+def particle_filter(
+    mem: int,
+    nx: int,
+    particles: NDArray[np.float64],
+    obs_vect: NDArray[np.float64],
+    R: NDArray[np.float64],
+) -> Dict[str, Any]:
     """
     Implement the Particle Filter algorithm.
 
@@ -74,15 +90,20 @@ def particle_filter(mem, nx, particles, obs_vect, R):
     # Normalize the weights
     w_t /= np.sum(w_t)
 
+    # Compute covariance before resampling
+    cov_posterior = np.cov(particles)
+
     # Degeneracy evaluation to determine if resampling is needed
-    N_eff = 1 / np.sum(w_t ** 2)
+    N_eff = 1 / np.sum(w_t**2)
     nc_threshold = 0.8 * mem
     resamp = 0
     if N_eff < nc_threshold:
         # Perform resampling
         J = np.random.choice(mem, size=mem, p=w_t)
         for i in range(mem):
-            particles[:, i] = particles[:, int(J[i])] + np.sqrt(np.diag(cov_posterior)) * np.random.normal(0, 0.1)
+            particles[:, i] = particles[:, int(J[i])] + np.sqrt(
+                np.diag(cov_posterior)
+            ) * np.random.normal(0, 0.1)
         resamp = 1
 
     # Update the particles with the resampled values
@@ -91,10 +112,10 @@ def particle_filter(mem, nx, particles, obs_vect, R):
 
     # Construct the return object
     pf_output = {
-        "posterior": posterior_vect, 
-        "weights": w_t, 
-        "resamp": resamp, 
-        "cov_post": cov_posterior
+        "posterior": posterior_vect,
+        "weights": w_t,
+        "resamp": resamp,
+        "cov_post": cov_posterior,
     }
 
     return pf_output

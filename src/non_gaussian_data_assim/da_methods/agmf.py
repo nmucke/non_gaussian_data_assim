@@ -1,13 +1,17 @@
-import numpy as np
+from typing import Any, Dict
 
-def h_operator(nx, obs_vect):
+import numpy as np
+from numpy.typing import NDArray
+
+
+def h_operator(nx: int, obs_vect: NDArray[np.float64]) -> NDArray[np.float64]:
     """
     Create the observation operator matrix H.
-    
+
     Args:
     nx (int): Size of the state vector.
     obs_vect (numpy.array): Observation vector, where -999 indicates missing data.
-    
+
     Returns:
     numpy.array: The observation operator matrix.
     """
@@ -24,7 +28,15 @@ def h_operator(nx, obs_vect):
 
     return h_matrix
 
-def gaussian_mixt(weight_vect, n_obs, ens_vect, obs_vect, h_matrix, cov_matrix):
+
+def gaussian_mixt(
+    weight_vect: NDArray[np.float64],
+    n_obs: int,
+    ens_vect: NDArray[np.float64],
+    obs_vect: NDArray[np.float64],
+    h_matrix: NDArray[np.float64],
+    cov_matrix: NDArray[np.float64],
+) -> NDArray[np.float64]:
     """
     Compute the weights for ensemble members using Gaussian Mixture Model.
 
@@ -47,7 +59,14 @@ def gaussian_mixt(weight_vect, n_obs, ens_vect, obs_vect, h_matrix, cov_matrix):
     # Calculating the weights based on the Gaussian distribution
     for i in range(ens_vect.shape[1]):
         innovation = obs_vect[:, 0] - h_matrix.dot(ens_vect[:, i])
-        prob_dens[i] = norm_factor * np.exp(-(1 / 2) * ((np.transpose(innovation)).dot(np.linalg.inv(cov_matrix).dot(innovation))))
+        prob_dens[i] = norm_factor * np.exp(
+            -(1 / 2)
+            * (
+                (np.transpose(innovation)).dot(
+                    np.linalg.inv(cov_matrix).dot(innovation)
+                )
+            )
+        )
         weight_mixt[i] = prob_dens[i] * weight_vect[i]
 
     # Normalizing the weights
@@ -55,7 +74,8 @@ def gaussian_mixt(weight_vect, n_obs, ens_vect, obs_vect, h_matrix, cov_matrix):
 
     return weight_final
 
-def randsample(n, p):
+
+def randsample(n: int, p: NDArray[np.float64]) -> NDArray[np.int64]:
     """
     Perform resampling based on given probabilities.
 
@@ -68,7 +88,17 @@ def randsample(n, p):
     """
     return np.random.choice(np.arange(0, n, 1), size=n, replace=True, p=p)
 
-def agmf(mem, nx, ensemble, obs_vect, R, h, w_prev, nc_threshold):
+
+def agmf(
+    mem: int,
+    nx: int,
+    ensemble: NDArray[np.float64],
+    obs_vect: NDArray[np.float64],
+    R: NDArray[np.float64],
+    h: float,
+    w_prev: NDArray[np.float64],
+    nc_threshold: float,
+) -> Dict[str, Any]:
     """
     Implement the Adaptive Gaussian Mixture Filter.
 
@@ -83,7 +113,7 @@ def agmf(mem, nx, ensemble, obs_vect, R, h, w_prev, nc_threshold):
     nc_threshold (float): Threshold for deciding whether resampling is necessary.
 
     Returns:
-    dict: Dictionary containing the posterior ensemble, Kalman gain, innovation, 
+    dict: Dictionary containing the posterior ensemble, Kalman gain, innovation,
           mean and covariance of the posterior, weights, and alpha value.
     """
     # Identifying indices of valid observations
@@ -95,7 +125,7 @@ def agmf(mem, nx, ensemble, obs_vect, R, h, w_prev, nc_threshold):
 
     # Calculating the mean and covariance of the prior
     mean_prior = np.mean(prior_vect, axis=1)
-    cov_prior = (h ** 2) * np.cov(prior_vect)
+    cov_prior = (h**2) * np.cov(prior_vect)
 
     # Filtering and perturbing the observation vector
     obs_vect_filtered = obs_vect[index_obs]
@@ -112,7 +142,9 @@ def agmf(mem, nx, ensemble, obs_vect, R, h, w_prev, nc_threshold):
 
     # Calculating the Kalman gain
     k_left = cov_prior.dot(np.transpose(h_matrix))
-    k_right_inv = np.linalg.inv(h_matrix.dot(cov_prior).dot(np.transpose(h_matrix)) + cov_obs)
+    k_right_inv = np.linalg.inv(
+        h_matrix.dot(cov_prior).dot(np.transpose(h_matrix)) + cov_obs
+    )
     kalman_gain = k_left.dot(k_right_inv)
 
     # Calculating the innovation
@@ -124,10 +156,12 @@ def agmf(mem, nx, ensemble, obs_vect, R, h, w_prev, nc_threshold):
     cov_posterior = np.cov(posterior_vect)
 
     # Recalculating weights
-    w_t = gaussian_mixt(w_prev, num_obs, posterior_vect, obs_vect_perturbed, h_matrix, R)
+    w_t = gaussian_mixt(
+        w_prev, num_obs, posterior_vect, obs_vect_perturbed, h_matrix, R
+    )
 
     # Evaluating degeneracy and calculating the bridging alpha
-    N_eff = 1 / np.sum(w_t ** 2)
+    N_eff = 1 / np.sum(w_t**2)
     alpha = N_eff / mem
 
     # Adjusting weights
@@ -135,12 +169,14 @@ def agmf(mem, nx, ensemble, obs_vect, R, h, w_prev, nc_threshold):
 
     # Resampling if necessary
     resamp = 0
-    if N_eff < nc_threshold:  
+    if N_eff < nc_threshold:
         J = randsample(mem, w_t)
         epsc = np.random.normal(0, 0.1, mem)
         for i in range(mem):
-            posterior_vect[:, i] = posterior_vect[:, int(J[i])] + np.sqrt(np.diag(cov_posterior)) * epsc[i] 
-        cov_posterior = (h ** 2) * np.cov(posterior_vect)
+            posterior_vect[:, i] = (
+                posterior_vect[:, int(J[i])] + np.sqrt(np.diag(cov_posterior)) * epsc[i]
+            )
+        cov_posterior = (h**2) * np.cov(posterior_vect)
         resamp = 1
 
     # Result output

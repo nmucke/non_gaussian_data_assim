@@ -1,13 +1,17 @@
-import numpy as np
+from typing import Any, Dict
 
-def h_operator(nx, obs_vect):
+import numpy as np
+from numpy.typing import NDArray
+
+
+def h_operator(nx: int, obs_vect: NDArray[np.float64]) -> NDArray[np.float64]:
     """
     Create the observation operator matrix H.
-    
+
     Args:
     nx (int): Size of the state vector.
     obs_vect (numpy.array): Observation vector, where -999 indicates missing data.
-    
+
     Returns:
     numpy.array: The observation operator matrix.
     """
@@ -24,34 +28,50 @@ def h_operator(nx, obs_vect):
 
     return h_matrix
 
-def localization(r_influ,N,cov_prior):
+
+def localization(
+    r_influ: int, N: int, cov_prior: NDArray[np.float64]
+) -> NDArray[np.float64]:
     """
     Apply localization to the covariance matrix.
-    
+
     Args:
-    r_influ (float): The radius of influence for localization.
+    r_influ (int): The radius of influence for localization -- grid cells.
     N (int): The number of grid points.
     cov_prior (numpy.array): The prior covariance matrix.
-    
+
     Returns:
     numpy.array: Localized covariance matrix.
     """
     # Create a localization mask with Gaussian-like decay
     tmp = np.zeros((N, N))
     for i in range(1, 3 * r_influ + 1):
-        tmp += np.exp(-i**2 / r_influ**2) * (np.diag(np.ones(N - i), i) + np.diag(np.ones(N - i), -i))
+        tmp += np.exp(-(i**2) / r_influ**2) * (
+            np.diag(np.ones(N - i), i) + np.diag(np.ones(N - i), -i)
+        )
     mask = tmp + np.diag(np.ones(N))
 
     # Apply the localization mask to the prior covariance matrix
     cov_prior_loc = np.zeros(cov_prior.shape)
     for i in range(1, 4):
         for j in range(1, 4):
-            cov_prior_loc[(i - 1) * N:i * N, (j - 1) * N:j * N] = np.multiply(cov_prior[(i - 1) * N:i * N, (j - 1) * N:j * N], mask)
+            cov_prior_loc[(i - 1) * N : i * N, (j - 1) * N : j * N] = np.multiply(
+                cov_prior[(i - 1) * N : i * N, (j - 1) * N : j * N], mask
+            )
 
     return cov_prior_loc
 
 
-def grad_log_post(H, R, R_inv, y, y_i, B, x_s_i, x0_mean):
+def grad_log_post(
+    H: NDArray[np.float64],
+    R: NDArray[np.float64],
+    R_inv: NDArray[np.float64],
+    y: NDArray[np.float64],
+    y_i: NDArray[np.float64],
+    B: NDArray[np.float64],
+    x_s_i: NDArray[np.float64],
+    x0_mean: NDArray[np.float64],
+) -> NDArray[np.float64]:
     """
     Calculate the gradient of the log posterior distribution.
 
@@ -74,7 +94,17 @@ def grad_log_post(H, R, R_inv, y, y_i, B, x_s_i, x0_mean):
 
     return grad_log_post_est
 
-def pff(n_mem, n_states, ensemble, obs_vect, index_obs, N, r_influ):
+
+def pff(
+    n_mem: int,
+    n_states: int,
+    ensemble: NDArray[np.float64],
+    obs_vect: NDArray[np.float64],
+    index_obs: NDArray[np.int64],
+    N: int,
+    r_influ: int,
+    R: NDArray[np.float64],
+) -> Dict[str, Any]:
     """
     Implement the Particle Flow Filter.
 
@@ -85,16 +115,17 @@ def pff(n_mem, n_states, ensemble, obs_vect, index_obs, N, r_influ):
     obs_vect (numpy.array): Observation vector.
     index_obs (numpy.array): Indices of valid observations.
     N (int): The number of grid points.
-    r_influ (float): Radius of influence for localization.
+    r_influ (int): Radius of influence for localization -- grid cells.
+    R (numpy.array): Observation error covariance matrix.
 
     Returns:
     dict: Dictionary containing the posterior ensemble, mean, and covariance.
     """
     B = np.cov(ensemble)
-    
+
     # Apply localization to the prior covariance matrix
-    B=localization(r_influ,N,B)
-    
+    B = localization(r_influ, N, B)
+
     x0_mean = np.mean(ensemble, axis=1)
 
     # Pseudo-time flow parameters
@@ -108,14 +139,16 @@ def pff(n_mem, n_states, ensemble, obs_vect, index_obs, N, r_influ):
     python_pseudoflow[:, :, 0] = x_s.copy()
 
     n_obs = np.sum(obs_vect > -999)
+    R_inv = np.linalg.inv(R)
 
     # Pseudo-time for data assimilation
     while s < max_s:
-        print(f'Iteration: {s}')
+        print(f"Iteration: {s}")
 
         H = np.zeros((n_obs, n_states))
         Hx = np.zeros((n_obs, n_mem))
         dHdx = np.zeros((n_obs, n_states, n_mem))
+        dpdx = np.zeros((n_states, n_mem))
 
         for i in range(n_mem):
             H = h_operator(n_states, obs_vect)
@@ -138,11 +171,13 @@ def pff(n_mem, n_states, ensemble, obs_vect, index_obs, N, r_influ):
 
         for i in range(n_mem):
             for j in range(i, n_mem):
-                kernel[:, i, j] = np.exp((-1 / 2) * ((x_s[:, i] - x_s[:, j]) ** 2) / (alpha * B_d[:]))
+                kernel[:, i, j] = np.exp(
+                    (-1 / 2) * ((x_s[:, i] - x_s[:, j]) ** 2) / (alpha * B_d[:])
+                )
                 dkdx[:, i, j] = ((x_s[:, i] - x_s[:, j]) / alpha) * kernel[:, i, j]
                 if j != i:
-                kernel[:, i, j] = kernel[:, j, i]
-                dkdx[:, i, j] = -dkdx[:, j, i]
+                    kernel[:, i, j] = kernel[:, j, i]
+                    dkdx[:, i, j] = -dkdx[:, j, i]
 
             attractive_term = (1 / n_mem) * (kernel[:, i, :] * dpdx)
             repelling_term = (1 / n_mem) * dkdx[:, i, :]
@@ -159,8 +194,11 @@ def pff(n_mem, n_states, ensemble, obs_vect, index_obs, N, r_influ):
     posterior_vect = python_pseudoflow[:, :, -1]
     mean_posterior = np.mean(posterior_vect, axis=1)
     cov_posterior = np.cov(posterior_vect)
-            
-    pff_pseudoflow = {"posterior": posterior_vect, "mean_post": mean_posterior, "cov_post": cov_posterior}
-        
-    return pff_pseudoflow
 
+    pff_pseudoflow = {
+        "posterior": posterior_vect,
+        "mean_post": mean_posterior,
+        "cov_post": cov_posterior,
+    }
+
+    return pff_pseudoflow

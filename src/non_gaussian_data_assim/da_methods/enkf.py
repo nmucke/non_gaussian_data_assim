@@ -1,7 +1,11 @@
+from typing import Any, Dict
+
 import numpy as np
+from numpy.typing import NDArray
+
 
 # Function to generate the observation operator matrix (H matrix)
-def h_operator(nx, obs_vect):
+def h_operator(nx: int, obs_vect: NDArray[np.float64]) -> NDArray[np.float64]:
     """
     Create the observation operator matrix H.
 
@@ -25,8 +29,15 @@ def h_operator(nx, obs_vect):
 
     return h_matrix
 
+
 # Function to implement the Ensemble Kalman Filter
-def enkf(mem, nx, ensemble, obs_vect, R):
+def enkf(
+    mem: int,
+    nx: int,
+    ensemble: NDArray[np.float64],
+    obs_vect: NDArray[np.float64],
+    R: NDArray[np.float64],
+) -> Dict[str, Any]:
     """
     Implement the Ensemble Kalman Filter.
 
@@ -38,7 +49,7 @@ def enkf(mem, nx, ensemble, obs_vect, R):
     R (numpy.array): Observation error covariance matrix.
 
     Returns:
-    dict: A dictionary containing the posterior ensemble, Kalman gain, innovation, 
+    dict: A dictionary containing the posterior ensemble, Kalman gain, innovation,
           mean and covariance of the posterior.
     """
     # Identify indices of valid observations
@@ -56,7 +67,7 @@ def enkf(mem, nx, ensemble, obs_vect, R):
     obs_vect_filtered = obs_vect[index_obs]
     obs_vect_perturbed = np.zeros((num_obs, mem))
     r_obs_vect = np.diag(R)
-    
+
     for i in range(mem):
         for j in range(num_obs):
             obs_vect_perturbed[j, i] = obs_vect_filtered[j, 0]
@@ -89,7 +100,7 @@ def enkf(mem, nx, ensemble, obs_vect, R):
         "kalman_gain": kalman_gain,
         "innovation": innovation,
         "mean_post": mean_posterior,
-        "cov_post": cov_posterior
+        "cov_post": cov_posterior,
     }
 
     return enkf_output
