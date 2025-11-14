@@ -17,6 +17,16 @@ build-backend = "uv_build"
 module-name = "non_gaussian_data_assim"
 
 
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5,<8.4.0",
+    "pre-commit>=4.1.0,<4.2.0",
+    "black>=24.1.0,<24.2.0",
+    "isort>=6.0.0,<6.1.0",
+    "mypy>=1.15.0,<1.16.0",
+]
+
+
 [tool.black]
 line-length = 88
 target-version = ["py312"]
