@@ -3,10 +3,7 @@ import pdb
 import matplotlib.pyplot as plt
 import numpy as np
 
-from non_gaussian_data_assim.da_methods.agmf import agmf
-from non_gaussian_data_assim.da_methods.agmf_loc import agmf as agmf_loc
-from non_gaussian_data_assim.da_methods.enkf import enkf
-from non_gaussian_data_assim.da_methods.particle_filter import particle_filter
+from non_gaussian_data_assim.da_methods.enkf_loc import EnsembleKalmanFilterLocalization
 from non_gaussian_data_assim.forward_models.lorenz_96 import L96_RK4, L96_RK4_ensemble
 
 np.random.seed(42)
@@ -40,26 +37,23 @@ def main() -> None:
     obs_vect = true_sol.copy()
     obs_vect[:, NO_OBS_IDS] = -9999  # -999 indicates no observation
 
+    enkf_loc = EnsembleKalmanFilterLocalization(
+        mem=MEM_SIZE,
+        nx=STATE_DIM,
+        R=R,
+        N=STATE_DIM,
+        r_influ=2,
+        obs_operator=lambda x: x,
+    )
+
     prior_ensemble = np.zeros((NUM_TIME_STEPS, STATE_DIM, MEM_SIZE))
     prior_ensemble[0, :, :] = np.random.randn(STATE_DIM, MEM_SIZE) * 10
     posterior_ensemble = prior_ensemble.copy()
-    weights = np.ones(MEM_SIZE) / MEM_SIZE
     for i in range(1, NUM_TIME_STEPS):
         prior_ensemble[i, :] = L96_RK4_ensemble(prior_ensemble[i - 1, :], DT, F)
-        out = agmf_loc(
-            mem=MEM_SIZE,
-            nx=STATE_DIM,
-            ensemble=prior_ensemble[i, :],
-            obs_vect=obs_vect[i, :],
-            R=R,
-            N=STATE_DIM,
-            r_influ=2,
-            h=0.1,
-            w_prev=weights,
-            nc_threshold=0.8 * MEM_SIZE,
+        posterior_ensemble[i, :] = enkf_loc(
+            prior_ensemble=prior_ensemble[i, :], obs_vect=obs_vect[i, :]
         )
-        posterior_ensemble[i, :] = out["posterior"]
-        weights = out["weights"]
 
     prior_error = true_sol - prior_ensemble.mean(axis=-1)
     prior_error = np.sqrt(np.sum(prior_error**2, axis=-1))

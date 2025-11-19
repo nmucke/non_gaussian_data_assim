@@ -1,7 +1,8 @@
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 import numpy as np
 
+from non_gaussian_data_assim.da_methods.base import BaseDataAssimilationMethod
 from non_gaussian_data_assim.localization import localization
 from non_gaussian_data_assim.observation_operator import h_operator
 
@@ -69,3 +70,47 @@ def enkf(
         "cov_post": cov_posterior,
     }
     return enkf_output
+
+
+class EnsembleKalmanFilterLocalization(BaseDataAssimilationMethod):
+    def __init__(
+        self,
+        mem: int,
+        nx: int,
+        R: np.ndarray,
+        N: int,
+        r_influ: int,
+        obs_operator: Callable[[np.ndarray], np.ndarray],
+    ) -> None:
+        """
+        Implement the Ensemble Kalman Filter with localization.
+        Args:
+        mem (int): Number of ensemble members.
+        nx (int): Size of the state vector.
+        ensemble (numpy.array): Ensemble of state estimates.
+        obs_vect (numpy.array): Observation vector.
+        R (numpy.array): Observation error covariance matrix.
+        N (int): The number of grid points.
+        r_influ (int): Radius of influence for localization -- grid cells.
+        obs_operator (Callable[[np.ndarray], np.ndarray]): Observation operator.
+        """
+        super().__init__(obs_operator)
+        self.mem = mem
+        self.nx = nx
+        self.R = R
+        self.N = N
+        self.r_influ = r_influ
+
+    def _assimilate_data(
+        self, prior_ensemble: np.ndarray, obs_vect: np.ndarray
+    ) -> np.ndarray:
+        """Assimilate the data."""
+        return enkf(
+            mem=self.mem,
+            nx=self.nx,
+            ensemble=prior_ensemble,
+            obs_vect=obs_vect,
+            R=self.R,
+            N=self.N,
+            r_influ=self.r_influ,
+        )["posterior"]
