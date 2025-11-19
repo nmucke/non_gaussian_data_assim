@@ -6,6 +6,7 @@ from tqdm import tqdm
 
 from non_gaussian_data_assim.da_methods.enkf import EnsembleKalmanFilter
 from non_gaussian_data_assim.da_methods.enkf_loc import EnsembleKalmanFilterLocalization
+from non_gaussian_data_assim.da_methods.particle_filter import ParticleFilter
 from non_gaussian_data_assim.da_methods.pff import ParticleFlowFilter
 from non_gaussian_data_assim.da_methods.pff_loc import ParticleFlowFilterLocalization
 from non_gaussian_data_assim.forward_models.lorenz_96 import L96_RK4, L96_RK4_ensemble
@@ -17,7 +18,7 @@ DT = 0.01
 F = 8.0
 NUM_TIME_STEPS = 100
 STATE_DIM = 50
-MEM_SIZE = 100
+MEM_SIZE = 1000
 
 # Initial state
 X_0 = np.random.randn(STATE_DIM) * 10
@@ -41,12 +42,12 @@ def main() -> None:
     obs_vect = true_sol.copy()
     obs_vect[:, NO_OBS_IDS] = -9999  # -999 indicates no observation
 
-    da_model = ParticleFlowFilterLocalization(
+    da_model = ParticleFilter(
         mem=MEM_SIZE,
         nx=STATE_DIM,
         R=R,
-        N=STATE_DIM,
-        r_influ=10,
+        # N=STATE_DIM,
+        # r_influ=10,
         obs_operator=lambda x: x,
     )
 

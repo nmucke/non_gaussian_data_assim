@@ -75,6 +75,7 @@ def particle_filter(
     nc_threshold = 0.8 * mem
     resamp = 0
     if N_eff < nc_threshold:
+        print("Resampling")
         # Perform resampling
         J = np.random.choice(mem, size=mem, p=w_t)
         for i in range(mem):
