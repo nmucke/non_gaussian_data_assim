@@ -3,6 +3,7 @@ import pdb
 import matplotlib.pyplot as plt
 import numpy as np
 
+from non_gaussian_data_assim.da_methods.enkf import EnsembleKalmanFilter
 from non_gaussian_data_assim.da_methods.enkf_loc import EnsembleKalmanFilterLocalization
 from non_gaussian_data_assim.forward_models.lorenz_96 import L96_RK4, L96_RK4_ensemble
 
@@ -37,12 +38,12 @@ def main() -> None:
     obs_vect = true_sol.copy()
     obs_vect[:, NO_OBS_IDS] = -9999  # -999 indicates no observation
 
-    enkf_loc = EnsembleKalmanFilterLocalization(
+    enkf_loc = EnsembleKalmanFilter(
         mem=MEM_SIZE,
         nx=STATE_DIM,
         R=R,
-        N=STATE_DIM,
-        r_influ=2,
+        # N=STATE_DIM,
+        # r_influ=10,
         obs_operator=lambda x: x,
     )
 
