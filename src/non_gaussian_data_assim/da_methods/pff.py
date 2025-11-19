@@ -1,7 +1,8 @@
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 import numpy as np
 
+from non_gaussian_data_assim.da_methods.base import BaseDataAssimilationMethod
 from non_gaussian_data_assim.observation_operator import h_operator
 
 
@@ -39,27 +40,26 @@ def grad_log_post(
 
 
 def pff(
-    n_mem: int,
+    mem: int,
     n_states: int,
     ensemble: np.ndarray,
     obs_vect: np.ndarray,
-    index_obs: np.ndarray,
     R: np.ndarray,
 ) -> Dict[str, Any]:
     """
     Implement the Particle Flow Filter.
 
     Args:
-    n_mem (int): Number of ensemble members.
+    mem (int): Number of ensemble members.
     n_states (int): Number of states.
     ensemble (numpy.array): Initial ensemble of states.
     obs_vect (numpy.array): Observation vector.
-    index_obs (numpy.array): Indices of valid observations.
     R (numpy.array): Observation error covariance matrix.
 
     Returns:
     dict: Dictionary containing the posterior ensemble, mean, and covariance.
     """
+    index_obs = np.where(obs_vect > -999)[0]
     B = np.cov(ensemble)
     x0_mean = np.mean(ensemble, axis=1)
 
@@ -70,7 +70,7 @@ def pff(
     alpha = 0.05 / 10  # Tuning parameter for the covariance of the kernel
 
     x_s = ensemble.copy()
-    python_pseudoflow = np.zeros((n_states, n_mem, max_s + 1))
+    python_pseudoflow = np.zeros((n_states, mem, max_s + 1))
     python_pseudoflow[:, :, 0] = x_s.copy()
 
     n_obs = np.sum(obs_vect > -999)
@@ -78,14 +78,13 @@ def pff(
 
     # Pseudo-time for data assimilation
     while s < max_s:
-        print(f"Iteration: {s}")
 
         H = np.zeros((n_obs, n_states))
-        Hx = np.zeros((n_obs, n_mem))
-        dHdx = np.zeros((n_obs, n_states, n_mem))
-        dpdx = np.zeros((n_states, n_mem))
+        Hx = np.zeros((n_obs, mem))
+        dHdx = np.zeros((n_obs, n_states, mem))
+        dpdx = np.zeros((n_states, mem))
 
-        for i in range(n_mem):
+        for i in range(mem):
             H = h_operator(n_states, obs_vect)
             Hx[:, :] = x_s[index_obs, :]
             y = np.ones((n_obs, 1))
@@ -100,12 +99,12 @@ def pff(
         for d in range(n_states):
             B_d[d] = B[d, d]
 
-        kernel = np.zeros((n_states, n_mem, n_mem))
-        dkdx = np.zeros((n_states, n_mem, n_mem))
-        I_f = np.zeros((n_states, n_mem))
+        kernel = np.zeros((n_states, mem, mem))
+        dkdx = np.zeros((n_states, mem, mem))
+        I_f = np.zeros((n_states, mem))
 
-        for i in range(n_mem):
-            for j in range(i, n_mem):
+        for i in range(mem):
+            for j in range(i, mem):
                 kernel[:, i, j] = np.exp(
                     (-1 / 2) * ((x_s[:, i] - x_s[:, j]) ** 2) / (alpha * B_d[:])
                 )
@@ -114,8 +113,8 @@ def pff(
                     kernel[:, i, j] = kernel[:, j, i]
                     dkdx[:, i, j] = -dkdx[:, j, i]
 
-            attractive_term = (1 / n_mem) * (kernel[:, i, :] * dpdx)
-            repelling_term = (1 / n_mem) * dkdx[:, i, :]
+            attractive_term = (1 / mem) * (kernel[:, i, :] * dpdx)
+            repelling_term = (1 / mem) * dkdx[:, i, :]
             I_f[:, i] = np.sum(attractive_term + repelling_term, axis=1)
 
         # Update the state vector for next pseudo time step
@@ -137,3 +136,36 @@ def pff(
     }
 
     return pff_pseudoflow
+
+
+class ParticleFlowFilter(BaseDataAssimilationMethod):
+    def __init__(
+        self,
+        mem: int,
+        nx: int,
+        R: np.ndarray,
+        obs_operator: Callable[[np.ndarray], np.ndarray],
+    ) -> None:
+        """
+        Initialize the Particle Flow Filter.
+        Args:
+        mem (int): Number of ensemble members.
+        nx (int): Size of the state vector.
+        R (numpy.array): Observation error covariance matrix.
+        obs_operator (Callable[[np.ndarray], np.ndarray]): Observation operator.
+        """
+        super().__init__(obs_operator)
+        self.mem = mem
+        self.nx = nx
+        self.R = R
+
+    def _assimilate_data(
+        self, prior_ensemble: np.ndarray, obs_vect: np.ndarray
+    ) -> np.ndarray:
+        return pff(
+            mem=self.mem,
+            n_states=self.nx,
+            ensemble=prior_ensemble,
+            obs_vect=obs_vect,
+            R=self.R,
+        )["posterior"]

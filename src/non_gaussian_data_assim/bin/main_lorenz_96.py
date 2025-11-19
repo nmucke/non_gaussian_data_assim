@@ -2,9 +2,12 @@ import pdb
 
 import matplotlib.pyplot as plt
 import numpy as np
+from tqdm import tqdm
 
 from non_gaussian_data_assim.da_methods.enkf import EnsembleKalmanFilter
 from non_gaussian_data_assim.da_methods.enkf_loc import EnsembleKalmanFilterLocalization
+from non_gaussian_data_assim.da_methods.pff import ParticleFlowFilter
+from non_gaussian_data_assim.da_methods.pff_loc import ParticleFlowFilterLocalization
 from non_gaussian_data_assim.forward_models.lorenz_96 import L96_RK4, L96_RK4_ensemble
 
 np.random.seed(42)
@@ -38,21 +41,21 @@ def main() -> None:
     obs_vect = true_sol.copy()
     obs_vect[:, NO_OBS_IDS] = -9999  # -999 indicates no observation
 
-    enkf_loc = EnsembleKalmanFilter(
+    da_model = ParticleFlowFilterLocalization(
         mem=MEM_SIZE,
         nx=STATE_DIM,
         R=R,
-        # N=STATE_DIM,
-        # r_influ=10,
+        N=STATE_DIM,
+        r_influ=10,
         obs_operator=lambda x: x,
     )
 
     prior_ensemble = np.zeros((NUM_TIME_STEPS, STATE_DIM, MEM_SIZE))
     prior_ensemble[0, :, :] = np.random.randn(STATE_DIM, MEM_SIZE) * 10
     posterior_ensemble = prior_ensemble.copy()
-    for i in range(1, NUM_TIME_STEPS):
+    for i in tqdm(range(1, NUM_TIME_STEPS)):
         prior_ensemble[i, :] = L96_RK4_ensemble(prior_ensemble[i - 1, :], DT, F)
-        posterior_ensemble[i, :] = enkf_loc(
+        posterior_ensemble[i, :] = da_model(
             prior_ensemble=prior_ensemble[i, :], obs_vect=obs_vect[i, :]
         )
 
