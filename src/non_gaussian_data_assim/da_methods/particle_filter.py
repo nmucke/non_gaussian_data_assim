@@ -1,7 +1,8 @@
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 import numpy as np
 
+from non_gaussian_data_assim.da_methods.base import BaseDataAssimilationMethod
 from non_gaussian_data_assim.observation_operator import h_operator
 
 
@@ -95,3 +96,28 @@ def particle_filter(
     }
 
     return pf_output
+
+
+class ParticleFilter(BaseDataAssimilationMethod):
+    def __init__(
+        self,
+        mem: int,
+        nx: int,
+        R: np.ndarray,
+        obs_operator: Callable[[np.ndarray], np.ndarray],
+    ) -> None:
+        super().__init__(obs_operator)
+        self.mem = mem
+        self.nx = nx
+        self.R = R
+
+    def _assimilate_data(
+        self, prior_ensemble: np.ndarray, obs_vect: np.ndarray
+    ) -> np.ndarray:
+        return particle_filter(
+            mem=self.mem,
+            nx=self.nx,
+            particles=prior_ensemble,
+            obs_vect=obs_vect,
+            R=self.R,
+        )["posterior"]
