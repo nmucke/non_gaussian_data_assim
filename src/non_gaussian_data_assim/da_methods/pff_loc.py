@@ -1,77 +1,21 @@
 from typing import Any, Dict
 
 import numpy as np
-from numpy.typing import NDArray
 
-
-def h_operator(nx: int, obs_vect: NDArray[np.float64]) -> NDArray[np.float64]:
-    """
-    Create the observation operator matrix H.
-
-    Args:
-    nx (int): Size of the state vector.
-    obs_vect (numpy.array): Observation vector, where -999 indicates missing data.
-
-    Returns:
-    numpy.array: The observation operator matrix.
-    """
-    # Identifying indices of valid observations (not -999)
-    index_obs = np.where(obs_vect > -999)[0]
-    num_obs = len(index_obs)
-
-    # Initializing the H matrix with zeros
-    h_matrix = np.zeros((num_obs, nx))
-
-    # Setting 1 at positions corresponding to actual observations
-    for i in range(num_obs):
-        h_matrix[i, index_obs[i]] = 1
-
-    return h_matrix
-
-
-def localization(
-    r_influ: int, N: int, cov_prior: NDArray[np.float64]
-) -> NDArray[np.float64]:
-    """
-    Apply localization to the covariance matrix.
-
-    Args:
-    r_influ (int): The radius of influence for localization -- grid cells.
-    N (int): The number of grid points.
-    cov_prior (numpy.array): The prior covariance matrix.
-
-    Returns:
-    numpy.array: Localized covariance matrix.
-    """
-    # Create a localization mask with Gaussian-like decay
-    tmp = np.zeros((N, N))
-    for i in range(1, 3 * r_influ + 1):
-        tmp += np.exp(-(i**2) / r_influ**2) * (
-            np.diag(np.ones(N - i), i) + np.diag(np.ones(N - i), -i)
-        )
-    mask = tmp + np.diag(np.ones(N))
-
-    # Apply the localization mask to the prior covariance matrix
-    cov_prior_loc = np.zeros(cov_prior.shape)
-    for i in range(1, 4):
-        for j in range(1, 4):
-            cov_prior_loc[(i - 1) * N : i * N, (j - 1) * N : j * N] = np.multiply(
-                cov_prior[(i - 1) * N : i * N, (j - 1) * N : j * N], mask
-            )
-
-    return cov_prior_loc
+from non_gaussian_data_assim.localization import localization
+from non_gaussian_data_assim.observation_operator import h_operator
 
 
 def grad_log_post(
-    H: NDArray[np.float64],
-    R: NDArray[np.float64],
-    R_inv: NDArray[np.float64],
-    y: NDArray[np.float64],
-    y_i: NDArray[np.float64],
-    B: NDArray[np.float64],
-    x_s_i: NDArray[np.float64],
-    x0_mean: NDArray[np.float64],
-) -> NDArray[np.float64]:
+    H: np.ndarray,
+    R: np.ndarray,
+    R_inv: np.ndarray,
+    y: np.ndarray,
+    y_i: np.ndarray,
+    B: np.ndarray,
+    x_s_i: np.ndarray,
+    x0_mean: np.ndarray,
+) -> np.ndarray:
     """
     Calculate the gradient of the log posterior distribution.
 
@@ -98,12 +42,12 @@ def grad_log_post(
 def pff(
     n_mem: int,
     n_states: int,
-    ensemble: NDArray[np.float64],
-    obs_vect: NDArray[np.float64],
-    index_obs: NDArray[np.int64],
+    ensemble: np.ndarray,
+    obs_vect: np.ndarray,
+    index_obs: np.ndarray,
     N: int,
     r_influ: int,
-    R: NDArray[np.float64],
+    R: np.ndarray,
 ) -> Dict[str, Any]:
     """
     Implement the Particle Flow Filter.

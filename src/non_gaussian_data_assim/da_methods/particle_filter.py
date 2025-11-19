@@ -1,38 +1,14 @@
 from typing import Any, Dict
 
 import numpy as np
-from numpy.typing import NDArray
 
-
-def h_operator(nx: int, obs_vect: NDArray[np.float64]) -> NDArray[np.float64]:
-    """
-    Create the observation operator matrix H.
-
-    Args:
-    nx (int): Size of the state vector.
-    obs_vect (numpy.array): Observation vector, where -999 indicates missing data.
-
-    Returns:
-    numpy.array: The observation operator matrix.
-    """
-    # Identifying indices of valid observations (not -999)
-    index_obs = np.where(obs_vect > -999)[0]
-    num_obs = len(index_obs)
-
-    # Initializing the H matrix with zeros
-    h_matrix = np.zeros((num_obs, nx))
-
-    # Setting 1 at positions corresponding to actual observations
-    for i in range(num_obs):
-        h_matrix[i, index_obs[i]] = 1
-
-    return h_matrix
+from non_gaussian_data_assim.observation_operator import h_operator
 
 
 def observation_likelihood(
-    obs_vect: NDArray[np.float64],
-    pred_vect: NDArray[np.float64],
-    R: NDArray[np.float64],
+    obs_vect: np.ndarray,
+    pred_vect: np.ndarray,
+    R: np.ndarray,
 ) -> Any:
     """
     Compute the likelihood of an observation given a predicted state.
@@ -56,9 +32,9 @@ def observation_likelihood(
 def particle_filter(
     mem: int,
     nx: int,
-    particles: NDArray[np.float64],
-    obs_vect: NDArray[np.float64],
-    R: NDArray[np.float64],
+    particles: np.ndarray,
+    obs_vect: np.ndarray,
+    R: np.ndarray,
 ) -> Dict[str, Any]:
     """
     Implement the Particle Filter algorithm.

@@ -1,8 +1,7 @@
 import numpy as np
-from numpy.typing import NDArray
 
 
-def h_operator(nx: int, obs_vect: NDArray[np.float64]) -> NDArray[np.float64]:
+def h_operator(nx: int, obs_vect: np.ndarray) -> np.ndarray:
     """
     Creates an observation operator matrix for mapping state space to observation space.
 

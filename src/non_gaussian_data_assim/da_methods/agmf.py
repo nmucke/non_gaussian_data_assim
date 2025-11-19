@@ -1,102 +1,20 @@
 from typing import Any, Dict
 
 import numpy as np
-from numpy.typing import NDArray
 
-
-def h_operator(nx: int, obs_vect: NDArray[np.float64]) -> NDArray[np.float64]:
-    """
-    Create the observation operator matrix H.
-
-    Args:
-    nx (int): Size of the state vector.
-    obs_vect (numpy.array): Observation vector, where -999 indicates missing data.
-
-    Returns:
-    numpy.array: The observation operator matrix.
-    """
-    # Identifying indices of valid observations (not -999)
-    index_obs = np.where(obs_vect > -999)[0]
-    num_obs = len(index_obs)
-
-    # Initializing the H matrix with zeros
-    h_matrix = np.zeros((num_obs, nx))
-
-    # Setting 1 at positions corresponding to actual observations
-    for i in range(num_obs):
-        h_matrix[i, index_obs[i]] = 1
-
-    return h_matrix
-
-
-def gaussian_mixt(
-    weight_vect: NDArray[np.float64],
-    n_obs: int,
-    ens_vect: NDArray[np.float64],
-    obs_vect: NDArray[np.float64],
-    h_matrix: NDArray[np.float64],
-    cov_matrix: NDArray[np.float64],
-) -> NDArray[np.float64]:
-    """
-    Compute the weights for ensemble members using Gaussian Mixture Model.
-
-    Args:
-    weight_vect (numpy.array): Current weights of the ensemble members.
-    n_obs (int): Number of observations.
-    ens_vect (numpy.array): Ensemble matrix.
-    obs_vect (numpy.array): Observation vector.
-    h_matrix (numpy.array): Observation operator matrix.
-    cov_matrix (numpy.array): Covariance matrix of the observations.
-
-    Returns:
-    numpy.array: Updated weights for the ensemble members.
-    """
-    # Normalizing factor for Gaussian probability density function
-    norm_factor = 1 / np.sqrt(((2 * np.pi) ** n_obs) * np.linalg.det(cov_matrix))
-    weight_mixt = np.zeros(len(weight_vect))
-    prob_dens = np.zeros(len(weight_vect))
-
-    # Calculating the weights based on the Gaussian distribution
-    for i in range(ens_vect.shape[1]):
-        innovation = obs_vect[:, 0] - h_matrix.dot(ens_vect[:, i])
-        prob_dens[i] = norm_factor * np.exp(
-            -(1 / 2)
-            * (
-                (np.transpose(innovation)).dot(
-                    np.linalg.inv(cov_matrix).dot(innovation)
-                )
-            )
-        )
-        weight_mixt[i] = prob_dens[i] * weight_vect[i]
-
-    # Normalizing the weights
-    weight_final = weight_mixt / np.sum(weight_mixt)
-
-    return weight_final
-
-
-def randsample(n: int, p: NDArray[np.float64]) -> NDArray[np.int64]:
-    """
-    Perform resampling based on given probabilities.
-
-    Args:
-    n (int): Number of items to sample.
-    p (numpy.array): Array of probabilities associated with each item.
-
-    Returns:
-    numpy.array: Array of indices, sampled according to probabilities p.
-    """
-    return np.random.choice(np.arange(0, n, 1), size=n, replace=True, p=p)
+from non_gaussian_data_assim.gaussian_mixture import gaussian_mixt
+from non_gaussian_data_assim.observation_operator import h_operator
+from non_gaussian_data_assim.rand_utils import randsample
 
 
 def agmf(
     mem: int,
     nx: int,
-    ensemble: NDArray[np.float64],
-    obs_vect: NDArray[np.float64],
-    R: NDArray[np.float64],
+    ensemble: np.ndarray,
+    obs_vect: np.ndarray,
+    R: np.ndarray,
     h: float,
-    w_prev: NDArray[np.float64],
+    w_prev: np.ndarray,
     nc_threshold: float,
 ) -> Dict[str, Any]:
     """

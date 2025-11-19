@@ -1,66 +1,17 @@
 from typing import Any, Dict
 
 import numpy as np
-from numpy.typing import NDArray
 
-
-def h_operator(nx: int, obs_vect: NDArray[np.float64]) -> NDArray[np.float64]:
-    """
-    Create the observation operator matrix H.
-    Args:
-    nx (int): The size of the state vector.
-    obs_vect (numpy.array): Observation vector, where -999 indicates missing data.
-    Returns:
-    numpy.array: The observation operator matrix.
-    """
-    # Identify valid observations (not marked as -999) and create H matrix
-    index_obs = np.where(obs_vect > -999)[0]
-    h_matrix = np.zeros((len(index_obs), nx))
-    for i in range(len(index_obs)):
-        h_matrix[i, index_obs[i]] = 1
-    return h_matrix
-
-
-def localization(
-    r_influ: int, N: int, cov_prior: NDArray[np.float64]
-) -> NDArray[np.float64]:
-    """
-    Apply localization to the covariance matrix using Gaussian-like decay.
-    Args:
-    r_influ (int): Radius of influence for localization -- grid cells.
-    N (int): The number of grid points.
-    cov_prior (numpy.array): Prior covariance matrix.
-    Returns:
-    numpy.array: Localized covariance matrix.
-    """
-    # Create a mask for localization based on Gaussian decay
-    tmp = np.zeros((N, N))
-    for i in range(1, 3 * r_influ + 1):
-        tmp += np.exp(-(i**2) / r_influ**2) * (
-            np.diag(np.ones(N - i), i) + np.diag(np.ones(N - i), -i)
-        )
-    mask = tmp + np.diag(np.ones(N))
-
-
-    # Apply the mask to the prior covariance matrix
-    cov_prior_loc = np.zeros(cov_prior.shape)
-    for i in range(1, 2):
-        for j in range(1, 2):
-            block = (i - 1) * N, i * N, (j - 1) * N, j * N
-            cov_prior_loc[block[0] : block[1], block[2] : block[3]] = \
-                np.multiply(
-                    cov_prior[block[0] : block[1], block[2] : block[3]], 
-                    mask#[block[0] : block[1], block[2] : block[3]]
-            )
-    return cov_prior_loc
+from non_gaussian_data_assim.localization import localization
+from non_gaussian_data_assim.observation_operator import h_operator
 
 
 def enkf(
     mem: int,
     nx: int,
-    ensemble: NDArray[np.float64],
-    obs_vect: NDArray[np.float64],
-    R: NDArray[np.float64],
+    ensemble: np.ndarray,
+    obs_vect: np.ndarray,
+    R: np.ndarray,
     N: int,
     r_influ: int,
 ) -> Dict[str, Any]:

@@ -1,135 +1,21 @@
 from typing import Any, Dict
 
 import numpy as np
-from numpy.typing import NDArray
 
-
-def h_operator(nx: int, obs_vect: NDArray[np.float64]) -> NDArray[np.float64]:
-    """
-    Create the observation operator matrix H.
-
-    Args:
-    nx (int): Size of the state vector.
-    obs_vect (numpy.array): Observation vector, where -999 indicates missing data.
-
-    Returns:
-    numpy.array: The observation operator matrix.
-    """
-    # Identifying indices of valid observations (not -999)
-    index_obs = np.where(obs_vect > -999)[0]
-    num_obs = len(index_obs)
-
-    # Initializing the H matrix with zeros
-    h_matrix = np.zeros((num_obs, nx))
-
-    # Setting 1 at positions corresponding to actual observations
-    for i in range(num_obs):
-        h_matrix[i, index_obs[i]] = 1
-
-    return h_matrix
-
-
-def localization(
-    r_influ: int, N: int, cov_prior: NDArray[np.float64]
-) -> NDArray[np.float64]:
-    """
-    Apply localization to the covariance matrix.
-
-    Args:
-    r_influ (int): The radius of influence for localization -- grid cells.
-    N (int): The number of grid points.
-    cov_prior (numpy.array): The prior covariance matrix.
-
-    Returns:
-    numpy.array: Localized covariance matrix.
-    """
-    # Create a localization mask with Gaussian-like decay
-    tmp = np.zeros((N, N))
-    for i in range(1, 3 * r_influ + 1):
-        tmp += np.exp(-(i**2) / r_influ**2) * (
-            np.diag(np.ones(N - i), i) + np.diag(np.ones(N - i), -i)
-        )
-    mask = tmp + np.diag(np.ones(N))
-
-    # Apply the localization mask to the prior covariance matrix
-    cov_prior_loc = np.zeros(cov_prior.shape)
-    for i in range(1, 2):
-        for j in range(1, 2):
-            cov_prior_loc[(i - 1) * N : i * N, (j - 1) * N : j * N] = np.multiply(
-                cov_prior[(i - 1) * N : i * N, (j - 1) * N : j * N], mask
-            )
-
-    return cov_prior_loc
-
-
-def gaussian_mixt(
-    weight_vect: NDArray[np.float64],
-    n_obs: int,
-    ens_vect: NDArray[np.float64],
-    obs_vect: NDArray[np.float64],
-    h_matrix: NDArray[np.float64],
-    cov_matrix: NDArray[np.float64],
-) -> NDArray[np.float64]:
-    """
-    Compute the weights for ensemble members using Gaussian Mixture Model.
-
-    Args:
-    weight_vect (numpy.array): Current weights of the ensemble members.
-    n_obs (int): Number of observations.
-    ens_vect (numpy.array): Ensemble matrix.
-    obs_vect (numpy.array): Observation vector.
-    h_matrix (numpy.array): Observation operator matrix.
-    cov_matrix (numpy.array): Covariance matrix of the observations.
-
-    Returns:
-    numpy.array: Updated weights for the ensemble members.
-    """
-    # Normalizing factor for Gaussian probability density function
-    norm_factor = 1 / np.sqrt(((2 * np.pi) ** n_obs) * np.linalg.det(cov_matrix))
-    weight_mixt = np.zeros(len(weight_vect))
-    prob_dens = np.zeros(len(weight_vect))
-
-    # Calculating the weights based on the Gaussian distribution
-    for i in range(ens_vect.shape[1]):
-        innovation = obs_vect[:, 0] - h_matrix.dot(ens_vect[:, i])
-        prob_dens[i] = norm_factor * np.exp(
-            -(1 / 2)
-            * (
-                (np.transpose(innovation)).dot(
-                    np.linalg.inv(cov_matrix).dot(innovation)
-                )
-            )
-        )
-        weight_mixt[i] = prob_dens[i] * weight_vect[i]
-
-    # Normalizing the weights
-    weight_final = weight_mixt / np.sum(weight_mixt)
-
-    return weight_final
-
-
-def randsample(n: int, p: NDArray[np.float64]) -> NDArray[np.int64]:
-    """
-    Perform resampling based on given probabilities.
-
-    Args:
-    n (int): Number of items to sample.
-    p (numpy.array): Array of probabilities associated with each item.
-
-    Returns:
-    numpy.array: Array of indices, sampled according to probabilities p.
-    """
-    return np.random.choice(np.arange(0, n, 1), size=n, replace=True, p=p)
+from non_gaussian_data_assim.gaussian_mixture import gaussian_mixt
+from non_gaussian_data_assim.localization import localization
+from non_gaussian_data_assim.observation_operator import h_operator
+from non_gaussian_data_assim.rand_utils import randsample
 
 
 def agmf(
     mem: int,
     nx: int,
-    ensemble: NDArray[np.float64],
-    obs_vect: NDArray[np.float64],
-    R: NDArray[np.float64],
+    ensemble: np.ndarray,
+    obs_vect: np.ndarray,
+    R: np.ndarray,
     h: float,
-    w_prev: NDArray[np.float64],
+    w_prev: np.ndarray,
     nc_threshold: float,
     N: int,
     r_influ: int,

@@ -1,44 +1,20 @@
 from typing import Any, Dict
 
 import numpy as np
-from numpy.typing import NDArray
 
-
-def h_operator(nx: int, obs_vect: NDArray[np.float64]) -> NDArray[np.float64]:
-    """
-    Create the observation operator matrix H.
-
-    Args:
-    nx (int): Size of the state vector.
-    obs_vect (numpy.array): Observation vector, where -999 indicates missing data.
-
-    Returns:
-    numpy.array: The observation operator matrix.
-    """
-    # Identifying indices of valid observations (not -999)
-    index_obs = np.where(obs_vect > -999)[0]
-    num_obs = len(index_obs)
-
-    # Initializing the H matrix with zeros
-    h_matrix = np.zeros((num_obs, nx))
-
-    # Setting 1 at positions corresponding to actual observations
-    for i in range(num_obs):
-        h_matrix[i, index_obs[i]] = 1
-
-    return h_matrix
+from non_gaussian_data_assim.observation_operator import h_operator
 
 
 def grad_log_post(
-    H: NDArray[np.float64],
-    R: NDArray[np.float64],
-    R_inv: NDArray[np.float64],
-    y: NDArray[np.float64],
-    y_i: NDArray[np.float64],
-    B: NDArray[np.float64],
-    x_s_i: NDArray[np.float64],
-    x0_mean: NDArray[np.float64],
-) -> NDArray[np.float64]:
+    H: np.ndarray,
+    R: np.ndarray,
+    R_inv: np.ndarray,
+    y: np.ndarray,
+    y_i: np.ndarray,
+    B: np.ndarray,
+    x_s_i: np.ndarray,
+    x0_mean: np.ndarray,
+) -> np.ndarray:
     """
     Calculate the gradient of the log posterior distribution.
 
@@ -65,10 +41,10 @@ def grad_log_post(
 def pff(
     n_mem: int,
     n_states: int,
-    ensemble: NDArray[np.float64],
-    obs_vect: NDArray[np.float64],
-    index_obs: NDArray[np.int64],
-    R: NDArray[np.float64],
+    ensemble: np.ndarray,
+    obs_vect: np.ndarray,
+    index_obs: np.ndarray,
+    R: np.ndarray,
 ) -> Dict[str, Any]:
     """
     Implement the Particle Flow Filter.
