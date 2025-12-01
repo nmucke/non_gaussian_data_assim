@@ -1,8 +1,6 @@
 import numpy as np
 from numpy.typing import NDArray
 
-from non_gaussian_data_assim.observation_operator import h_operator
-
 
 def gaussian_mixt(
     weight_vect: np.ndarray,

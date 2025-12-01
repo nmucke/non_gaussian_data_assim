@@ -3,8 +3,9 @@ from typing import Any, Callable, Dict
 import numpy as np
 
 from non_gaussian_data_assim.da_methods.base import BaseDataAssimilationMethod
+from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 from non_gaussian_data_assim.localization import localization
-from non_gaussian_data_assim.observation_operator import h_operator
+from non_gaussian_data_assim.observation_operator import ObservationOperator
 
 
 def enkf(
@@ -80,7 +81,8 @@ class EnsembleKalmanFilterLocalization(BaseDataAssimilationMethod):
         R: np.ndarray,
         N: int,
         r_influ: int,
-        obs_operator: Callable[[np.ndarray], np.ndarray],
+        obs_operator: ObservationOperator,
+        forward_operator: BaseForwardModel,
     ) -> None:
         """
         Implement the Ensemble Kalman Filter with localization.

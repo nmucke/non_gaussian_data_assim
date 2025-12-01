@@ -3,7 +3,7 @@ from typing import Any, Dict
 import numpy as np
 
 from non_gaussian_data_assim.gaussian_mixture import gaussian_mixt
-from non_gaussian_data_assim.localization import localization
+from non_gaussian_data_assim.localization import distance_based_localization
 from non_gaussian_data_assim.observation_operator import h_operator
 from non_gaussian_data_assim.rand_utils import randsample
 

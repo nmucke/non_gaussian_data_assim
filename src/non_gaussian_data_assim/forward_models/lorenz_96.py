@@ -1,6 +1,9 @@
+import pdb
 from typing import Tuple
 
 import numpy as np
+
+from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 
 
 def L96_RK4(X: np.ndarray, dt: float, F: float) -> np.ndarray:
@@ -133,3 +136,30 @@ def L96_RK4_ensemble(X_in: np.ndarray, dt: float, F: float) -> np.ndarray:
     X_out = X_in + (dt / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
 
     return X_out
+
+
+class Lorenz96Model(BaseForwardModel):
+    """Base class for forward models."""
+
+    def __init__(
+        self, forcing_term: float, state_dim: int, dt: float, num_model_steps: int
+    ) -> None:
+        """Initialize the forward model."""
+        super().__init__(dt, num_model_steps, state_dim)
+
+        self.forcing_term = forcing_term
+        self.dt = dt
+
+        self.num_states = 1
+        self.state_dim = state_dim
+
+    def _one_model_step(self, ensemble: np.ndarray) -> np.ndarray:
+        """One inner step of the forward model."""
+
+        ensemble_size = ensemble.shape[0]
+
+        out = L96_RK4_ensemble(
+            X_in=ensemble[:, 0].transpose(), dt=self.dt, F=self.forcing_term
+        ).transpose()
+
+        return out.reshape(ensemble_size, self.num_states, self.state_dim)

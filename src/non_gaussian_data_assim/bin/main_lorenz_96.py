@@ -4,12 +4,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 
+from non_gaussian_data_assim.da_methods.agmf import AdaptiveGaussianMixtureFilter
 from non_gaussian_data_assim.da_methods.enkf import EnsembleKalmanFilter
-from non_gaussian_data_assim.da_methods.enkf_loc import EnsembleKalmanFilterLocalization
-from non_gaussian_data_assim.da_methods.particle_filter import ParticleFilter
+
+# from non_gaussian_data_assim.da_methods.enkf_loc import EnsembleKalmanFilterLocalization
+# from non_gaussian_data_assim.da_methods.particle_filter import ParticleFilter
+# from non_gaussian_data_assim.da_methods.pff import ParticleFlowFilter
+# from non_gaussian_data_assim.da_methods.pff_loc import ParticleFlowFilterLocalization
 from non_gaussian_data_assim.da_methods.pff import ParticleFlowFilter
-from non_gaussian_data_assim.da_methods.pff_loc import ParticleFlowFilterLocalization
-from non_gaussian_data_assim.forward_models.lorenz_96 import L96_RK4, L96_RK4_ensemble
+from non_gaussian_data_assim.forward_models.lorenz_96 import Lorenz96Model
+from non_gaussian_data_assim.observation_operator import ObservationOperator
 
 np.random.seed(42)
 
@@ -17,56 +21,91 @@ np.random.seed(42)
 DT = 0.01
 F = 8.0
 NUM_TIME_STEPS = 100
+NUM_STATES = 1
 STATE_DIM = 50
-MEM_SIZE = 1000
+NUM_SKIP = 3
+ENSEMBLE_SIZE = 1000
 
 # Initial state
-X_0 = np.random.randn(STATE_DIM) * 10
+X_0 = np.random.randn(NUM_STATES, STATE_DIM) * 10
 X_0[-1] = X_0[0]  # Periodic boundary condition
 
 # Observation ids
-OBS_IDS = np.arange(0, STATE_DIM, 5)
-NO_OBS_IDS = np.setdiff1d(np.arange(0, STATE_DIM), OBS_IDS)
+OBS_IDS = np.arange(0, STATE_DIM, NUM_SKIP)
+OBS_STATES = (0,)
 
 # Observation error covariance matrix
-R = np.eye(len(OBS_IDS)) * 0.01
+R = np.eye(len(OBS_IDS)) * 0.1
 
 
 def main() -> None:
+    """Main function."""
 
-    true_sol = np.zeros((NUM_TIME_STEPS, STATE_DIM))
-    true_sol[0, :] = X_0
-    for i in range(1, NUM_TIME_STEPS):
-        true_sol[i, :] = L96_RK4(true_sol[i - 1, :], DT, F)
-
-    obs_vect = true_sol.copy()
-    obs_vect[:, NO_OBS_IDS] = -9999  # -999 indicates no observation
-
-    da_model = ParticleFilter(
-        mem=MEM_SIZE,
-        nx=STATE_DIM,
-        R=R,
-        # N=STATE_DIM,
-        # r_influ=10,
-        obs_operator=lambda x: x,
+    # Define the forward model
+    forward_model = Lorenz96Model(
+        forcing_term=F, state_dim=STATE_DIM, dt=DT, num_model_steps=1
     )
 
-    prior_ensemble = np.zeros((NUM_TIME_STEPS, STATE_DIM, MEM_SIZE))
-    prior_ensemble[0, :, :] = np.random.randn(STATE_DIM, MEM_SIZE) * 10
+    # Define the observation operator
+    obs_operator = ObservationOperator(
+        obs_states=OBS_STATES, obs_indices=OBS_IDS, state_dim=STATE_DIM
+    )
+
+    # Initialize the true solution and observations
+    observations = np.zeros((len(OBS_IDS), NUM_TIME_STEPS))
+    true_sol = np.zeros((1, NUM_STATES, STATE_DIM, NUM_TIME_STEPS))
+    true_sol[0, ..., 0] = X_0
+
+    # Perform the forward model
+    for i in range(1, NUM_TIME_STEPS):
+        true_sol[..., i] = forward_model(true_sol[..., i - 1])
+        observations[:, i] = obs_operator(true_sol[..., i])
+
+    # Define the data assimilation model
+    # da_model = AdaptiveGaussianMixtureFilter(
+    #     ensemble_size=ENSEMBLE_SIZE,
+    #     R=R,
+    #     obs_operator=obs_operator,
+    #     forward_operator=forward_model,
+    #     inflation_factor=1.0,
+    #     localization_distance=10,
+    #     w_prev=np.ones(ENSEMBLE_SIZE) / ENSEMBLE_SIZE,
+    #     nc_threshold=0.5,
+    # )
+    da_model = ParticleFlowFilter(
+        ensemble_size=ENSEMBLE_SIZE,
+        R=R,
+        obs_operator=obs_operator,
+        forward_operator=forward_model,
+    )
+
+    # Initialize the prior ensemble
+    prior_ensemble = np.zeros((ENSEMBLE_SIZE, NUM_STATES, STATE_DIM, NUM_TIME_STEPS))
+    prior_ensemble[..., 0] = np.random.randn(ENSEMBLE_SIZE, NUM_STATES, STATE_DIM) * 10
+    prior_ensemble[:, :, -1] = prior_ensemble[:, :, 0]
+
+    # Initialize the posterior ensemble
     posterior_ensemble = prior_ensemble.copy()
+
+    # Perform the data assimilation
     for i in tqdm(range(1, NUM_TIME_STEPS)):
-        prior_ensemble[i, :] = L96_RK4_ensemble(prior_ensemble[i - 1, :], DT, F)
-        posterior_ensemble[i, :] = da_model(
-            prior_ensemble=prior_ensemble[i, :], obs_vect=obs_vect[i, :]
+        prior_ensemble[..., i] = forward_model(prior_ensemble[..., i - 1])
+        posterior_ensemble[..., i] = da_model(
+            prior_ensemble=posterior_ensemble[..., i - 1], obs_vect=observations[:, i]
         )
 
-    prior_error = true_sol - prior_ensemble.mean(axis=-1)
-    prior_error = np.sqrt(np.sum(prior_error**2, axis=-1))
-    posterior_error = true_sol - posterior_ensemble.mean(axis=-1)
-    posterior_error = np.sqrt(np.sum(posterior_error**2, axis=-1))
+    # Calculate the prior and posterior errors
+    prior_error = true_sol - prior_ensemble.mean(axis=(0, 1))
+    prior_error = np.sqrt(np.sum(prior_error**2, axis=(0, 1)))
+    posterior_error = true_sol - posterior_ensemble.mean(axis=(0, 1))
+    posterior_error = np.sqrt(np.sum(posterior_error**2, axis=(0, 1)))
 
     print(f"Prior error: {prior_error.mean()}")
     print(f"Posterior error: {posterior_error.mean()}")
+
+    true_sol = true_sol[0, 0]
+
+    idx_to_plot = 17
 
     plt.figure()
     plt.subplot(2, 3, 1)
@@ -74,53 +113,59 @@ def main() -> None:
     plt.colorbar()
     plt.title("True Solution")
     plt.subplot(2, 3, 2)
-    plt.imshow(prior_ensemble.mean(axis=-1))
+    plt.imshow(prior_ensemble.mean(axis=(0, 1)))
     plt.colorbar()
     plt.title("Prior Ensemble Mean")
     plt.subplot(2, 3, 3)
-    plt.imshow(posterior_ensemble.mean(axis=-1))
+    plt.imshow(posterior_ensemble.mean(axis=(0, 1)))
     plt.colorbar()
     plt.title("Posterior Ensemble Mean")
     plt.subplot(2, 3, 4)
-    plt.imshow(true_sol - prior_ensemble.mean(axis=-1))
+    plt.imshow(true_sol - prior_ensemble.mean(axis=(0, 1)))
     plt.colorbar()
     plt.title("|True - Prior| difference")
     plt.subplot(2, 3, 5)
-    plt.imshow(true_sol - posterior_ensemble.mean(axis=-1))
+    plt.imshow(true_sol - posterior_ensemble.mean(axis=(0, 1)))
     plt.colorbar()
     plt.title("|True - Posterior| difference")
     plt.xlabel("Time")
     plt.ylabel("State")
     plt.subplot(2, 3, 6)
     plt.plot(
-        prior_ensemble[:, 25, :].mean(axis=-1),
+        prior_ensemble[:, :, idx_to_plot, :].mean(axis=(0, 1)),
         label="Prior",
         color="tab:red",
         linewidth=3,
     )
     plt.plot(
-        posterior_ensemble[:, 25, :].mean(axis=-1),
+        posterior_ensemble[:, :, idx_to_plot, :].mean(axis=(0, 1)),
         label="Posterior",
         color="tab:blue",
         linewidth=3,
     )
     # Shade the standard deviation of the posterior on the time series plot
-    mean_post = posterior_ensemble[:, 25, :].mean(axis=-1)
-    std_post = posterior_ensemble[:, 25, :].std(axis=-1)
-    time_axis = np.arange(posterior_ensemble.shape[0])
+    mean_post = posterior_ensemble[:, :, idx_to_plot, :].mean(axis=(0, 1))
+    std_post = posterior_ensemble[:, :, idx_to_plot, :].std(axis=(0, 1))
+    time_axis = np.arange(posterior_ensemble.shape[-1])
     plt.fill_between(
         time_axis,
-        mean_post - 3 * std_post,
-        mean_post + 3 * std_post,
+        mean_post - std_post,
+        mean_post + std_post,
         color="tab:blue",
         alpha=0.2,
-        label="Posterior ±3 Std",
+        label="Posterior ± Std",
     )
 
-    plt.plot(true_sol[:, 25], label="True", color="black", linewidth=3, linestyle="--")
+    plt.plot(
+        true_sol[idx_to_plot, :],
+        label="True",
+        color="black",
+        linewidth=3,
+        linestyle="--",
+    )
     plt.xlabel("Time")
     plt.ylabel("State 25")
-    plt.ylim(-5, 5)
+    plt.ylim(-10, 10)
     plt.legend()
     plt.show()
 

@@ -3,25 +3,33 @@ repos:
     rev: v4.5.0
     hooks:
       - id: trailing-whitespace
+        exclude: ^archive/
       - id: end-of-file-fixer
+        exclude: ^archive/
       - id: check-yaml
+        exclude: ^archive/
       - id: check-added-large-files
+        exclude: ^archive/
       - id: check-merge-conflict
+        exclude: ^archive/
 
   - repo: https://github.com/psf/black
     rev: 24.1.1
     hooks:
       - id: black
         language_version: python3.13
+        exclude: ^archive/
 
   - repo: https://github.com/pycqa/isort
     rev: 5.13.2
     hooks:
       - id: isort
         args: ["--profile", "black"]
+        exclude: ^archive/
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.8.0
     hooks:
       - id: mypy
         args: [--ignore-missing-imports]
+        exclude: ^archive/
