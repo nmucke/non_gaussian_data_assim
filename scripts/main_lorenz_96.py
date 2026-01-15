@@ -6,11 +6,6 @@ from tqdm import tqdm
 
 from non_gaussian_data_assim.da_methods.agmf import AdaptiveGaussianMixtureFilter
 from non_gaussian_data_assim.da_methods.enkf import EnsembleKalmanFilter
-
-# from non_gaussian_data_assim.da_methods.enkf_loc import EnsembleKalmanFilterLocalization
-# from non_gaussian_data_assim.da_methods.particle_filter import ParticleFilter
-# from non_gaussian_data_assim.da_methods.pff import ParticleFlowFilter
-# from non_gaussian_data_assim.da_methods.pff_loc import ParticleFlowFilterLocalization
 from non_gaussian_data_assim.da_methods.pff import ParticleFlowFilter
 from non_gaussian_data_assim.forward_models.lorenz_96 import Lorenz96Model
 from non_gaussian_data_assim.observation_operator import ObservationOperator
@@ -20,11 +15,11 @@ np.random.seed(42)
 # Constants and parameters
 DT = 0.01
 F = 8.0
-NUM_TIME_STEPS = 100
+NUM_TIME_STEPS = 1000
 NUM_STATES = 1
-STATE_DIM = 50
+STATE_DIM = 25
 NUM_SKIP = 3
-ENSEMBLE_SIZE = 1000
+ENSEMBLE_SIZE = 100
 
 # Initial state
 X_0 = np.random.randn(NUM_STATES, STATE_DIM) * 10
@@ -62,22 +57,23 @@ def main() -> None:
         observations[:, i] = obs_operator(true_sol[..., i])
 
     # Define the data assimilation model
-    da_model = AdaptiveGaussianMixtureFilter(
-        ensemble_size=ENSEMBLE_SIZE,
-        R=R,
-        obs_operator=obs_operator,
-        forward_operator=forward_model,
-        inflation_factor=1.0,
-        localization_distance=10,
-        w_prev=np.ones(ENSEMBLE_SIZE) / ENSEMBLE_SIZE,
-        nc_threshold=0.5,
-    )
-    # da_model = ParticleFlowFilter(
+    # da_model = EnsembleKalmanFilter(
     #     ensemble_size=ENSEMBLE_SIZE,
     #     R=R,
     #     obs_operator=obs_operator,
     #     forward_operator=forward_model,
+    #     inflation_factor=1.0,
+    #     localization_distance=5,
+    #     # w_prev=np.ones(ENSEMBLE_SIZE) / ENSEMBLE_SIZE,
+    #     # nc_threshold=0.5,
     # )
+    da_model = ParticleFlowFilter(
+        ensemble_size=ENSEMBLE_SIZE,
+        R=R,
+        obs_operator=obs_operator,
+        forward_operator=forward_model,
+        localization_distance=5,
+    )
 
     # Initialize the prior ensemble
     prior_ensemble = np.zeros((ENSEMBLE_SIZE, NUM_STATES, STATE_DIM, NUM_TIME_STEPS))

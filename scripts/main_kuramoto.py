@@ -20,7 +20,7 @@ np.random.seed(42)
 # Constants and parameters
 DT = 0.05
 NU = 1.0
-NUM_TIME_STEPS = 500
+NUM_TIME_STEPS = 150
 NUM_STATES = 1
 STATE_DIM = 1024
 NUM_MODEL_STEPS = 4
