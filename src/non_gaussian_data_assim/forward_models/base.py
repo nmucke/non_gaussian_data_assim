@@ -1,26 +1,74 @@
+import pdb
 from abc import abstractmethod
+from typing import Any, Callable
 
+import equinox as eqx
+import jax
+import jax.numpy as jnp
 import numpy as np
+
+from non_gaussian_data_assim.time_integrators import RungeKutta4, rollout
 
 
 class BaseForwardModel:
     """Base class for forward models."""
 
-    def __init__(self, dt: float, num_model_steps: int, state_dim: int):
+    def __init__(
+        self,
+        dt: float,
+        inner_steps: int,
+        state_dim: int,
+        num_states: int = 1,
+        stepper: Callable = RungeKutta4,
+    ):
         """Initialize the forward model."""
-        self.num_states = 1
+        self.num_states = num_states
         self.state_dim = state_dim
         self.dt = dt
-        self.num_model_steps = num_model_steps
+        self.inner_steps = inner_steps
+        self.stepper = stepper(self.dt, self.RHS)
 
     @abstractmethod
-    def _one_model_step(self, x: np.ndarray) -> np.ndarray:
-        """One inner step of the forward model."""
+    def RHS(self, x: jnp.ndarray) -> jnp.ndarray:
+        """Right hand side of the forward model."""
         raise NotImplementedError
 
-    def __call__(self, x: np.ndarray) -> np.ndarray:
-        """Forward the model."""
+    def __call__(self, x: jnp.ndarray, _: None = None) -> jnp.ndarray:
+        """
+        Forward the model.
 
-        for _ in range(self.num_model_steps):
-            x = self._one_model_step(x)
-        return x
+        Args:
+            x: State array of shape [ensemble, num_states, state_dim]
+
+        Returns:
+            tuple: (new_time, new_state) where new_state has shape [ensemble, num_states, state_dim]
+        """
+
+        rollout_fn = rollout(
+            self.stepper, self.inner_steps, output_only_final_state=True
+        )
+
+        return jax.vmap(rollout_fn)(x)
+
+    def rollout(
+        self,
+        x: jnp.ndarray,
+        outer_steps: int,
+    ) -> jnp.ndarray:
+        """
+        Outer rollout the model for the given number of outer steps.
+
+        Args:
+            x: State array of shape [ensemble, num_states, state_dim]
+            outer_steps: Number of outer steps to rollout
+
+        Returns:
+            State array of shape [ensemble, num_states, state_dim]
+        """
+        rollout_fn = rollout(
+            self.__call__,
+            outer_steps,
+            output_only_final_state=False,
+            include_initial_state=True,
+        )
+        return jax.vmap(rollout_fn)(x)

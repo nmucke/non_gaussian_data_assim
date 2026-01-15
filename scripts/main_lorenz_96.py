@@ -1,5 +1,8 @@
 import pdb
+import time
 
+import jax
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
@@ -10,27 +13,35 @@ from non_gaussian_data_assim.da_methods.pff import ParticleFlowFilter
 from non_gaussian_data_assim.forward_models.lorenz_96 import Lorenz96Model
 from non_gaussian_data_assim.observation_operator import ObservationOperator
 
-np.random.seed(42)
+SEED = 42
 
 # Constants and parameters
 DT = 0.01
 F = 8.0
-NUM_TIME_STEPS = 1000
+T0 = 0.0
+
+OUTER_STEPS = 1000
+INNER_STEPS = 4
+
+
 NUM_STATES = 1
 STATE_DIM = 25
 NUM_SKIP = 3
 ENSEMBLE_SIZE = 100
 
-# Initial state
-X_0 = np.random.randn(NUM_STATES, STATE_DIM) * 10
-X_0[-1] = X_0[0]  # Periodic boundary condition
+rng_key = jax.random.PRNGKey(SEED)
+
+# Initial state - shape: [1, num_states, state_dim] for single ensemble member
+rng_key, key = jax.random.split(rng_key)
+X_0 = jax.random.normal(key, (1, NUM_STATES, STATE_DIM)) * 10
+X_0 = X_0.at[0, 0, -1].set(X_0[0, 0, 0])  # Periodic boundary condition
 
 # Observation ids
 OBS_IDS = np.arange(0, STATE_DIM, NUM_SKIP)
 OBS_STATES = (0,)
 
 # Observation error covariance matrix
-R = np.eye(len(OBS_IDS)) * 0.1
+R = jnp.eye(len(OBS_IDS)) * 0.1
 
 
 def main() -> None:
@@ -38,7 +49,7 @@ def main() -> None:
 
     # Define the forward model
     forward_model = Lorenz96Model(
-        forcing_term=F, state_dim=STATE_DIM, dt=DT, num_model_steps=1
+        forcing_term=F, state_dim=STATE_DIM, dt=DT, inner_steps=INNER_STEPS
     )
 
     # Define the observation operator
@@ -46,37 +57,35 @@ def main() -> None:
         obs_states=OBS_STATES, obs_indices=OBS_IDS, state_dim=STATE_DIM
     )
 
-    # Initialize the true solution and observations
-    observations = np.zeros((len(OBS_IDS), NUM_TIME_STEPS))
-    true_sol = np.zeros((1, NUM_STATES, STATE_DIM, NUM_TIME_STEPS))
-    true_sol[0, ..., 0] = X_0
+    true_sol = forward_model.rollout(X_0, OUTER_STEPS - 1)
 
-    # Perform the forward model
-    for i in range(1, NUM_TIME_STEPS):
-        true_sol[..., i] = forward_model(true_sol[..., i - 1])
-        observations[:, i] = obs_operator(true_sol[..., i])
+    # Generate observations
+    observations = jnp.zeros((1, OUTER_STEPS, len(OBS_IDS)))
+    for i in range(OUTER_STEPS):
+        obs_at_t = obs_operator(true_sol[:, i])  # [1, num_obs]
+        observations = observations.at[:, i].set(obs_at_t)  # [num_obs]
 
-    # Define the data assimilation model
-    # da_model = EnsembleKalmanFilter(
-    #     ensemble_size=ENSEMBLE_SIZE,
-    #     R=R,
-    #     obs_operator=obs_operator,
-    #     forward_operator=forward_model,
-    #     inflation_factor=1.0,
-    #     localization_distance=5,
-    #     # w_prev=np.ones(ENSEMBLE_SIZE) / ENSEMBLE_SIZE,
-    #     # nc_threshold=0.5,
-    # )
-    da_model = ParticleFlowFilter(
+    # Instantiate the data assimilation model
+    da_model = EnsembleKalmanFilter(
         ensemble_size=ENSEMBLE_SIZE,
         R=R,
         obs_operator=obs_operator,
         forward_operator=forward_model,
+        inflation_factor=1.0,
         localization_distance=5,
+        # w_prev=np.ones(ENSEMBLE_SIZE) / ENSEMBLE_SIZE,
+        # nc_threshold=0.5,
     )
+    # da_model = ParticleFlowFilter(
+    #     ensemble_size=ENSEMBLE_SIZE,
+    #     R=R,
+    #     obs_operator=obs_operator,
+    #     forward_operator=forward_model,
+    #     localization_distance=5,
+    # )
 
     # Initialize the prior ensemble
-    prior_ensemble = np.zeros((ENSEMBLE_SIZE, NUM_STATES, STATE_DIM, NUM_TIME_STEPS))
+    prior_ensemble = np.zeros((ENSEMBLE_SIZE, NUM_STATES, STATE_DIM, OUTER_STEPS))
     prior_ensemble[..., 0] = np.random.randn(ENSEMBLE_SIZE, NUM_STATES, STATE_DIM) * 10
     prior_ensemble[:, :, -1] = prior_ensemble[:, :, 0]
 
@@ -84,7 +93,8 @@ def main() -> None:
     posterior_ensemble = prior_ensemble.copy()
 
     # Perform the data assimilation
-    for i in tqdm(range(1, NUM_TIME_STEPS)):
+    t = T0
+    for i in tqdm(range(1, OUTER_STEPS)):
         prior_ensemble[..., i] = forward_model(prior_ensemble[..., i - 1])
         posterior_ensemble[..., i] = da_model(
             prior_ensemble=posterior_ensemble[..., i - 1], obs_vect=observations[:, i]

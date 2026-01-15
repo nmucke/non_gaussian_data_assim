@@ -8,6 +8,7 @@ dependencies = [
     "matplotlib>=3.10.7",
     "numpy>=2.3.4",
     "tqdm>=4.67.1",
+    "jax>=0.8.0",
 ]
 
 [build-system]
