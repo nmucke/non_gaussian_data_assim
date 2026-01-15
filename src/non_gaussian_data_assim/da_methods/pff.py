@@ -1,11 +1,12 @@
 import pdb
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional
 
 import numpy as np
 
 from non_gaussian_data_assim.da_methods.base import BaseDataAssimilationMethod
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 from non_gaussian_data_assim.observation_operator import ObservationOperator
+from non_gaussian_data_assim.localization import distance_based_localization
 
 
 def grad_log_post(
@@ -147,6 +148,7 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         R: np.ndarray,
         obs_operator: ObservationOperator,
         forward_operator: BaseForwardModel,
+        localization_distance: Optional[int] = None,
     ) -> None:
         """
         Initialize the Particle Flow Filter.
@@ -163,6 +165,17 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         self.state_dim = forward_operator.state_dim
         self.dofs = self.num_states * self.state_dim
 
+
+        self.localization_distance = localization_distance
+
+        if self.localization_distance is None:
+            self.localization = lambda x: x
+        else:
+            self.localization = lambda x: distance_based_localization(
+                self.localization_distance, self.state_dim, x  # type: ignore[arg-type]
+            )
+
+
     def _analysis_step(
         self, prior_ensemble: np.ndarray, obs_vect: np.ndarray
     ) -> np.ndarray:
@@ -170,6 +183,7 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         prior_ensemble = prior_ensemble.reshape(self.ensemble_size, -1).T
 
         B = np.cov(prior_ensemble)
+        B = self.localization(B)
         x0_mean = np.mean(prior_ensemble, axis=1)
 
         # Pseudo-time flow parameters
@@ -195,7 +209,8 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
 
             for i in range(self.ensemble_size):
                 H = self.obs_operator.obs_matrix
-                Hx[:, :] = self.obs_operator(x_s).T
+
+                Hx[:, :] = H @ x_s
 
                 # x_s[index_obs, :]
                 y = np.ones((n_obs, 1))
@@ -238,16 +253,13 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
             s += 1
 
         # Gathering final results
-        posterior_vect = python_pseudoflow[:, :, -1]
-        mean_posterior = np.mean(posterior_vect, axis=1)
-        cov_posterior = np.cov(posterior_vect)
+        posterior_ensemble = python_pseudoflow[:, :, -1]
+        # mean_posterior = np.mean(posterior_vect, axis=1)
+        # cov_posterior = np.cov(posterior_vect)
 
-        pff_pseudoflow = {
-            "posterior": posterior_vect,
-            "mean_post": mean_posterior,
-            "cov_post": cov_posterior,
-        }
+        posterior_ensemble = posterior_ensemble.reshape(
+            self.ensemble_size, self.num_states, self.state_dim
+        )
 
-        pdb.set_trace()
 
-        return pff_pseudoflow
+        return posterior_ensemble
