@@ -19,18 +19,16 @@ class BaseForwardModel:
         inner_steps: int,
         state_dim: int,
         num_states: int = 1,
-        stepper: Callable = RungeKutta4,
     ):
         """Initialize the forward model."""
         self.num_states = num_states
         self.state_dim = state_dim
         self.dt = dt
         self.inner_steps = inner_steps
-        self.stepper = stepper(self.dt, self.RHS)
 
     @abstractmethod
-    def RHS(self, x: jnp.ndarray) -> jnp.ndarray:
-        """Right hand side of the forward model."""
+    def one_step(self, x: jnp.ndarray) -> jnp.ndarray:
+        """Compute one inner step of the forward model."""
         raise NotImplementedError
 
     def __call__(self, x: jnp.ndarray, _: None = None) -> jnp.ndarray:
@@ -45,7 +43,7 @@ class BaseForwardModel:
         """
 
         rollout_fn = rollout(
-            self.stepper, self.inner_steps, output_only_final_state=True
+            self.one_step, self.inner_steps, output_only_final_state=True
         )
 
         return jax.vmap(rollout_fn)(x)

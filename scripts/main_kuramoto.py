@@ -1,5 +1,7 @@
 import pdb
 
+import jax
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
@@ -12,7 +14,9 @@ from non_gaussian_data_assim.da_methods.enkf import EnsembleKalmanFilter
 # from non_gaussian_data_assim.da_methods.pff import ParticleFlowFilter
 # from non_gaussian_data_assim.da_methods.pff_loc import ParticleFlowFilterLocalization
 from non_gaussian_data_assim.da_methods.pff import ParticleFlowFilter
-from non_gaussian_data_assim.forward_models.kuramoto_sivashinsky import KuramotoSivashinsky
+from non_gaussian_data_assim.forward_models.kuramoto_sivashinsky import (
+    KuramotoSivashinsky,
+)
 from non_gaussian_data_assim.observation_operator import ObservationOperator
 
 np.random.seed(42)
@@ -20,28 +24,27 @@ np.random.seed(42)
 # Constants and parameters
 DT = 0.05
 NU = 1.0
-NUM_TIME_STEPS = 150
+OUTER_STEPS = 1500
 NUM_STATES = 1
 STATE_DIM = 1024
-NUM_MODEL_STEPS = 4
+INNER_STEPS = 4
 NUM_SKIP_OBS = 4
 ENSEMBLE_SIZE = 100
 DOMAIN_LENGTH = 100
 
 # Observation ids
-OBS_IDS = np.arange(0, STATE_DIM, NUM_SKIP_OBS)
+OBS_IDS = jnp.arange(0, STATE_DIM, NUM_SKIP_OBS)
 OBS_STATES = (0,)
 
 # Observation error covariance matrix
-R = np.eye(len(OBS_IDS)) * 0.25
+R = jnp.eye(len(OBS_IDS)) * 0.25
 
-x = np.linspace(start=0, stop=DOMAIN_LENGTH, num=STATE_DIM)
+x = jnp.linspace(start=0, stop=DOMAIN_LENGTH, num=STATE_DIM)
 
-# initial condition 
-U0 = lambda magnitude: magnitude * np.cos((2 * np.pi * x) / DOMAIN_LENGTH) + magnitude * np.cos((4 * np.pi * x) / DOMAIN_LENGTH)
-
-U0_PRIOR = lambda magnitude: magnitude * np.cos((2 * np.pi * x) / DOMAIN_LENGTH) + magnitude * np.cos((4 * np.pi * x) / DOMAIN_LENGTH)
-
+# initial condition
+X_0_FN = lambda magnitude: magnitude * jnp.cos(
+    (2 * jnp.pi * x) / DOMAIN_LENGTH
+) + magnitude * jnp.cos((4 * jnp.pi * x) / DOMAIN_LENGTH)
 
 
 def main() -> None:
@@ -49,11 +52,7 @@ def main() -> None:
 
     # Define the forward model
     forward_model = KuramotoSivashinsky(
-        dt=DT,
-        num_model_steps=NUM_MODEL_STEPS, 
-        state_dim=STATE_DIM, 
-        domain_length=DOMAIN_LENGTH,
-        nu=NU
+        dt=DT, inner_steps=INNER_STEPS, state_dim=STATE_DIM, domain_length=DOMAIN_LENGTH
     )
 
     # Define the observation operator
@@ -61,21 +60,14 @@ def main() -> None:
         obs_states=OBS_STATES, obs_indices=OBS_IDS, state_dim=STATE_DIM
     )
 
-    # Initialize the true solution and observations
-    observations = np.zeros((len(OBS_IDS), NUM_TIME_STEPS))
-    true_sol = np.zeros((1, NUM_STATES, STATE_DIM, NUM_TIME_STEPS))
-    true_sol[0, ..., 0] = U0(0.1)
+    X_0 = X_0_FN(0.1).reshape(1, 1, STATE_DIM)
+    true_sol = forward_model.rollout(X_0, OUTER_STEPS - 1)
 
-    # Perform the forward model
-    for i in range(1, NUM_TIME_STEPS):
-        true_sol[..., i] = forward_model(true_sol[..., i - 1])
-        observations[:, i] = obs_operator(true_sol[..., i])
-
-    # plt.figure()
-    # plt.imshow(true_sol[0, 0, :, -STATE_DIM*2:])
-    # plt.colorbar()
-    # plt.show()
-    # pdb.set_trace()
+    # Generate observations
+    observations = jnp.zeros((1, OUTER_STEPS, len(OBS_IDS)))
+    for i in range(OUTER_STEPS):
+        obs_at_t = obs_operator(true_sol[:, i])  # [1, num_obs]
+        observations = observations.at[:, i].set(obs_at_t)  # [num_obs]
 
     # Define the data assimilation model
     da_model = EnsembleKalmanFilter(
@@ -90,16 +82,18 @@ def main() -> None:
     )
 
     # Initialize the prior ensemble
-    prior_ensemble = np.zeros((ENSEMBLE_SIZE, NUM_STATES, STATE_DIM, NUM_TIME_STEPS))
+    prior_ensemble = np.zeros((ENSEMBLE_SIZE, NUM_STATES, STATE_DIM, OUTER_STEPS))
     magnitude_samples = np.random.uniform(low=0.0, high=1.5, size=ENSEMBLE_SIZE)
-    prior_ensemble[..., 0] = np.array([U0_PRIOR(magnitude) for magnitude in magnitude_samples]).reshape(ENSEMBLE_SIZE, 1, STATE_DIM)
+    prior_ensemble[..., 0] = np.array(
+        [X_0_FN(magnitude) for magnitude in magnitude_samples]
+    ).reshape(ENSEMBLE_SIZE, 1, STATE_DIM)
     prior_ensemble[:, :, -1] = prior_ensemble[:, :, 0]
 
     # Initialize the posterior ensemble
     posterior_ensemble = prior_ensemble.copy()
 
     # Perform the data assimilation
-    for i in tqdm(range(1, NUM_TIME_STEPS)):
+    for i in tqdm(range(1, OUTER_STEPS)):
         prior_ensemble[..., i] = forward_model(prior_ensemble[..., i - 1])
         posterior_ensemble[..., i] = da_model(
             prior_ensemble=posterior_ensemble[..., i - 1], obs_vect=observations[:, i]
@@ -116,27 +110,31 @@ def main() -> None:
 
     true_sol = true_sol[0, 0]
 
-    idx_to_plot = STATE_DIM//5 + 51
+    idx_to_plot = STATE_DIM // 5 + 51
 
     plt.figure()
     plt.subplot(2, 3, 1)
-    plt.imshow(true_sol[..., -STATE_DIM*2:].T, origin="lower")
+    plt.imshow(true_sol[..., -STATE_DIM * 2 :].T, origin="lower")
     plt.colorbar()
     plt.title("True Solution")
     plt.subplot(2, 3, 2)
-    plt.imshow(prior_ensemble.mean(axis=(0, 1))[..., -STATE_DIM*2:].T, origin="lower")
+    plt.imshow(
+        prior_ensemble.mean(axis=(0, 1))[..., -STATE_DIM * 2 :].T, origin="lower"
+    )
     plt.colorbar()
     plt.title("Prior Ensemble Mean")
     plt.subplot(2, 3, 3)
-    plt.imshow(posterior_ensemble.mean(axis=(0, 1))[..., -STATE_DIM*2:].T, origin="lower")
+    plt.imshow(
+        posterior_ensemble.mean(axis=(0, 1))[..., -STATE_DIM * 2 :].T, origin="lower"
+    )
     plt.colorbar()
     plt.title("Posterior Ensemble Mean")
     plt.subplot(2, 3, 4)
-    plt.imshow(prior_error[..., -STATE_DIM*2:].T, origin="lower")
+    plt.imshow(prior_error[..., -STATE_DIM * 2 :].T, origin="lower")
     plt.colorbar()
     plt.title("|True - Prior| difference")
     plt.subplot(2, 3, 5)
-    plt.imshow(posterior_error[..., -STATE_DIM*2:].T, origin="lower")
+    plt.imshow(posterior_error[..., -STATE_DIM * 2 :].T, origin="lower")
     plt.colorbar()
     plt.title("|True - Posterior| difference")
     plt.xlabel("Space")

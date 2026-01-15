@@ -1,11 +1,12 @@
 import pdb
-from typing import Any, Tuple
+from typing import Any, Callable, Tuple
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
+from non_gaussian_data_assim.time_integrators import RungeKutta4
 
 
 @jax.jit  # type: ignore[misc]
@@ -23,6 +24,7 @@ class Lorenz96Model(BaseForwardModel):
         state_dim: int,
         dt: float,
         inner_steps: int,
+        integrator: Callable = RungeKutta4,
     ) -> None:
         """Initialize the forward model."""
         super().__init__(dt, inner_steps, state_dim)
@@ -30,8 +32,14 @@ class Lorenz96Model(BaseForwardModel):
         self.forcing_term = forcing_term
         self.num_states = 1
 
-    def RHS(self, x: jnp.ndarray) -> jnp.ndarray:
+        self.integrator = integrator(self.dt, self.rhs)
+
+    def rhs(self, x: jnp.ndarray) -> jnp.ndarray:
         """Lorenz 96 right hand side."""
         # Ensure x is 1D for the RHS function
         x_flat = x.flatten()
         return L96_RHS(x_flat, self.forcing_term)
+
+    def one_step(self, x: jnp.ndarray) -> jnp.ndarray:
+        """Lorenz 96 stepper."""
+        return self.integrator(x)
