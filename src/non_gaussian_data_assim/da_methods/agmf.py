@@ -1,6 +1,8 @@
 import pdb
 from typing import Any, Dict, Optional
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 
 from non_gaussian_data_assim.da_methods.base import BaseDataAssimilationMethod
@@ -156,7 +158,10 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
             )
 
     def _analysis_step(
-        self, prior_ensemble: np.ndarray, obs_vect: np.ndarray
+        self,
+        prior_ensemble: np.ndarray,
+        obs_vect: np.ndarray,
+        rng_key: jax.random.PRNGKey,
     ) -> np.ndarray:
         """Analysis step of the Adaptive Gaussian Mixture Filter."""
 
@@ -164,12 +169,13 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
         prior_ensemble = prior_ensemble.reshape(self.ensemble_size, -1).T
 
         # Calculating the mean and covariance of the prior
-        cov_prior = (self.inflation_factor**2) * np.cov(prior_ensemble)
+        cov_prior = (self.inflation_factor**2) * jnp.cov(prior_ensemble)
         cov_prior = self.localization(cov_prior)
 
         # Filter and perturb the observation vector
-        obs_vect_perturbed = obs_vect + np.random.multivariate_normal(
-            np.zeros(self.obs_operator.num_obs), self.R, size=self.ensemble_size
+        rng_key, key = jax.random.split(rng_key)
+        obs_vect_perturbed = obs_vect + jax.random.multivariate_normal(
+            key, jnp.zeros(self.obs_operator.num_obs), self.R, shape=self.ensemble_size
         )
         obs_vect_perturbed = obs_vect_perturbed.T
 
@@ -181,7 +187,7 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
         k_right = obs_matrix @ cov_prior @ obs_matrix.T + self.R
 
         # K_left * K_right^-1
-        kalman_gain = np.linalg.solve(k_right, k_left.T).T
+        kalman_gain = jnp.linalg.solve(k_right, k_left.T).T
 
         # Calculate the innovation
         innovation = obs_vect_perturbed - obs_matrix @ prior_ensemble
@@ -189,7 +195,7 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
         # Calculate the posterior ensemble
         posterior_ensemble = prior_ensemble + kalman_gain @ innovation
 
-        cov_posterior = np.cov(posterior_ensemble)
+        cov_posterior = jnp.cov(posterior_ensemble)
 
         # Recalculating weights
         w_t = gaussian_mixt(
@@ -202,7 +208,7 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
         )
 
         # Evaluating degeneracy and calculating the bridging alpha
-        N_eff = 1 / np.sum(w_t**2)
+        N_eff = 1 / jnp.sum(w_t**2)
         alpha = N_eff / self.ensemble_size
 
         # Adjusting weights
@@ -210,17 +216,44 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
         self.w_prev = w_t
 
         # Resampling if necessary
-        resamp = 0
-        if N_eff < self.nc_threshold:
-            J = randsample(self.ensemble_size, w_t)
-            epsc = np.random.normal(0, 0.1, self.ensemble_size)
-            for i in range(self.ensemble_size):
-                posterior_ensemble[:, i] = (
-                    posterior_ensemble[:, int(J[i])]
-                    + np.sqrt(np.diag(cov_posterior)) * epsc[i]
-                )
-            cov_posterior = (self.inflation_factor**2) * np.cov(posterior_ensemble)
-            resamp = 1
+        def resample_fn(
+            rng_key: jax.random.PRNGKey,
+            posterior_ensemble: jnp.ndarray,
+            cov_posterior: jnp.ndarray,
+            w_t: jnp.ndarray,
+        ) -> tuple[jnp.ndarray, jnp.ndarray]:
+            """Resample the ensemble when degeneracy is detected."""
+            J = jax.random.choice(
+                rng_key, jnp.arange(self.ensemble_size), (self.ensemble_size,), p=w_t
+            )
+            rng_key, key = jax.random.split(rng_key)
+            epsc = jax.random.normal(key, (self.ensemble_size,)) * 0.1
+            # Resample: replace each column i with column J[i] plus noise
+            noise = jnp.sqrt(jnp.diag(cov_posterior))[:, None] * epsc[None, :]
+            posterior_ensemble = posterior_ensemble[:, J] + noise
+            cov_posterior = (self.inflation_factor**2) * jnp.cov(posterior_ensemble)
+            return posterior_ensemble, cov_posterior
+
+        def no_resample_fn(
+            rng_key: jax.random.PRNGKey,
+            posterior_ensemble: jnp.ndarray,
+            cov_posterior: jnp.ndarray,
+            w_t: jnp.ndarray,
+        ) -> tuple[jnp.ndarray, jnp.ndarray]:
+            """No resampling needed."""
+            return posterior_ensemble, cov_posterior
+
+        # Use JAX conditional instead of Python if
+        should_resample = N_eff < self.nc_threshold
+        posterior_ensemble, cov_posterior = jax.lax.cond(
+            should_resample,
+            resample_fn,
+            no_resample_fn,
+            rng_key,
+            posterior_ensemble,
+            cov_posterior,
+            w_t,
+        )
 
         # Result output
         # agmf_output = {

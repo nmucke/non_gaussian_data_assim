@@ -8,6 +8,7 @@ import numpy as np
 from tqdm import tqdm
 
 from non_gaussian_data_assim.da_methods.agmf import AdaptiveGaussianMixtureFilter
+from non_gaussian_data_assim.da_methods.base import da_rollout
 from non_gaussian_data_assim.da_methods.enkf import EnsembleKalmanFilter
 from non_gaussian_data_assim.da_methods.pff import ParticleFlowFilter
 from non_gaussian_data_assim.forward_models.lorenz_96 import Lorenz96Model
@@ -27,7 +28,7 @@ INNER_STEPS = 4
 NUM_STATES = 1
 STATE_DIM = 25
 NUM_SKIP = 3
-ENSEMBLE_SIZE = 100
+ENSEMBLE_SIZE = 1000
 
 # Observation ids
 OBS_IDS = np.arange(0, STATE_DIM, NUM_SKIP)
@@ -59,21 +60,21 @@ def main() -> None:
     true_sol = forward_model.rollout(X_0, OUTER_STEPS - 1)
 
     # Generate observations
-    observations = jnp.zeros((1, OUTER_STEPS, len(OBS_IDS)))
+    observations = jnp.zeros((OUTER_STEPS, len(OBS_IDS)))
     for i in range(OUTER_STEPS):
         obs_at_t = obs_operator(true_sol[:, i])  # [1, num_obs]
-        observations = observations.at[:, i].set(obs_at_t)  # [num_obs]
+        observations = observations.at[i].set(obs_at_t.flatten())  # [num_obs]
 
     # Instantiate the data assimilation model
-    da_model = EnsembleKalmanFilter(
+    da_model = AdaptiveGaussianMixtureFilter(
         ensemble_size=ENSEMBLE_SIZE,
         R=R,
         obs_operator=obs_operator,
         forward_operator=forward_model,
         inflation_factor=1.0,
         localization_distance=5,
-        # w_prev=np.ones(ENSEMBLE_SIZE) / ENSEMBLE_SIZE,
-        # nc_threshold=0.5,
+        w_prev=np.ones(ENSEMBLE_SIZE) / ENSEMBLE_SIZE,
+        nc_threshold=0.5,
     )
     # da_model = ParticleFlowFilter(
     #     ensemble_size=ENSEMBLE_SIZE,
@@ -93,24 +94,17 @@ def main() -> None:
     # Initialize the posterior ensemble
     posterior_ensemble = prior_ensemble.copy()
     posterior_ensemble = posterior_ensemble.reshape(
-        ENSEMBLE_SIZE, 1, NUM_STATES, STATE_DIM
+        ENSEMBLE_SIZE, NUM_STATES, STATE_DIM
     )
 
     # Rollout the prior ensemble
     prior_ensemble = forward_model.rollout(prior_ensemble, OUTER_STEPS - 1)
 
     # Perform the data assimilation
-    t = T0
-    for i in tqdm(range(1, OUTER_STEPS)):
-        posterior_next = da_model(
-            prior_ensemble=posterior_ensemble[:, i - 1], obs_vect=observations[:, i]
-        )
-        posterior_ensemble = jnp.concatenate(
-            [posterior_ensemble, posterior_next[:, None, :, :]], axis=1
-        )
+    rng_key, key = jax.random.split(rng_key)
+    posterior_ensemble = da_model.rollout(posterior_ensemble, observations[1:], rng_key)
 
     # Calculate the prior and posterior errors
-
     true_sol = true_sol.reshape(OUTER_STEPS, STATE_DIM)
 
     prior_error = true_sol - prior_ensemble.mean(axis=(0, 2))

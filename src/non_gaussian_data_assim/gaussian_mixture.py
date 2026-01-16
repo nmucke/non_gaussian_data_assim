@@ -1,3 +1,4 @@
+import jax.numpy as jnp
 import numpy as np
 from numpy.typing import NDArray
 
@@ -25,24 +26,22 @@ def gaussian_mixt(
     numpy.array: Updated weights for the ensemble members.
     """
     # Normalizing factor for Gaussian probability density function
-    norm_factor = 1 / np.sqrt(((2 * np.pi) ** n_obs) * np.linalg.det(cov_matrix))
-    weight_mixt = np.zeros(len(weight_vect))
-    prob_dens = np.zeros(len(weight_vect))
+    norm_factor = 1 / jnp.sqrt(((2 * np.pi) ** n_obs) * jnp.linalg.det(cov_matrix))
+    weight_mixt = jnp.zeros(len(weight_vect))
+    prob_dens = jnp.zeros(len(weight_vect))
 
     # Calculating the weights based on the Gaussian distribution
     for i in range(ens_vect.shape[1]):
-        innovation = obs_vect[:, 0] - h_matrix.dot(ens_vect[:, i])
-        prob_dens[i] = norm_factor * np.exp(
-            -(1 / 2)
-            * (
-                (np.transpose(innovation)).dot(
-                    np.linalg.inv(cov_matrix).dot(innovation)
-                )
+        innovation = obs_vect[:, 0] - h_matrix @ ens_vect[:, i]
+        prob_dens = prob_dens.at[i].set(
+            norm_factor
+            * jnp.exp(
+                -(1 / 2) * ((innovation.T @ jnp.linalg.inv(cov_matrix) @ innovation))
             )
         )
-        weight_mixt[i] = prob_dens[i] * weight_vect[i]
+        weight_mixt = weight_mixt.at[i].set(prob_dens[i] * weight_vect[i])
 
     # Normalizing the weights
-    weight_final = weight_mixt / np.sum(weight_mixt)
+    weight_final = weight_mixt / jnp.sum(weight_mixt)
 
     return weight_final
