@@ -58,13 +58,14 @@ def main() -> None:
         dt=DT, inner_steps=INNER_STEPS, state_dim=STATE_DIM, domain_length=DOMAIN_LENGTH
     )
 
+    # Rollout the true solution
+    X_0 = X_0_FN(0.1).reshape(1, 1, STATE_DIM)
+    true_sol = forward_model.rollout(X_0, OUTER_STEPS - 1)
+
     # Define the observation operator
     obs_operator = ObservationOperator(
         obs_states=OBS_STATES, obs_indices=OBS_IDS, state_dim=STATE_DIM
     )
-
-    X_0 = X_0_FN(0.1).reshape(1, 1, STATE_DIM)
-    true_sol = forward_model.rollout(X_0, OUTER_STEPS - 1)
 
     # Generate observations
     observations = jnp.zeros((OUTER_STEPS, len(OBS_IDS)))
@@ -130,41 +131,26 @@ def main() -> None:
     idx_to_plot = 17
 
     plt.figure()
-    plt.subplot(2, 3, 1)
-    plt.imshow(true_sol)
-    plt.colorbar()
-    plt.title("True Solution")
-    plt.subplot(2, 3, 2)
-    plt.imshow(prior_ensemble.mean(axis=(0, 2)))
-    plt.colorbar()
-    plt.title("Prior Ensemble Mean")
-    plt.subplot(2, 3, 3)
-    plt.imshow(posterior_ensemble.mean(axis=(0, 2)))
-    plt.colorbar()
-    plt.title("Posterior Ensemble Mean")
-    plt.subplot(2, 3, 4)
-    plt.imshow(true_sol - prior_ensemble.mean(axis=(0, 2)))
-    plt.colorbar()
-    plt.title("|True - Prior| difference")
-    plt.subplot(2, 3, 5)
-    plt.imshow(true_sol - posterior_ensemble.mean(axis=(0, 2)))
-    plt.colorbar()
-    plt.title("|True - Posterior| difference")
-    plt.xlabel("Time")
-    plt.ylabel("State")
+    for i, (state, state_name) in enumerate(zip(
+        [
+            true_sol, 
+            prior_ensemble.mean(axis=(0, 2)), 
+            posterior_ensemble.mean(axis=(0, 2)),
+            true_sol - prior_ensemble.mean(axis=(0, 2)),
+            true_sol - posterior_ensemble.mean(axis=(0, 2)),
+        ],
+        [
+            "True Solution", "Prior Ensemble Mean", "Posterior Ensemble Mean",
+            "|True - Prior| difference",
+            "|True - Posterior| difference",
+        ],
+    )):
+        plt.subplot(2, 3, i + 1)
+        plt.imshow(state, origin="lower", vmin=true_sol.min(), vmax=true_sol.max())
+        plt.colorbar()   
+        plt.title(state_name)
+
     plt.subplot(2, 3, 6)
-    plt.plot(
-        prior_ensemble.mean(axis=(0, 2))[:, idx_to_plot],
-        label="Prior",
-        color="tab:red",
-        linewidth=3,
-    )
-    plt.plot(
-        posterior_ensemble.mean(axis=(0, 2))[:, idx_to_plot],
-        label="Posterior",
-        color="tab:blue",
-        linewidth=3,
-    )
     # Shade the standard deviation of the posterior on the time series plot
     mean_post = posterior_ensemble.mean(axis=(0, 2))[:, idx_to_plot]
     std_post = posterior_ensemble.std(axis=(0, 2))[:, idx_to_plot]
@@ -177,14 +163,19 @@ def main() -> None:
         alpha=0.2,
         label="Posterior ± Std",
     )
-
-    plt.plot(
-        true_sol[:, idx_to_plot],
-        label="True",
-        color="black",
-        linewidth=3,
-        linestyle="--",
-    )
+    for state_at_point, state_name, color in zip(
+        [prior_ensemble.mean(axis=(0, 2))[:, idx_to_plot], posterior_ensemble.mean(axis=(0, 2))[:, idx_to_plot], true_sol[:, idx_to_plot]],
+        ["Prior Ensemble Mean", "Posterior Ensemble Mean", "True Solution"],
+        ["tab:red", "tab:blue", "black"],
+    ):
+        plt.plot(
+            state_at_point,
+            label=state_name,
+            color=color,
+            linewidth=3,
+            linestyle="--" if state_name == "True Solution" else "-",
+        )
+    plt.legend()
     plt.xlabel("Time")
     plt.ylabel("State 25")
     plt.ylim(-10, 10)

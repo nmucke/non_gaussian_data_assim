@@ -45,6 +45,7 @@ class BaseForwardModel:
         rollout_fn = rollout(
             self.one_step, self.inner_steps, output_only_final_state=True
         )
+        rollout_fn = jax.jit(rollout_fn)
 
         return jax.vmap(rollout_fn)(x)
 
@@ -69,4 +70,5 @@ class BaseForwardModel:
             output_only_final_state=False,
             include_initial_state=True,
         )
+        rollout_fn = jax.jit(rollout_fn)
         return jax.vmap(rollout_fn)(x)
