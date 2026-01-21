@@ -96,7 +96,7 @@ def main() -> None:
     # Initialize the posterior ensemble
     posterior_ensemble = prior_ensemble.copy()
     posterior_ensemble = posterior_ensemble.reshape(
-        ENSEMBLE_SIZE, NUM_STATES, STATE_DIM
+        ENSEMBLE_SIZE, 1, NUM_STATES, STATE_DIM
     )
 
     # Rollout the prior ensemble
@@ -104,10 +104,9 @@ def main() -> None:
 
     # Perform the data assimilation
     rng_key, key = jax.random.split(rng_key)
-    posterior_ensemble = da_model.rollout(posterior_ensemble, observations[1:], key)
+    posterior_ensemble = da_model.rollout(posterior_ensemble[:, 0], observations[1:], key)
 
     # Perform the data assimilation
-    # t = 0.0
     # for i in tqdm(range(1, OUTER_STEPS)):
     #     rng_key, key = jax.random.split(rng_key)
     #     posterior_next = da_model(
@@ -164,7 +163,7 @@ def main() -> None:
         label="Posterior ± Std",
     )
     for state_at_point, state_name, color in zip(
-        [prior_ensemble.mean(axis=(0, 2))[:, idx_to_plot], posterior_ensemble.mean(axis=(0, 2))[:, idx_to_plot], true_sol[:, idx_to_plot]],
+        [prior_ensemble.mean(axis=(0, 2))[:, idx_to_plot], mean_post, true_sol[:, idx_to_plot]],
         ["Prior Ensemble Mean", "Posterior Ensemble Mean", "True Solution"],
         ["tab:red", "tab:blue", "black"],
     ):
