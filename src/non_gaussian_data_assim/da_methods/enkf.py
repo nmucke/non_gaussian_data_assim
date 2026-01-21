@@ -1,21 +1,14 @@
 import pdb
 from typing import Any, Callable, Dict, Optional
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 
 from non_gaussian_data_assim.da_methods.base import BaseDataAssimilationMethod
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 from non_gaussian_data_assim.localization import distance_based_localization
 from non_gaussian_data_assim.observation_operator import ObservationOperator
-
-# # Function to implement the Ensemble Kalman Filter
-# def enkf(
-#     mem: int,
-#     nx: int,
-#     ensemble: np.ndarray,
-#     obs_vect: np.ndarray,
-#     R: np.ndarray,
-# ) -> Dict[str, Any]:
 
 
 class EnsembleKalmanFilter(BaseDataAssimilationMethod):
@@ -46,7 +39,6 @@ class EnsembleKalmanFilter(BaseDataAssimilationMethod):
         self.num_states = forward_operator.num_states
         self.state_dim = forward_operator.state_dim
         self.dofs = self.num_states * self.state_dim
-
         self.R = R
         self.localization_distance = localization_distance
 
@@ -58,7 +50,10 @@ class EnsembleKalmanFilter(BaseDataAssimilationMethod):
             )
 
     def _analysis_step(
-        self, prior_ensemble: np.ndarray, obs_vect: np.ndarray
+        self,
+        prior_ensemble: np.ndarray,
+        obs_vect: np.ndarray,
+        rng_key: jax.random.PRNGKey,
     ) -> np.ndarray:
         """Analysis step of the Ensemble Kalman Filter.
 
@@ -68,6 +63,7 @@ class EnsembleKalmanFilter(BaseDataAssimilationMethod):
         ensemble (numpy.array): Ensemble of state estimates.
         obs_vect (numpy.array): Observation vector.
         R (numpy.array): Observation error covariance matrix.
+        rng_key (jax.random.PRNGKey): RNG key.
 
         Returns:
         dict: A dictionary containing the posterior ensemble, Kalman gain, innovation,
@@ -79,14 +75,16 @@ class EnsembleKalmanFilter(BaseDataAssimilationMethod):
         prior_ensemble = prior_ensemble.reshape(self.ensemble_size, -1).T
 
         # Calculate the mean and covariance of the prior
-        cov_prior = np.cov(prior_ensemble)
+        cov_prior = jnp.cov(prior_ensemble)
         cov_prior = self.localization(cov_prior)
         cov_prior = self.inflation_factor * cov_prior
 
         # Filter and perturb the observation vector
-        obs_vect_perturbed = obs_vect + np.random.multivariate_normal(
-            np.zeros(self.obs_operator.num_obs), self.R, size=self.ensemble_size
+        rng_key, key = jax.random.split(rng_key)
+        perturb = jax.random.multivariate_normal(
+            key, jnp.zeros(self.obs_operator.num_obs), self.R, shape=self.ensemble_size
         )
+        obs_vect_perturbed = obs_vect + perturb
         obs_vect_perturbed = obs_vect_perturbed.T
 
         # Observation operator matrix
@@ -97,7 +95,7 @@ class EnsembleKalmanFilter(BaseDataAssimilationMethod):
         k_right = obs_matrix @ cov_prior @ obs_matrix.T + self.R
 
         # K_left * K_right^-1
-        kalman_gain = np.linalg.solve(k_right, k_left.T).T
+        kalman_gain = jnp.linalg.solve(k_right, k_left.T).T
 
         # Calculate the innovation
         innovation = obs_vect_perturbed - obs_matrix @ prior_ensemble

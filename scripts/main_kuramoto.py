@@ -1,10 +1,13 @@
 import pdb
 
+import jax
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 
 from non_gaussian_data_assim.da_methods.agmf import AdaptiveGaussianMixtureFilter
+from non_gaussian_data_assim.da_methods.base import da_rollout
 from non_gaussian_data_assim.da_methods.enkf import EnsembleKalmanFilter
 
 # from non_gaussian_data_assim.da_methods.enkf_loc import EnsembleKalmanFilterLocalization
@@ -12,7 +15,9 @@ from non_gaussian_data_assim.da_methods.enkf import EnsembleKalmanFilter
 # from non_gaussian_data_assim.da_methods.pff import ParticleFlowFilter
 # from non_gaussian_data_assim.da_methods.pff_loc import ParticleFlowFilterLocalization
 from non_gaussian_data_assim.da_methods.pff import ParticleFlowFilter
-from non_gaussian_data_assim.forward_models.kuramoto_sivashinsky import KuramotoSivashinsky
+from non_gaussian_data_assim.forward_models.kuramoto_sivashinsky import (
+    KuramotoSivashinsky,
+)
 from non_gaussian_data_assim.observation_operator import ObservationOperator
 
 np.random.seed(42)
@@ -20,144 +25,136 @@ np.random.seed(42)
 # Constants and parameters
 DT = 0.05
 NU = 1.0
-NUM_TIME_STEPS = 150
+OUTER_STEPS = 500
 NUM_STATES = 1
-STATE_DIM = 1024
-NUM_MODEL_STEPS = 4
+STATE_DIM = 512
+INNER_STEPS = 4
 NUM_SKIP_OBS = 4
 ENSEMBLE_SIZE = 100
 DOMAIN_LENGTH = 100
 
 # Observation ids
-OBS_IDS = np.arange(0, STATE_DIM, NUM_SKIP_OBS)
+OBS_IDS = jnp.arange(0, STATE_DIM, NUM_SKIP_OBS)
 OBS_STATES = (0,)
 
 # Observation error covariance matrix
-R = np.eye(len(OBS_IDS)) * 0.25
+R = jnp.eye(len(OBS_IDS)) * 0.25
 
-x = np.linspace(start=0, stop=DOMAIN_LENGTH, num=STATE_DIM)
+x = jnp.linspace(start=0, stop=DOMAIN_LENGTH, num=STATE_DIM)
 
-# initial condition 
-U0 = lambda magnitude: magnitude * np.cos((2 * np.pi * x) / DOMAIN_LENGTH) + magnitude * np.cos((4 * np.pi * x) / DOMAIN_LENGTH)
-
-U0_PRIOR = lambda magnitude: magnitude * np.cos((2 * np.pi * x) / DOMAIN_LENGTH) + magnitude * np.cos((4 * np.pi * x) / DOMAIN_LENGTH)
-
+# initial condition
+X_0_FN = lambda magnitude: magnitude * jnp.cos(
+    (2 * jnp.pi * x) / DOMAIN_LENGTH
+) + magnitude * jnp.cos((4 * jnp.pi * x) / DOMAIN_LENGTH)
 
 
 def main() -> None:
     """Main function."""
 
+    rng_key = jax.random.PRNGKey(42)
+
     # Define the forward model
     forward_model = KuramotoSivashinsky(
-        dt=DT,
-        num_model_steps=NUM_MODEL_STEPS, 
-        state_dim=STATE_DIM, 
-        domain_length=DOMAIN_LENGTH,
-        nu=NU
+        dt=DT, inner_steps=INNER_STEPS, state_dim=STATE_DIM, domain_length=DOMAIN_LENGTH
     )
+
+    # Rollout the true solution
+    X_0 = X_0_FN(0.1).reshape(1, 1, STATE_DIM)
+    true_sol = forward_model.rollout(X_0, OUTER_STEPS - 1)
 
     # Define the observation operator
     obs_operator = ObservationOperator(
         obs_states=OBS_STATES, obs_indices=OBS_IDS, state_dim=STATE_DIM
     )
 
-    # Initialize the true solution and observations
-    observations = np.zeros((len(OBS_IDS), NUM_TIME_STEPS))
-    true_sol = np.zeros((1, NUM_STATES, STATE_DIM, NUM_TIME_STEPS))
-    true_sol[0, ..., 0] = U0(0.1)
-
-    # Perform the forward model
-    for i in range(1, NUM_TIME_STEPS):
-        true_sol[..., i] = forward_model(true_sol[..., i - 1])
-        observations[:, i] = obs_operator(true_sol[..., i])
-
-    # plt.figure()
-    # plt.imshow(true_sol[0, 0, :, -STATE_DIM*2:])
-    # plt.colorbar()
-    # plt.show()
-    # pdb.set_trace()
+    # Generate observations
+    observations = jnp.zeros((OUTER_STEPS, len(OBS_IDS)))
+    for i in range(OUTER_STEPS):
+        obs_at_t = obs_operator(true_sol[:, i])  # [1, num_obs]
+        observations = observations.at[i].set(obs_at_t.flatten())  # [num_obs]
 
     # Define the data assimilation model
-    da_model = EnsembleKalmanFilter(
+    da_model = AdaptiveGaussianMixtureFilter(
         ensemble_size=ENSEMBLE_SIZE,
         R=R,
         obs_operator=obs_operator,
         forward_operator=forward_model,
         inflation_factor=8.0,
         localization_distance=10,
-        # w_prev=np.ones(ENSEMBLE_SIZE) / ENSEMBLE_SIZE,
-        # nc_threshold=0.5,
+        w_prev=np.ones(ENSEMBLE_SIZE) / ENSEMBLE_SIZE,
+        nc_threshold=0.5,
     )
 
     # Initialize the prior ensemble
-    prior_ensemble = np.zeros((ENSEMBLE_SIZE, NUM_STATES, STATE_DIM, NUM_TIME_STEPS))
-    magnitude_samples = np.random.uniform(low=0.0, high=1.5, size=ENSEMBLE_SIZE)
-    prior_ensemble[..., 0] = np.array([U0_PRIOR(magnitude) for magnitude in magnitude_samples]).reshape(ENSEMBLE_SIZE, 1, STATE_DIM)
-    prior_ensemble[:, :, -1] = prior_ensemble[:, :, 0]
+    rng_key, key = jax.random.split(rng_key)
+    magnitude_samples = jax.random.uniform(
+        key, (ENSEMBLE_SIZE,), minval=0.0, maxval=1.5
+    )
+    prior_ensemble = jnp.array([X_0_FN(magnitude) for magnitude in magnitude_samples])
+    prior_ensemble = prior_ensemble.reshape(ENSEMBLE_SIZE, NUM_STATES, STATE_DIM)
 
     # Initialize the posterior ensemble
     posterior_ensemble = prior_ensemble.copy()
+    posterior_ensemble = posterior_ensemble.reshape(
+        ENSEMBLE_SIZE, NUM_STATES, STATE_DIM
+    )
+
+    # Rollout the prior ensemble
+    prior_ensemble = forward_model.rollout(prior_ensemble, OUTER_STEPS - 1)
 
     # Perform the data assimilation
-    for i in tqdm(range(1, NUM_TIME_STEPS)):
-        prior_ensemble[..., i] = forward_model(prior_ensemble[..., i - 1])
-        posterior_ensemble[..., i] = da_model(
-            prior_ensemble=posterior_ensemble[..., i - 1], obs_vect=observations[:, i]
-        )
+    rng_key, key = jax.random.split(rng_key)
+    posterior_ensemble = da_model.rollout(posterior_ensemble, observations[1:], key)
+
+    # Perform the data assimilation
+    # t = 0.0
+    # for i in tqdm(range(1, OUTER_STEPS)):
+    #     rng_key, key = jax.random.split(rng_key)
+    #     posterior_next = da_model(
+    #         prior_ensemble=posterior_ensemble[:, i - 1], obs_vect=observations[:, i], rng_key=key
+    #     )
+    #     posterior_ensemble = jnp.concatenate(
+    #         [posterior_ensemble, posterior_next[:, None, :, :]], axis=1
+    #     )
+
+    true_sol = true_sol.reshape(OUTER_STEPS, STATE_DIM)
 
     # Calculate the prior and posterior errors
-    prior_error = true_sol - prior_ensemble.mean(axis=(0, 1))
-    prior_error = np.sqrt(np.sum(prior_error**2, axis=(0, 1)))
-    posterior_error = true_sol - posterior_ensemble.mean(axis=(0, 1))
-    posterior_error = np.sqrt(np.sum(posterior_error**2, axis=(0, 1)))
+    prior_error = true_sol - prior_ensemble.mean(axis=(0, 2))
+    prior_error = np.sqrt(np.sum(prior_error**2))
+    posterior_error = true_sol - posterior_ensemble.mean(axis=(0, 2))
+    posterior_error = np.sqrt(np.sum(posterior_error**2))
 
-    print(f"Prior error: {prior_error.mean()}")
-    print(f"Posterior error: {posterior_error.mean()}")
+    print(f"Prior error: {prior_error}")
+    print(f"Posterior error: {posterior_error}")
 
-    true_sol = true_sol[0, 0]
-
-    idx_to_plot = STATE_DIM//5 + 51
+    idx_to_plot = 17
 
     plt.figure()
-    plt.subplot(2, 3, 1)
-    plt.imshow(true_sol[..., -STATE_DIM*2:].T, origin="lower")
-    plt.colorbar()
-    plt.title("True Solution")
-    plt.subplot(2, 3, 2)
-    plt.imshow(prior_ensemble.mean(axis=(0, 1))[..., -STATE_DIM*2:].T, origin="lower")
-    plt.colorbar()
-    plt.title("Prior Ensemble Mean")
-    plt.subplot(2, 3, 3)
-    plt.imshow(posterior_ensemble.mean(axis=(0, 1))[..., -STATE_DIM*2:].T, origin="lower")
-    plt.colorbar()
-    plt.title("Posterior Ensemble Mean")
-    plt.subplot(2, 3, 4)
-    plt.imshow(prior_error[..., -STATE_DIM*2:].T, origin="lower")
-    plt.colorbar()
-    plt.title("|True - Prior| difference")
-    plt.subplot(2, 3, 5)
-    plt.imshow(posterior_error[..., -STATE_DIM*2:].T, origin="lower")
-    plt.colorbar()
-    plt.title("|True - Posterior| difference")
-    plt.xlabel("Space")
-    plt.ylabel("Time")
+    for i, (state, state_name) in enumerate(zip(
+        [
+            true_sol, 
+            prior_ensemble.mean(axis=(0, 2)), 
+            posterior_ensemble.mean(axis=(0, 2)),
+            true_sol - prior_ensemble.mean(axis=(0, 2)),
+            true_sol - posterior_ensemble.mean(axis=(0, 2)),
+        ],
+        [
+            "True Solution", "Prior Ensemble Mean", "Posterior Ensemble Mean",
+            "|True - Prior| difference",
+            "|True - Posterior| difference",
+        ],
+    )):
+        plt.subplot(2, 3, i + 1)
+        plt.imshow(state, origin="lower", vmin=true_sol.min(), vmax=true_sol.max())
+        plt.colorbar()   
+        plt.title(state_name)
+
     plt.subplot(2, 3, 6)
-    plt.plot(
-        prior_ensemble[:, :, idx_to_plot, :].mean(axis=(0, 1)),
-        label="Prior",
-        color="tab:red",
-        linewidth=3,
-    )
-    plt.plot(
-        posterior_ensemble[:, :, idx_to_plot, :].mean(axis=(0, 1)),
-        label="Posterior",
-        color="tab:blue",
-        linewidth=3,
-    )
     # Shade the standard deviation of the posterior on the time series plot
-    mean_post = posterior_ensemble[:, :, idx_to_plot, :].mean(axis=(0, 1))
-    std_post = posterior_ensemble[:, :, idx_to_plot, :].std(axis=(0, 1))
-    time_axis = np.arange(posterior_ensemble.shape[-1])
+    mean_post = posterior_ensemble.mean(axis=(0, 2))[:, idx_to_plot]
+    std_post = posterior_ensemble.std(axis=(0, 2))[:, idx_to_plot]
+    time_axis = np.arange(posterior_ensemble.shape[1])
     plt.fill_between(
         time_axis,
         mean_post - std_post,
@@ -166,17 +163,22 @@ def main() -> None:
         alpha=0.2,
         label="Posterior ± Std",
     )
-
-    plt.plot(
-        true_sol[idx_to_plot, :],
-        label="True",
-        color="black",
-        linewidth=3,
-        linestyle="--",
-    )
+    for state_at_point, state_name, color in zip(
+        [prior_ensemble.mean(axis=(0, 2))[:, idx_to_plot], posterior_ensemble.mean(axis=(0, 2))[:, idx_to_plot], true_sol[:, idx_to_plot]],
+        ["Prior Ensemble Mean", "Posterior Ensemble Mean", "True Solution"],
+        ["tab:red", "tab:blue", "black"],
+    ):
+        plt.plot(
+            state_at_point,
+            label=state_name,
+            color=color,
+            linewidth=3,
+            linestyle="--" if state_name == "True Solution" else "-",
+        )
+    plt.legend()
     plt.xlabel("Time")
-    plt.ylabel(f"State {idx_to_plot}")
-    plt.ylim(-3, 3)
+    plt.ylabel("State 25")
+    plt.ylim(-10, 10)
     plt.legend()
     plt.show()
 

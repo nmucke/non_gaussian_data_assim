@@ -1,12 +1,13 @@
 import pdb
 from typing import Any, Callable, Dict, Optional
 
+import jax
 import numpy as np
 
 from non_gaussian_data_assim.da_methods.base import BaseDataAssimilationMethod
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
-from non_gaussian_data_assim.observation_operator import ObservationOperator
 from non_gaussian_data_assim.localization import distance_based_localization
+from non_gaussian_data_assim.observation_operator import ObservationOperator
 
 
 def grad_log_post(
@@ -165,7 +166,6 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         self.state_dim = forward_operator.state_dim
         self.dofs = self.num_states * self.state_dim
 
-
         self.localization_distance = localization_distance
 
         if self.localization_distance is None:
@@ -175,9 +175,11 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
                 self.localization_distance, self.state_dim, x  # type: ignore[arg-type]
             )
 
-
     def _analysis_step(
-        self, prior_ensemble: np.ndarray, obs_vect: np.ndarray
+        self,
+        prior_ensemble: np.ndarray,
+        obs_vect: np.ndarray,
+        rng_key: jax.random.PRNGKey,
     ) -> np.ndarray:
 
         prior_ensemble = prior_ensemble.reshape(self.ensemble_size, -1).T
@@ -260,6 +262,5 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         posterior_ensemble = posterior_ensemble.reshape(
             self.ensemble_size, self.num_states, self.state_dim
         )
-
 
         return posterior_ensemble
