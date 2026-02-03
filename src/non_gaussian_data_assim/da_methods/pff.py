@@ -1,16 +1,20 @@
-from curses import KEY_BREAK
 import pdb
+import time
+from curses import KEY_BREAK
 from typing import Any, Callable, Dict, Optional, Tuple
 
 import jax
-import numpy as np
 import jax.numpy as jnp
-import time
+import numpy as np
 
 from non_gaussian_data_assim.da_methods.base import BaseDataAssimilationMethod
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 from non_gaussian_data_assim.localization import distance_based_localization
 from non_gaussian_data_assim.observation_operator import ObservationOperator
+
+DEFAULT_ALPHA = 0.01 / 10
+DEFAULT_DS = 0.01 / 10
+DEFAULT_B_D = 1.0
 
 
 def grad_log_post(
@@ -45,35 +49,41 @@ def grad_log_post(
 
     return grad_log_post_est
 
+
 def exp_kernel(
-    x: jnp.ndarray, 
-    y: jnp.ndarray, 
-    alpha: float, 
-    B_d: jnp.ndarray
+    x: jnp.ndarray, y: jnp.ndarray, alpha: float, B_d: jnp.ndarray
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        """
-        Get the value and derivative of the kernel function.
-        Args:
-        diff (numpy.array): Difference between two state vectors.
+    """
+    Get the value and derivative of the kernel function.
+    Args:
+    diff (numpy.array): Difference between two state vectors.
 
-        Returns:
-        numpy.array: Value and derivative of the kernel function.
-        """
-        value = jnp.exp(
-            (-1 / 2) * ((x - y) ** 2) / (alpha * B_d)
-        )
-        derivative = ((x - y) / (alpha * B_d)) * value
-        return value, derivative
+    Returns:
+    numpy.array: Value and derivative of the kernel function.
+    """
+    value = jnp.exp((-1 / 2) * ((x - y) ** 2) / (alpha * B_d))
+    derivative = ((x - y) / (alpha * B_d)) * value
+    return value, derivative
 
-def compute_pairwise_interaction(x_s, pair_function):
+
+def compute_pairwise_interaction(
+    x_s: jnp.ndarray, pair_function: Callable
+) -> jnp.ndarray:
+    """
+    Compute the pairwise interaction of the ensemble.
+
+    Args:
+    x_s: State array of shape [ensemble, dof].
+    pair_function: Pairwise function to compute the interaction.
+    """
     x_transposed = x_s.T
 
     # Inner vmap (iterates j): returns [dof, ensemble] (j is dim 1)
     # Outer vmap (iterates i): stacks i at dim 1 -> [dof, ensemble, ensemble]
     vmap_func = jax.vmap(
-        jax.vmap(pair_function, in_axes=(None, 0), out_axes=(1, 1)), 
-        in_axes=(0, None), 
-        out_axes=(1, 1) 
+        jax.vmap(pair_function, in_axes=(None, 0), out_axes=(1, 1)),
+        in_axes=(0, None),
+        out_axes=(1, 1),
     )
 
     vmap_func = jax.jit(vmap_func)
@@ -90,7 +100,9 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         forward_operator: BaseForwardModel,
         localization_distance: Optional[int] = None,
         num_pseudo_time_steps: int = 100,
-        kernel_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] = lambda x, y: np.exp(-((x - y) ** 2) / (2 * alpha * B_d)),
+        kernel_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] = lambda x, y: np.exp(
+            -((x - y) ** 2) / (2 * DEFAULT_ALPHA * DEFAULT_B_D)
+        ),
     ) -> None:
         """
         Initialize the Particle Flow Filter.
@@ -143,18 +155,18 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
 
             # Gradient of the log posterior
             grad_log_post_fn = lambda x: grad_log_post(
-                H=self.obs_operator.obs_matrix, 
-                R=self.R, 
-                R_inv=R_inv, 
-                y=obs_vect, 
-                y_i=self.obs_operator.obs_matrix @ x, 
-                B=B, 
-                x_s_i=x, 
-                x0_mean=x0_mean
+                H=self.obs_operator.obs_matrix,
+                R=self.R,
+                R_inv=R_inv,
+                y=obs_vect,
+                y_i=self.obs_operator.obs_matrix @ x,
+                B=B,
+                x_s_i=x,
+                x0_mean=x0_mean,
             )
             grad_log_post_fn = jax.jit(jax.vmap(grad_log_post_fn))
             dpdx = grad_log_post_fn(x_s.T).T
-            
+
             # B_d = jnp.diag(B)
             # kk = np.zeros((self.dofs, self.ensemble_size, self.ensemble_size))
             # dkdx = np.zeros((self.dofs, self.ensemble_size, self.ensemble_size))
@@ -173,8 +185,11 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
             #     I_f[:, i] = np.sum(attractive_term + repelling_term, axis=1)
 
             # Kernel calculation
-            @jax.jit
-            def kernel_fn(x, y):
+            @jax.jit  # type: ignore[misc]
+            def kernel_fn(
+                x: jnp.ndarray, y: jnp.ndarray
+            ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+                """Kernel function."""
                 return exp_kernel(x, y, alpha, jnp.diag(B))
 
             kernel, dkernel_dx = compute_pairwise_interaction(x_s, kernel_fn)
@@ -196,12 +211,7 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         # mean_posterior = np.mean(posterior_vect, axis=1)
         # cov_posterior = np.cov(posterior_vect)
 
-
-        return x_s.reshape(
-            self.ensemble_size, self.num_states, self.state_dim
-        )
-
-
+        return x_s.reshape(self.ensemble_size, self.num_states, self.state_dim)
 
 
 # def pff(

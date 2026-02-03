@@ -11,6 +11,7 @@ from non_gaussian_data_assim.da_methods.agmf import AdaptiveGaussianMixtureFilte
 from non_gaussian_data_assim.da_methods.base import da_rollout
 from non_gaussian_data_assim.da_methods.enkf import EnsembleKalmanFilter
 from non_gaussian_data_assim.da_methods.pff import ParticleFlowFilter
+from non_gaussian_data_assim.forward_models.lorenz_63 import Lorenz63Model
 from non_gaussian_data_assim.forward_models.lorenz_96 import Lorenz96Model
 from non_gaussian_data_assim.observation_operator import ObservationOperator
 
@@ -18,23 +19,25 @@ SEED = 42
 
 # Constants and parameters
 DT = 0.01
-F = 8.0
+SIGMA = 10.0
+BETA = 2.6666666
+RHO = 28.0
 T0 = 0.0
 
-OUTER_STEPS = 50
-INNER_STEPS = 2
+OUTER_STEPS = 25
+INNER_STEPS = 5
+
 
 NUM_STATES = 1
-STATE_DIM = 25
-NUM_SKIP = 2
-ENSEMBLE_SIZE = 25
+STATE_DIM = 3
+ENSEMBLE_SIZE = 50
 
 # Observation ids
-OBS_IDS = np.arange(0, STATE_DIM, NUM_SKIP)
+OBS_IDS = np.arange(0, 3)
 OBS_STATES = (0,)
 
 # Observation error covariance matrix
-R = jnp.eye(len(OBS_IDS)) * 0.1
+R = jnp.eye(len(OBS_IDS)) * 20.0
 
 
 def main() -> None:
@@ -47,8 +50,12 @@ def main() -> None:
     X_0 = X_0.at[0, 0, -1].set(X_0[0, 0, 0])  # Periodic boundary condition
 
     # Define the forward model
-    forward_model = Lorenz96Model(
-        forcing_term=F, state_dim=STATE_DIM, dt=DT, inner_steps=INNER_STEPS
+    forward_model = Lorenz63Model(
+        dt=DT,
+        inner_steps=INNER_STEPS,
+        sigma=SIGMA,
+        beta=BETA,
+        rho=RHO,
     )
 
     # Rollout the true solution
@@ -63,6 +70,7 @@ def main() -> None:
     observations = jnp.zeros((OUTER_STEPS, len(OBS_IDS)))
     for i in range(OUTER_STEPS):
         obs_at_t = obs_operator(true_sol[:, i])  # [1, num_obs]
+
         rng_key, key = jax.random.split(rng_key)
         obs_at_t = obs_at_t + jax.random.multivariate_normal(
             key, jnp.zeros(len(OBS_IDS)), R
@@ -75,8 +83,7 @@ def main() -> None:
         R=R,
         obs_operator=obs_operator,
         forward_operator=forward_model,
-        localization_distance=5,
-        num_pseudo_time_steps=100,
+        num_pseudo_time_steps=10,
     )
 
     # Initialize the prior ensemble
@@ -87,18 +94,17 @@ def main() -> None:
     )  # Periodic boundary condition
 
     # Initialize the posterior ensemble
-    posterior_ensemble = prior_ensemble.copy().reshape(
-        ENSEMBLE_SIZE, NUM_STATES, STATE_DIM
+    posterior_ensemble = prior_ensemble.copy()
+    posterior_ensemble = posterior_ensemble.reshape(
+        ENSEMBLE_SIZE, 1, NUM_STATES, STATE_DIM
     )
 
     # Rollout the prior ensemble
     prior_ensemble = forward_model.rollout(prior_ensemble, OUTER_STEPS - 1)
 
-    t1 = time.time()
-
     # Perform the data assimilation
-    # rng_key, key = jax.random.split(rng_key)
-    # posterior_ensemble = da_model.rollout(posterior_ensemble, observations[1:], rng_key)
+    rng_key, key = jax.random.split(rng_key)
+    # posterior_ensemble = da_model.rollout(posterior_ensemble[:, 0], observations[1:], rng_key)
 
     # Perform the data assimilation
     posterior_ensemble = posterior_ensemble.reshape(
@@ -120,9 +126,6 @@ def main() -> None:
             [posterior_ensemble, posterior_next[:, None, :, :]], axis=1
         )
 
-    t2 = time.time()
-    print(f"Time taken: {t2 - t1} seconds")
-
     # Calculate the prior and posterior errors
     true_sol = true_sol.reshape(OUTER_STEPS, STATE_DIM)
 
@@ -135,66 +138,41 @@ def main() -> None:
     print(f"Prior error: {prior_error}")
     print(f"Posterior error: {posterior_error}")
 
-    idx_to_plot = 17
+    mean_prior = prior_ensemble.mean(axis=(0, 2))
+    mean_post = posterior_ensemble.mean(axis=(0, 2))
+    std_post = posterior_ensemble.std(axis=(0, 2))
+    time_axis = np.arange(posterior_ensemble.shape[1])
 
     plt.figure()
-    for i, (state, state_name) in enumerate(
-        zip(
-            [
-                true_sol,
-                prior_ensemble.mean(axis=(0, 2)),
-                posterior_ensemble.mean(axis=(0, 2)),
-                true_sol - prior_ensemble.mean(axis=(0, 2)),
-                true_sol - posterior_ensemble.mean(axis=(0, 2)),
-            ],
-            [
-                "True Solution",
-                "Prior Ensemble Mean",
-                "Posterior Ensemble Mean",
-                "|True - Prior| difference",
-                "|True - Posterior| difference",
-            ],
+    for state_idx in range(STATE_DIM):
+        plt.subplot(STATE_DIM, 1, state_idx + 1)
+        for i, (state_name, state_data, color) in enumerate(
+            zip(
+                ["Prior Ensemble Mean", "Posterior Ensemble Mean", "True Solution"],
+                [mean_prior, mean_post, true_sol],
+                ["tab:red", "tab:blue", "black"],
+            )
+        ):
+            plt.plot(
+                time_axis,
+                state_data[:, state_idx],
+                label=state_name,
+                color=color,
+                linewidth=3,
+                linestyle="--" if state_name == "True Solution" else "-",
+            )
+        plt.fill_between(
+            time_axis,
+            mean_post[:, state_idx] - std_post[:, state_idx],
+            mean_post[:, state_idx] + std_post[:, state_idx],
+            color="tab:blue",
+            alpha=0.2,
+            label="Posterior ± Std",
         )
-    ):
-        plt.subplot(2, 3, i + 1)
-        plt.imshow(state, origin="lower", vmin=true_sol.min(), vmax=true_sol.max())
-        plt.colorbar()
-        plt.title(state_name)
-
-    plt.subplot(2, 3, 6)
-    # Shade the standard deviation of the posterior on the time series plot
-    mean_post = posterior_ensemble.mean(axis=(0, 2))[:, idx_to_plot]
-    std_post = posterior_ensemble.std(axis=(0, 2))[:, idx_to_plot]
-    time_axis = np.arange(posterior_ensemble.shape[1])
-    plt.fill_between(
-        time_axis,
-        mean_post - std_post,
-        mean_post + std_post,
-        color="tab:blue",
-        alpha=0.2,
-        label="Posterior ± Std",
-    )
-    for state_at_point, state_name, color in zip(
-        [
-            prior_ensemble.mean(axis=(0, 2))[:, idx_to_plot],
-            posterior_ensemble.mean(axis=(0, 2))[:, idx_to_plot],
-            true_sol[:, idx_to_plot],
-        ],
-        ["Prior Ensemble Mean", "Posterior Ensemble Mean", "True Solution"],
-        ["tab:red", "tab:blue", "black"],
-    ):
-        plt.plot(
-            state_at_point,
-            label=state_name,
-            color=color,
-            linewidth=3,
-            linestyle="--" if state_name == "True Solution" else "-",
-        )
-    plt.legend()
-    plt.xlabel("Time")
-    plt.ylabel("State 25")
-    plt.ylim(-10, 10)
-    plt.legend()
+        plt.legend()
+        plt.xlabel("Time")
+        plt.ylabel("State")
+        plt.ylim(true_sol[:, state_idx].min(), true_sol[:, state_idx].max())
     plt.show()
 
 

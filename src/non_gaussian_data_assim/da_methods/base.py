@@ -128,8 +128,24 @@ class BaseDataAssimilationMethod:
         prior_ensemble: np.ndarray,
         observations: jnp.ndarray,
         rng_key: jax.random.PRNGKey,
+        return_inner_steps: bool = False,
     ) -> jnp.ndarray:
         """Rollout the data assimilation method."""
-        return da_rollout(
-            self._assimilate_data, observations, rng_key, include_initial_state=True
-        )(prior_ensemble)
+
+        if return_inner_steps:
+            da_rollout_fn = da_rollout(
+                self._assimilate_data,
+                observations,
+                rng_key,
+                include_initial_state=True,
+            )
+        else:
+            da_rollout_fn = da_rollout(
+                self._assimilate_data,
+                observations,
+                rng_key,
+                include_initial_state=True,
+            )
+
+        da_rollout_fn = jax.jit(da_rollout_fn)
+        return da_rollout_fn(prior_ensemble)

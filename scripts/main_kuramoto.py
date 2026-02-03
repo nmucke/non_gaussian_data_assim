@@ -71,6 +71,10 @@ def main() -> None:
     observations = jnp.zeros((OUTER_STEPS, len(OBS_IDS)))
     for i in range(OUTER_STEPS):
         obs_at_t = obs_operator(true_sol[:, i])  # [1, num_obs]
+        rng_key, key = jax.random.split(rng_key)
+        obs_at_t = obs_at_t + jax.random.multivariate_normal(
+            key, jnp.zeros(len(OBS_IDS)), R
+        )  # np.sqrt(R)
         observations = observations.at[i].set(obs_at_t.flatten())  # [num_obs]
 
     # Define the data assimilation model
@@ -104,7 +108,9 @@ def main() -> None:
 
     # Perform the data assimilation
     rng_key, key = jax.random.split(rng_key)
-    posterior_ensemble = da_model.rollout(posterior_ensemble[:, 0], observations[1:], key)
+    posterior_ensemble = da_model.rollout(
+        posterior_ensemble[:, 0], observations[1:], key
+    )
 
     # Perform the data assimilation
     # for i in tqdm(range(1, OUTER_STEPS)):
@@ -130,23 +136,27 @@ def main() -> None:
     idx_to_plot = 17
 
     plt.figure()
-    for i, (state, state_name) in enumerate(zip(
-        [
-            true_sol, 
-            prior_ensemble.mean(axis=(0, 2)), 
-            posterior_ensemble.mean(axis=(0, 2)),
-            true_sol - prior_ensemble.mean(axis=(0, 2)),
-            true_sol - posterior_ensemble.mean(axis=(0, 2)),
-        ],
-        [
-            "True Solution", "Prior Ensemble Mean", "Posterior Ensemble Mean",
-            "|True - Prior| difference",
-            "|True - Posterior| difference",
-        ],
-    )):
+    for i, (state, state_name) in enumerate(
+        zip(
+            [
+                true_sol,
+                prior_ensemble.mean(axis=(0, 2)),
+                posterior_ensemble.mean(axis=(0, 2)),
+                true_sol - prior_ensemble.mean(axis=(0, 2)),
+                true_sol - posterior_ensemble.mean(axis=(0, 2)),
+            ],
+            [
+                "True Solution",
+                "Prior Ensemble Mean",
+                "Posterior Ensemble Mean",
+                "|True - Prior| difference",
+                "|True - Posterior| difference",
+            ],
+        )
+    ):
         plt.subplot(2, 3, i + 1)
         plt.imshow(state, origin="lower", vmin=true_sol.min(), vmax=true_sol.max())
-        plt.colorbar()   
+        plt.colorbar()
         plt.title(state_name)
 
     plt.subplot(2, 3, 6)
@@ -163,7 +173,11 @@ def main() -> None:
         label="Posterior ± Std",
     )
     for state_at_point, state_name, color in zip(
-        [prior_ensemble.mean(axis=(0, 2))[:, idx_to_plot], mean_post, true_sol[:, idx_to_plot]],
+        [
+            prior_ensemble.mean(axis=(0, 2))[:, idx_to_plot],
+            mean_post,
+            true_sol[:, idx_to_plot],
+        ],
         ["Prior Ensemble Mean", "Posterior Ensemble Mean", "True Solution"],
         ["tab:red", "tab:blue", "black"],
     ):
