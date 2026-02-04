@@ -16,7 +16,7 @@ from non_gaussian_data_assim.kernels import (
 )
 from non_gaussian_data_assim.localization import distance_based_localization
 from non_gaussian_data_assim.observation_operator import ObservationOperator
-from non_gaussian_data_assim.time_integrators import RungeKutta4, rollout
+from non_gaussian_data_assim.time_integrators import get_stepper, rollout
 
 DEFAULT_ALPHA = 0.01 / 10
 DEFAULT_STEP_SIZE = 0.01 / 10
@@ -105,6 +105,7 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         step_size: float = DEFAULT_STEP_SIZE,
         alpha: float = DEFAULT_ALPHA,
         kernel_type: str = "scalar",
+        stepper: str = "runge_kutta_4",
     ) -> None:
         """
         Initialize the Particle Flow Filter.
@@ -119,6 +120,7 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
             step_size (float): Step size.
             alpha (float): Alpha parameter.
             kernel_type (str): Type of kernel to use.
+            stepper (str): Type of stepper to use.
         """
         super().__init__(obs_operator, forward_operator)
         self.ensemble_size = ensemble_size
@@ -131,6 +133,7 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         self.step_size = step_size
         self.alpha = alpha
         self.kernel_type = kernel_type
+        self.stepper = stepper
 
         if self.localization_distance is None:
             self.localization = lambda x: x
@@ -194,9 +197,11 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
             divergence_kernel_fn=jax.jit(divergence_kernel_fn),
             kernel_matrix_fn=jax.jit(kernel_matrix_fn),
         )
-        rk_stepper = RungeKutta4(self.step_size, rhs_fn)
+        # stepper = RungeKutta4(self.step_size, rhs_fn)
+        # stepper = jax.jit(self._get_stepper(rhs_fn))
+        stepper = get_stepper(self.stepper, self.step_size, rhs_fn)
 
-        rollout_fn = rollout(rk_stepper, self.num_pseudo_time_steps)
+        rollout_fn = rollout(stepper, self.num_pseudo_time_steps)
         rollout_fn = jax.jit(rollout_fn)
 
         x_s = rollout_fn(x_s)

@@ -21,7 +21,7 @@ DT = 0.01
 F = 8.0
 T0 = 0.0
 
-OUTER_STEPS = 25
+OUTER_STEPS = 150
 INNER_STEPS = 2
 
 NUM_STATES = 1
@@ -52,7 +52,7 @@ def main() -> None:
     )
 
     # Rollout the true solution
-    true_sol = forward_model.rollout(X_0, OUTER_STEPS - 1)
+    true_sol = forward_model.rollout(X_0, OUTER_STEPS, return_inner_steps=True)
 
     # Define the observation operator
     obs_operator = ObservationOperator(
@@ -61,8 +61,9 @@ def main() -> None:
 
     # Generate observations
     observations = jnp.zeros((OUTER_STEPS, len(OBS_IDS)))
-    for i in range(OUTER_STEPS):
-        obs_at_t = obs_operator(true_sol[:, i])  # [1, num_obs]
+    for i in range(0, OUTER_STEPS):
+        obs_at_t = obs_operator(true_sol[:, 1 + INNER_STEPS * (i + 1)])  # [1, num_obs]
+
         rng_key, key = jax.random.split(rng_key)
         obs_at_t = obs_at_t + jax.random.multivariate_normal(
             key, jnp.zeros(len(OBS_IDS)), R
@@ -75,52 +76,63 @@ def main() -> None:
         R=R,
         obs_operator=obs_operator,
         forward_operator=forward_model,
-        num_pseudo_time_steps=400,
-        step_size=0.05,
-        localization_distance=5,
+        num_pseudo_time_steps=100,
+        step_size=0.1,
+        stepper="runge_kutta_4",
     )
+    # da_model = EnsembleKalmanFilter(
+    #     ensemble_size=ENSEMBLE_SIZE,
+    #     R=R,
+    #     obs_operator=obs_operator,
+    #     forward_operator=forward_model,
+    # )
 
     # Initialize the prior ensemble
     rng_key, key = jax.random.split(rng_key)
     prior_ensemble = jax.random.normal(key, (ENSEMBLE_SIZE, NUM_STATES, STATE_DIM)) * 10
-    prior_ensemble = prior_ensemble.at[:, :, -1].set(
-        prior_ensemble[:, :, 0]
-    )  # Periodic boundary condition
 
     # Initialize the posterior ensemble
-    posterior_ensemble = prior_ensemble.copy().reshape(
-        ENSEMBLE_SIZE, NUM_STATES, STATE_DIM
+    posterior_ensemble = prior_ensemble.copy()
+    posterior_ensemble = posterior_ensemble.reshape(
+        ENSEMBLE_SIZE, 1, NUM_STATES, STATE_DIM
     )
 
     # Rollout the prior ensemble
-    prior_ensemble = forward_model.rollout(prior_ensemble, OUTER_STEPS - 1)
+    prior_ensemble = forward_model.rollout(
+        prior_ensemble, OUTER_STEPS, return_inner_steps=True
+    )
 
     # Perform the data assimilation
     rng_key, key = jax.random.split(rng_key)
-    posterior_ensemble = da_model.rollout(posterior_ensemble, observations[1:], rng_key)
+    # t0 = time.time()
+    # posterior_ensemble = da_model.rollout(
+    #     posterior_ensemble[:, 0], observations[1:], rng_key
+    # )
+    # t1 = time.time()
+    # print(f"Time taken: {t1 - t0} seconds")
 
     # Perform the data assimilation
-    # posterior_ensemble = posterior_ensemble.reshape(
-    #     ENSEMBLE_SIZE, 1, NUM_STATES, STATE_DIM
-    # )
-    # for i in tqdm(range(1, OUTER_STEPS)):
-    #     rng_key, key = jax.random.split(rng_key)
-    #     posterior_next = da_model(
-    #         prior_ensemble=posterior_ensemble[:, i - 1],
-    #         obs_vect=observations[i],
-    #         rng_key=key,
-    #     )
+    posterior_ensemble = posterior_ensemble.reshape(
+        ENSEMBLE_SIZE, 1, NUM_STATES, STATE_DIM
+    )
+    for i in tqdm(range(0, OUTER_STEPS)):
+        rng_key, key = jax.random.split(rng_key)
+        posterior_next = da_model(
+            prior_ensemble=posterior_ensemble[:, -1],
+            obs_vect=observations[i],
+            rng_key=key,
+            return_inner_steps=True,
+        )
+        if jnp.isnan(posterior_next).any():
+            print(f"NaN in posterior_next at time {i}")
+            break
 
-    #     if jnp.isnan(posterior_next).any():
-    #         print(f"NaN in posterior_next at time {i}")
-    #         break
-
-    #     posterior_ensemble = jnp.concatenate(
-    #         [posterior_ensemble, posterior_next[:, None, :, :]], axis=1
-    #     )
+        posterior_ensemble = jnp.concatenate(
+            [posterior_ensemble, posterior_next], axis=1
+        )
 
     # Calculate the prior and posterior errors
-    true_sol = true_sol.reshape(OUTER_STEPS, STATE_DIM)
+    true_sol = true_sol.reshape(OUTER_STEPS * INNER_STEPS + 1, STATE_DIM)
 
     # Calculate the prior and posterior errors
     prior_error = true_sol - prior_ensemble.mean(axis=(0, 2))

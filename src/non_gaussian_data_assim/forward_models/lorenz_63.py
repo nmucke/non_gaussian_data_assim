@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
-from non_gaussian_data_assim.time_integrators import RungeKutta4
+from non_gaussian_data_assim.time_integrators import get_stepper
 
 
 def L63_RHS(x: jnp.ndarray, sigma: float, beta: float, rho: float) -> jnp.ndarray:
@@ -26,7 +26,7 @@ class Lorenz63Model(BaseForwardModel):
         sigma: float = 10.0,
         beta: float = 2.6666666,
         rho: float = 28.0,
-        integrator: Callable = RungeKutta4,
+        stepper_type: str = "runge_kutta_4",
     ) -> None:
         """Initialize the forward model."""
         super().__init__(dt, inner_steps, 3)
@@ -36,7 +36,7 @@ class Lorenz63Model(BaseForwardModel):
         self.rho = rho
         self.num_states = 1
 
-        self.integrator = integrator(self.dt, self.rhs)
+        self.integrator = get_stepper(stepper_type, self.dt, self.rhs)
 
     def rhs(self, x: jnp.ndarray) -> jnp.ndarray:
         """Lorenz 96 right hand side."""

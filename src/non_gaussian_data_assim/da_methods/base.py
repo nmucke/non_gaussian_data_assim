@@ -1,3 +1,4 @@
+import functools
 from abc import abstractmethod
 from typing import Callable, Optional
 
@@ -82,13 +83,22 @@ class BaseDataAssimilationMethod:
         prior_ensemble: np.ndarray,
         obs_vect: np.ndarray,
         rng_key: jax.random.PRNGKey,
+        return_inner_steps: bool = False,
     ) -> np.ndarray:
         """Assimilate the data."""
 
-        forecast_ensemble = self._forecast_step(prior_ensemble)
-        analysis_ensemble = self._analysis_step(
-            forecast_ensemble, obs_vect, rng_key=rng_key
+        forecast_ensemble = self._forecast_step(
+            prior_ensemble, return_inner_steps=return_inner_steps
         )
+        analysis_ensemble = self._analysis_step(
+            forecast_ensemble[:, -1], obs_vect, rng_key=rng_key
+        )
+        if return_inner_steps:
+            analysis_ensemble = jnp.concatenate(
+                [forecast_ensemble[:, :-1, :, :], analysis_ensemble[:, None, :, :]],
+                axis=1,
+            )
+
         return analysis_ensemble
 
     @abstractmethod
@@ -111,17 +121,30 @@ class BaseDataAssimilationMethod:
         """
         raise NotImplementedError
 
-    def _forecast_step(self, ensemble: np.ndarray) -> np.ndarray:
-        return self.forward_operator(ensemble)
+    def _forecast_step(
+        self, ensemble: np.ndarray, return_inner_steps: bool = False
+    ) -> np.ndarray:
+        """Forecast the ensemble."""
+        return self.forward_operator(
+            ensemble,
+            return_inner_steps=return_inner_steps,
+            is_ensemble=True,
+        )
 
     def __call__(
         self,
         prior_ensemble: np.ndarray,
         obs_vect: np.ndarray,
         rng_key: jax.random.PRNGKey,
+        return_inner_steps: bool = False,
     ) -> np.ndarray:
         """Run the data assimilation method."""
-        return self._assimilate_data(prior_ensemble, obs_vect, rng_key=rng_key)
+        return self._assimilate_data(
+            prior_ensemble,
+            obs_vect,
+            rng_key=rng_key,
+            return_inner_steps=return_inner_steps,
+        )
 
     def rollout(
         self,

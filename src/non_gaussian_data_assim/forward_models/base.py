@@ -1,3 +1,4 @@
+import functools
 import pdb
 from abc import abstractmethod
 from typing import Any, Callable
@@ -6,7 +7,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from non_gaussian_data_assim.time_integrators import RungeKutta4, rollout
+from non_gaussian_data_assim.time_integrators import rollout, rollout_with_inner_steps
 
 
 class BaseForwardModel:
@@ -35,6 +36,7 @@ class BaseForwardModel:
         x: jnp.ndarray,
         _: None = None,
         return_inner_steps: bool = False,
+        is_ensemble: bool = False,
     ) -> jnp.ndarray | tuple[jnp.ndarray, jnp.ndarray]:
         """
         Forward the model.
@@ -52,9 +54,10 @@ class BaseForwardModel:
             return_inner_steps=return_inner_steps,
             include_initial_state=not return_inner_steps,
         )
+        if is_ensemble:
+            rollout_fn = jax.vmap(rollout_fn)
         rollout_fn = jax.jit(rollout_fn)
-
-        return jax.vmap(rollout_fn)(x)
+        return rollout_fn(x)
 
     def rollout(
         self,
@@ -74,11 +77,14 @@ class BaseForwardModel:
         """
 
         if return_inner_steps:
-            rollout_fn = rollout(
-                self.one_step,
-                self.inner_steps * (outer_steps + 1),
+            inner_rollout_fn = functools.partial(
+                self.__call__,
                 return_inner_steps=True,
-                include_initial_state=True,
+            )
+            rollout_fn = rollout_with_inner_steps(
+                inner_rollout_fn,
+                outer_steps,
+                include_initial_state=False,
             )
         else:
             rollout_fn = rollout(
