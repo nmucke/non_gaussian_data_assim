@@ -47,7 +47,6 @@ def main() -> None:
     # Initial state - shape: [1, num_states, state_dim] for single ensemble member
     rng_key, key = jax.random.split(rng_key)
     X_0 = jax.random.normal(key, (1, NUM_STATES, STATE_DIM)) * 10
-    X_0 = X_0.at[0, 0, -1].set(X_0[0, 0, 0])  # Periodic boundary condition
 
     # Define the forward model
     forward_model = Lorenz63Model(
@@ -83,16 +82,13 @@ def main() -> None:
         R=R,
         obs_operator=obs_operator,
         forward_operator=forward_model,
-        num_pseudo_time_steps=1000,
+        num_pseudo_time_steps=2000,
         step_size=0.1,
     )
 
     # Initialize the prior ensemble
     rng_key, key = jax.random.split(rng_key)
     prior_ensemble = jax.random.normal(key, (ENSEMBLE_SIZE, NUM_STATES, STATE_DIM)) * 10
-    prior_ensemble = prior_ensemble.at[:, :, -1].set(
-        prior_ensemble[:, :, 0]
-    )  # Periodic boundary condition
 
     # Initialize the posterior ensemble
     posterior_ensemble = prior_ensemble.copy()
@@ -105,32 +101,32 @@ def main() -> None:
 
     # Perform the data assimilation
     rng_key, key = jax.random.split(rng_key)
-    t0 = time.time()
-    posterior_ensemble = da_model.rollout(
-        posterior_ensemble[:, 0], observations[1:], rng_key
-    )
-    t1 = time.time()
-    print(f"Time taken: {t1 - t0} seconds")
-
-    # # Perform the data assimilation
-    # posterior_ensemble = posterior_ensemble.reshape(
-    #     ENSEMBLE_SIZE, 1, NUM_STATES, STATE_DIM
+    # t0 = time.time()
+    # posterior_ensemble = da_model.rollout(
+    #     posterior_ensemble[:, 0], observations[1:], rng_key
     # )
-    # for i in tqdm(range(1, OUTER_STEPS)):
-    #     rng_key, key = jax.random.split(rng_key)
-    #     posterior_next = da_model(
-    #         prior_ensemble=posterior_ensemble[:, i - 1],
-    #         obs_vect=observations[i],
-    #         rng_key=key,
-    #     )
+    # t1 = time.time()
+    # print(f"Time taken: {t1 - t0} seconds")
 
-    #     if jnp.isnan(posterior_next).any():
-    #         print(f"NaN in posterior_next at time {i}")
-    #         break
+    # Perform the data assimilation
+    posterior_ensemble = posterior_ensemble.reshape(
+        ENSEMBLE_SIZE, 1, NUM_STATES, STATE_DIM
+    )
+    for i in tqdm(range(1, OUTER_STEPS)):
+        rng_key, key = jax.random.split(rng_key)
+        posterior_next = da_model(
+            prior_ensemble=posterior_ensemble[:, i - 1],
+            obs_vect=observations[i],
+            rng_key=key,
+        )
 
-    #     posterior_ensemble = jnp.concatenate(
-    #         [posterior_ensemble, posterior_next[:, None, :, :]], axis=1
-    #     )
+        if jnp.isnan(posterior_next).any():
+            print(f"NaN in posterior_next at time {i}")
+            break
+
+        posterior_ensemble = jnp.concatenate(
+            [posterior_ensemble, posterior_next[:, None, :, :]], axis=1
+        )
 
     # Calculate the prior and posterior errors
     true_sol = true_sol.reshape(OUTER_STEPS, STATE_DIM)
