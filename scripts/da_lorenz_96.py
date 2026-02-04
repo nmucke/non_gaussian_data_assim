@@ -21,7 +21,7 @@ OUTER_STEPS = 150
 INNER_STEPS = 2
 ENSEMBLE_SIZE = 100
 
-DA_METHOD = "agmf"
+DA_METHOD = "enkf"
 DA_METHODS = {
     "enkf": EnsembleKalmanFilter,
     "agmf": AdaptiveGaussianMixtureFilter,
@@ -30,6 +30,7 @@ DA_METHODS = {
 SPECIFIC_DA_ARGS = {
     "enkf": {
         "inflation_factor": 1.0,
+        "localization_distance": 10,
     },
     "agmf": {
         "inflation_factor": 1.0,

@@ -20,11 +20,11 @@ from non_gaussian_data_assim.observation_operator import ObservationOperator
 
 SEED = 42
 
-OUTER_STEPS = 100
-INNER_STEPS = 10
+OUTER_STEPS = 300
+INNER_STEPS = 5
 ENSEMBLE_SIZE = 100
 
-DA_METHOD = "pff"
+DA_METHOD = "enkf"
 DA_METHODS = {
     "enkf": EnsembleKalmanFilter,
     "agmf": AdaptiveGaussianMixtureFilter,
@@ -33,16 +33,19 @@ DA_METHODS = {
 SPECIFIC_DA_ARGS = {
     "enkf": {
         "inflation_factor": 1.0,
+        "localization_distance": 10,
     },
     "agmf": {
         "inflation_factor": 1.0,
         "nc_threshold": 0.5,
         "w_prev": np.ones(ENSEMBLE_SIZE) / ENSEMBLE_SIZE,
+        "localization_distance": 10,
     },
     "pff": {
-        "num_pseudo_time_steps": 10,
+        "num_pseudo_time_steps": 100,
         "step_size": 1.0,
         "stepper": "forward_euler",
+        "localization_distance": 10,
     },
 }
 
