@@ -1,6 +1,7 @@
 import pdb
 
 import numpy as np
+from jax.experimental import sparse
 from numpy.typing import NDArray
 
 
@@ -34,6 +35,7 @@ class ObservationOperator:
         self.obs_matrix = get_obs_matrix(
             obs_states, obs_indices, self.num_states, self.state_dim
         )
+        self.obs_matrix = sparse.BCOO.fromdense(self.obs_matrix)
 
     def __call__(self, ensemble: np.ndarray) -> np.ndarray:
         """Apply the observation operator to the ensemble."""

@@ -11,59 +11,96 @@ from non_gaussian_data_assim.da_methods.base import BaseDataAssimilationMethod
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 from non_gaussian_data_assim.localization import distance_based_localization
 from non_gaussian_data_assim.observation_operator import ObservationOperator
+from non_gaussian_data_assim.time_integrators import RungeKutta4, rollout
 
 DEFAULT_ALPHA = 0.01 / 10
-DEFAULT_DS = 0.01 / 10
+DEFAULT_STEP_SIZE = 0.01 / 10
 DEFAULT_B_D = 1.0
 
 
-def grad_log_post(
-    H: np.ndarray,
-    R: np.ndarray,
-    R_inv: np.ndarray,
-    y: np.ndarray,
-    y_i: np.ndarray,
-    B: np.ndarray,
-    x_s_i: np.ndarray,
-    x0_mean: np.ndarray,
+def get_prior_score_fn(
+    prior_mean: np.ndarray,
+    prior_cov_inv: np.ndarray,
 ) -> np.ndarray:
     """
-    Calculate the gradient of the log posterior distribution.
-
-    Args:
-    H (numpy.array): Observation operator matrix.
-    R (numpy.array): Observation error covariance matrix.
-    R_inv (numpy.array): Inverse of R.
-    y (numpy.array): Observation vector.
-    y_i (numpy.array): Individual observation vector for a particle.
-    B (numpy.array): Covariance matrix of the ensemble.
-    x_s_i (numpy.array): Current state of a particle.
-    x0_mean (numpy.array): Mean state of the prior distribution.
-
-    Returns:
-    numpy.array: Gradient of the log posterior.
+    Get the prior score function.
     """
-    obs_part = B @ H.T @ R_inv @ (y - y_i)
-    prior_part = x_s_i - x0_mean
-    grad_log_post_est = obs_part - prior_part
 
-    return grad_log_post_est
+    def prior_score_fn(x_s: np.ndarray) -> np.ndarray:
+        return prior_cov_inv @ (x_s - prior_mean)
+
+    return prior_score_fn
 
 
-def exp_kernel(
-    x: jnp.ndarray, y: jnp.ndarray, alpha: float, B_d: jnp.ndarray
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
+def get_likelihood_score_fn(
+    obs_vect: np.ndarray,
+    obs_matrix: np.ndarray,
+    obs_cov_inv: np.ndarray,
+) -> np.ndarray:
     """
-    Get the value and derivative of the kernel function.
-    Args:
-    diff (numpy.array): Difference between two state vectors.
-
-    Returns:
-    numpy.array: Value and derivative of the kernel function.
+    Get the likelihood score function.
     """
-    value = jnp.exp((-1 / 2) * ((x - y) ** 2) / (alpha * B_d))
-    derivative = ((x - y) / (alpha * B_d)) * value
-    return value, derivative
+
+    def likelihood_score_fn(x_s: np.ndarray) -> np.ndarray:
+        return obs_matrix.T @ obs_cov_inv @ (obs_vect - obs_matrix @ x_s)
+
+    return likelihood_score_fn
+
+
+def get_posterior_score_fn(
+    prior_score_fn: Callable[[np.ndarray], np.ndarray],
+    likelihood_score_fn: Callable[[np.ndarray], np.ndarray],
+) -> Callable[[np.ndarray], np.ndarray]:
+    """
+    Get the posterior score function.
+    """
+
+    def posterior_score_fn(x_s: np.ndarray) -> np.ndarray:
+        return prior_score_fn(x_s) + likelihood_score_fn(x_s)
+
+    return posterior_score_fn
+
+
+def get_scalar_kernel_fn(
+    distance_weight_matrix: jnp.ndarray,
+) -> Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray]:
+    """
+    Calculate the scalar kernel.
+    """
+
+    def scalar_kernel_fn(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
+        return jnp.exp(-0.5 * (x - y).T @ distance_weight_matrix @ (x - y))
+
+    return scalar_kernel_fn
+
+
+def get_scalar_kernel_matrix_fn(
+    scalar_kernel_fn: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
+) -> Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray]:
+    """
+    Calculate the scalar kernel matrix.
+    """
+
+    def scalar_kernel_matrix_fn(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
+        return scalar_kernel_fn(x, y) * jnp.eye(x.shape[0])
+
+    return scalar_kernel_matrix_fn
+
+
+def get_divergence_scalar_kernel_matrix_fn(
+    scalar_kernel_fn: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
+    distance_weight_matrix: jnp.ndarray,
+) -> Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray]:
+    """
+    Calculate the divergence of the scalar kernel matrix.
+    """
+
+    def divergence_scalar_kernel_matrix_fn(
+        x: jnp.ndarray, y: jnp.ndarray
+    ) -> jnp.ndarray:
+        return -distance_weight_matrix.T @ (x - y) * scalar_kernel_fn(x, y)
+
+    return divergence_scalar_kernel_matrix_fn
 
 
 def compute_pairwise_interaction(
@@ -73,22 +110,78 @@ def compute_pairwise_interaction(
     Compute the pairwise interaction of the ensemble.
 
     Args:
-    x_s: State array of shape [ensemble, dof].
-    pair_function: Pairwise function to compute the interaction.
+    x_s: State array of shape [dofs, ensemble].
+    pair_function: Function f(x, y) taking two [dofs] vectors, returns [dofs].
+
+    Returns:
+    Array of shape [dofs, ensemble, ensemble] where
+    result[:, i, j] = pair_function(x_s[:, i], x_s[:, j]).
     """
-    x_transposed = x_s.T
+    # Inner vmap over j: for fixed i, compute pair_function(x_s[:, i], x_s[:, j]) for all j
+    # in_axes=(None, 1): batch over columns (axis 1) of second arg
+    # out_axes=1: stack j along axis 1 -> [dofs, ensemble]
+    inner_vmap = jax.vmap(pair_function, in_axes=(None, 1), out_axes=1)
 
-    # Inner vmap (iterates j): returns [dof, ensemble] (j is dim 1)
-    # Outer vmap (iterates i): stacks i at dim 1 -> [dof, ensemble, ensemble]
-    vmap_func = jax.vmap(
-        jax.vmap(pair_function, in_axes=(None, 0), out_axes=(1, 1)),
-        in_axes=(0, None),
-        out_axes=(1, 1),
-    )
+    # Outer vmap over i: for each i, run inner_vmap(x_s[:, i], x_s)
+    # in_axes=(1, None): batch over columns (axis 1) of first arg
+    # out_axes=1: stack i along axis 1 -> [dofs, ensemble, ensemble]
+    vmap_func = jax.vmap(inner_vmap, in_axes=(1, None), out_axes=1)
 
-    vmap_func = jax.jit(vmap_func)
+    return vmap_func(x_s, x_s)
 
-    return vmap_func(x_transposed, x_transposed)
+
+def get_pairwise_interactions_kernel_fn(
+    distance_weight_matrix: jnp.ndarray,
+) -> Tuple[Callable[[jnp.ndarray], jnp.ndarray], Callable[[jnp.ndarray], jnp.ndarray]]:
+    """
+    Get the pairwise interactions kernel function.
+    """
+
+    scalar_kernel_fn = get_scalar_kernel_fn(distance_weight_matrix)
+
+    # return divergence_scalar_kernel_matrix_fn, scalar_kernel_matrix_fn
+    def divergence_kernel_fn(x_s: jnp.ndarray) -> jnp.ndarray:
+        return compute_pairwise_interaction(
+            x_s,
+            get_divergence_scalar_kernel_matrix_fn(
+                scalar_kernel_fn=scalar_kernel_fn,
+                distance_weight_matrix=distance_weight_matrix,
+            ),
+        )
+
+    def scalar_kernel_matrix_fn(x_s: jnp.ndarray) -> jnp.ndarray:
+        return compute_pairwise_interaction(
+            x_s, get_scalar_kernel_matrix_fn(scalar_kernel_fn=scalar_kernel_fn)
+        )
+
+    return divergence_kernel_fn, scalar_kernel_matrix_fn
+
+
+def get_rhs_fn(
+    posterior_score_fn: Callable[[jnp.ndarray], jnp.ndarray],
+    divergence_scalar_kernel_matrix_fn: Callable[[jnp.ndarray], jnp.ndarray],
+    scalar_kernel_matrix_fn: Callable[[jnp.ndarray], jnp.ndarray],
+) -> Callable[[jnp.ndarray], jnp.ndarray]:
+    """
+    Get the right-hand side function.
+    """
+
+    def rhs_fn(x_s: jnp.ndarray) -> jnp.ndarray:
+        posterior_score = posterior_score_fn(x_s)
+
+        divergence_kernel = divergence_scalar_kernel_matrix_fn(x_s)
+
+        kernel_mat = scalar_kernel_matrix_fn(x_s)
+
+        divergence_kernel_term = divergence_kernel.sum(axis=1)
+
+        post_term = jnp.einsum("dije,ei->dj", kernel_mat, posterior_score)
+
+        I_f = divergence_kernel_term + post_term
+
+        return I_f / x_s.shape[-1]
+
+    return rhs_fn
 
 
 class ParticleFlowFilter(BaseDataAssimilationMethod):
@@ -100,6 +193,8 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         forward_operator: BaseForwardModel,
         localization_distance: Optional[int] = None,
         num_pseudo_time_steps: int = 100,
+        step_size: float = DEFAULT_STEP_SIZE,
+        alpha: float = DEFAULT_ALPHA,
         kernel_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] = lambda x, y: np.exp(
             -((x - y) ** 2) / (2 * DEFAULT_ALPHA * DEFAULT_B_D)
         ),
@@ -120,6 +215,8 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         self.dofs = self.num_states * self.state_dim
         self.num_pseudo_time_steps = num_pseudo_time_steps
         self.localization_distance = localization_distance
+        self.step_size = step_size
+        self.alpha = alpha
 
         if self.localization_distance is None:
             self.localization = lambda x: x
@@ -135,81 +232,55 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         rng_key: jax.random.PRNGKey,
     ) -> np.ndarray:
 
-        x_s = prior_ensemble.reshape(self.ensemble_size, -1).T
+        x_s = prior_ensemble.reshape(self.ensemble_size, -1).T  # [dofs, ensemble]
 
-        B = jnp.cov(x_s)
-        B = self.localization(B)
-        x0_mean = jnp.mean(x_s, axis=1)
+        prior_cov = jnp.cov(x_s)
+        prior_cov = self.localization(prior_cov)
+        prior_mean = jnp.mean(x_s, axis=1)
+        prior_cov_inv = jnp.linalg.inv(prior_cov)
 
-        # Pseudo-time flow parameters
-        ds = 0.01 / 10
-        alpha = 0.01 / 10  # Tuning parameter for the covariance of the kernel
+        distance_weight_matrix = jnp.linalg.inv(self.alpha * prior_cov)
 
-        # python_pseudoflow = jnp.zeros((self.dofs, self.ensemble_size, self.num_pseudo_time_steps + 1))
-        # python_pseudoflow = python_pseudoflow.at[:, :, 0].set(x_s)
+        obs_cov_inv = jnp.linalg.inv(self.R)
 
-        R_inv = jnp.linalg.inv(self.R)
+        prior_score_fn = get_prior_score_fn(
+            prior_mean=prior_mean,
+            prior_cov_inv=prior_cov_inv,
+        )
+        likelihood_score_fn = get_likelihood_score_fn(
+            obs_vect=obs_vect,
+            obs_matrix=self.obs_operator.obs_matrix,
+            obs_cov_inv=obs_cov_inv,
+        )
+        posterior_score_fn = get_posterior_score_fn(
+            prior_score_fn=prior_score_fn,
+            likelihood_score_fn=likelihood_score_fn,
+        )
+
+        posterior_score_vmap = jax.vmap(posterior_score_fn, in_axes=-1, out_axes=-1)
+
+        divergence_kernel_fn, scalar_kernel_matrix_fn = (
+            get_pairwise_interactions_kernel_fn(
+                distance_weight_matrix=distance_weight_matrix,
+            )
+        )
+
+        rhs_fn = get_rhs_fn(
+            posterior_score_fn=jax.jit(posterior_score_vmap),
+            divergence_scalar_kernel_matrix_fn=jax.jit(divergence_kernel_fn),
+            scalar_kernel_matrix_fn=jax.jit(scalar_kernel_matrix_fn),
+        )
+        rk_stepper = RungeKutta4(self.step_size, rhs_fn)
+        rollout_fn = rollout(rk_stepper, self.num_pseudo_time_steps)
+        rollout_fn = jax.jit(rollout_fn)
+
+        x_s = rollout_fn(x_s)
 
         # Pseudo-time for data assimilation
-        for _ in range(self.num_pseudo_time_steps):
+        # for _ in range(self.num_pseudo_time_steps):
+        #     x_s = rk_stepper(x_s)
 
-            # Gradient of the log posterior
-            grad_log_post_fn = lambda x: grad_log_post(
-                H=self.obs_operator.obs_matrix,
-                R=self.R,
-                R_inv=R_inv,
-                y=obs_vect,
-                y_i=self.obs_operator.obs_matrix @ x,
-                B=B,
-                x_s_i=x,
-                x0_mean=x0_mean,
-            )
-            grad_log_post_fn = jax.jit(jax.vmap(grad_log_post_fn))
-            dpdx = grad_log_post_fn(x_s.T).T
-
-            # B_d = jnp.diag(B)
-            # kk = np.zeros((self.dofs, self.ensemble_size, self.ensemble_size))
-            # dkdx = np.zeros((self.dofs, self.ensemble_size, self.ensemble_size))
-            # I_f = np.zeros((self.dofs, self.ensemble_size))
-
-            # for i in range(self.ensemble_size):
-            #     for j in range(i, self.ensemble_size):
-            #         kk[:, i, j] = np.exp((-1 / 2) * ((x_s[:, i] - x_s[:, j]) ** 2) / (alpha * B_d[:]))
-            #         dkdx[:, i, j] = ((x_s[:, i] - x_s[:, j]) / alpha) * kk[:, i, j]
-            #         if j != i:
-            #             kk[:, j, i] = kk[:, i, j]
-            #             dkdx[:, j, i] = -dkdx[:, i, j]
-
-            #     attractive_term = (1 / self.ensemble_size) * (kk[:, i, :] * dpdx)
-            #     repelling_term = (1 / self.ensemble_size) * dkdx[:, i, :]
-            #     I_f[:, i] = np.sum(attractive_term + repelling_term, axis=1)
-
-            # Kernel calculation
-            @jax.jit  # type: ignore[misc]
-            def kernel_fn(
-                x: jnp.ndarray, y: jnp.ndarray
-            ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-                """Kernel function."""
-                return exp_kernel(x, y, alpha, jnp.diag(B))
-
-            kernel, dkernel_dx = compute_pairwise_interaction(x_s, kernel_fn)
-
-            I_f = jnp.zeros((self.dofs, self.ensemble_size))
-            for i in range(self.ensemble_size):
-                attractive_term = (1 / self.ensemble_size) * (kernel[:, i, :] * dpdx)
-                repelling_term = (1 / self.ensemble_size) * dkernel_dx[:, i, :]
-                I_f = I_f.at[:, i].set(np.sum(attractive_term + repelling_term, axis=1))
-
-            # Update the state vector for next pseudo time step
-            x_s = x_s + (ds * I_f)
-            # python_pseudoflow[:, :, s + 1] = x_s
-
-            # s += 1
-
-        # Gathering final results
-        # posterior_ensemble = python_pseudoflow[:, :, -1]
-        # mean_posterior = np.mean(posterior_vect, axis=1)
-        # cov_posterior = np.cov(posterior_vect)
+        x_s = x_s.T
 
         return x_s.reshape(self.ensemble_size, self.num_states, self.state_dim)
 

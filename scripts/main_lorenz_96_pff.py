@@ -21,13 +21,13 @@ DT = 0.01
 F = 8.0
 T0 = 0.0
 
-OUTER_STEPS = 50
+OUTER_STEPS = 25
 INNER_STEPS = 2
 
 NUM_STATES = 1
 STATE_DIM = 25
 NUM_SKIP = 2
-ENSEMBLE_SIZE = 25
+ENSEMBLE_SIZE = 100
 
 # Observation ids
 OBS_IDS = np.arange(0, STATE_DIM, NUM_SKIP)
@@ -75,8 +75,9 @@ def main() -> None:
         R=R,
         obs_operator=obs_operator,
         forward_operator=forward_model,
+        num_pseudo_time_steps=400,
+        step_size=0.05,
         localization_distance=5,
-        num_pseudo_time_steps=100,
     )
 
     # Initialize the prior ensemble
@@ -94,34 +95,29 @@ def main() -> None:
     # Rollout the prior ensemble
     prior_ensemble = forward_model.rollout(prior_ensemble, OUTER_STEPS - 1)
 
-    t1 = time.time()
+    # Perform the data assimilation
+    rng_key, key = jax.random.split(rng_key)
+    posterior_ensemble = da_model.rollout(posterior_ensemble, observations[1:], rng_key)
 
     # Perform the data assimilation
-    # rng_key, key = jax.random.split(rng_key)
-    # posterior_ensemble = da_model.rollout(posterior_ensemble, observations[1:], rng_key)
+    # posterior_ensemble = posterior_ensemble.reshape(
+    #     ENSEMBLE_SIZE, 1, NUM_STATES, STATE_DIM
+    # )
+    # for i in tqdm(range(1, OUTER_STEPS)):
+    #     rng_key, key = jax.random.split(rng_key)
+    #     posterior_next = da_model(
+    #         prior_ensemble=posterior_ensemble[:, i - 1],
+    #         obs_vect=observations[i],
+    #         rng_key=key,
+    #     )
 
-    # Perform the data assimilation
-    posterior_ensemble = posterior_ensemble.reshape(
-        ENSEMBLE_SIZE, 1, NUM_STATES, STATE_DIM
-    )
-    for i in tqdm(range(1, OUTER_STEPS)):
-        rng_key, key = jax.random.split(rng_key)
-        posterior_next = da_model(
-            prior_ensemble=posterior_ensemble[:, i - 1],
-            obs_vect=observations[i],
-            rng_key=key,
-        )
+    #     if jnp.isnan(posterior_next).any():
+    #         print(f"NaN in posterior_next at time {i}")
+    #         break
 
-        if jnp.isnan(posterior_next).any():
-            print(f"NaN in posterior_next at time {i}")
-            break
-
-        posterior_ensemble = jnp.concatenate(
-            [posterior_ensemble, posterior_next[:, None, :, :]], axis=1
-        )
-
-    t2 = time.time()
-    print(f"Time taken: {t2 - t1} seconds")
+    #     posterior_ensemble = jnp.concatenate(
+    #         [posterior_ensemble, posterior_next[:, None, :, :]], axis=1
+    #     )
 
     # Calculate the prior and posterior errors
     true_sol = true_sol.reshape(OUTER_STEPS, STATE_DIM)
@@ -199,4 +195,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    t1 = time.time()
     main()
+    t2 = time.time()
+    print(f"Time taken: {t2 - t1} seconds")
