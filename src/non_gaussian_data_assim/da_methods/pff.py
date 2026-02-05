@@ -1,145 +1,96 @@
 import pdb
-from typing import Any, Callable, Dict, Optional
+import time
+from curses import KEY_BREAK
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 
 from non_gaussian_data_assim.da_methods.base import BaseDataAssimilationMethod
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
+from non_gaussian_data_assim.kernels import (
+    get_divergence_kernel_fn,
+    get_kernel_matrix_fn,
+    get_pairwise_interactions_fn,
+)
 from non_gaussian_data_assim.localization import distance_based_localization
 from non_gaussian_data_assim.observation_operator import ObservationOperator
+from non_gaussian_data_assim.time_integrators import get_stepper, rollout
+
+DEFAULT_ALPHA = 0.01 / 10
+DEFAULT_STEP_SIZE = 0.01 / 10
+DEFAULT_B_D = 1.0
 
 
-def grad_log_post(
-    H: np.ndarray,
-    R: np.ndarray,
-    R_inv: np.ndarray,
-    y: np.ndarray,
-    y_i: np.ndarray,
-    B: np.ndarray,
-    x_s_i: np.ndarray,
-    x0_mean: np.ndarray,
+def get_prior_score_fn(
+    prior_mean: np.ndarray,
+    prior_cov_inv: np.ndarray,
 ) -> np.ndarray:
     """
-    Calculate the gradient of the log posterior distribution.
-
-    Args:
-    H (numpy.array): Observation operator matrix.
-    R (numpy.array): Observation error covariance matrix.
-    R_inv (numpy.array): Inverse of R.
-    y (numpy.array): Observation vector.
-    y_i (numpy.array): Individual observation vector for a particle.
-    B (numpy.array): Covariance matrix of the ensemble.
-    x_s_i (numpy.array): Current state of a particle.
-    x0_mean (numpy.array): Mean state of the prior distribution.
-
-    Returns:
-    numpy.array: Gradient of the log posterior.
+    Get the prior score function.
     """
-    obs_part = B.dot(H.transpose()).dot(R_inv).dot(y - y_i)[:, 0]
-    prior_part = x_s_i - x0_mean
-    grad_log_post_est = obs_part - prior_part
 
-    return grad_log_post_est
+    def prior_score_fn(x_s: np.ndarray) -> np.ndarray:
+        return prior_cov_inv @ (x_s - prior_mean)
+
+    return prior_score_fn
 
 
-# def pff(
-#     mem: int,
-#     n_states: int,
-#     ensemble: np.ndarray,
-#     obs_vect: np.ndarray,
-#     R: np.ndarray,
-# ) -> Dict[str, Any]:
-#     """
-#     Implement the Particle Flow Filter.
+def get_likelihood_score_fn(
+    obs_vect: np.ndarray,
+    obs_matrix: np.ndarray,
+    obs_cov_inv: np.ndarray,
+) -> np.ndarray:
+    """
+    Get the likelihood score function.
+    """
 
-#     Args:
-#     mem (int): Number of ensemble members.
-#     n_states (int): Number of states.
-#     ensemble (numpy.array): Initial ensemble of states.
-#     obs_vect (numpy.array): Observation vector.
-#     R (numpy.array): Observation error covariance matrix.
+    def likelihood_score_fn(x_s: np.ndarray) -> np.ndarray:
+        return obs_matrix.T @ obs_cov_inv @ (obs_vect - obs_matrix @ x_s)
 
-#     Returns:
-#     dict: Dictionary containing the posterior ensemble, mean, and covariance.
-#     """
-#     index_obs = np.where(obs_vect > -999)[0]
-#     B = np.cov(ensemble)
-#     x0_mean = np.mean(ensemble, axis=1)
+    return likelihood_score_fn
 
-#     # Pseudo-time flow parameters
-#     s = 0
-#     max_s = 100
-#     ds = 0.05 / 10
-#     alpha = 0.05 / 10  # Tuning parameter for the covariance of the kernel
 
-#     x_s = ensemble.copy()
-#     python_pseudoflow = np.zeros((n_states, mem, max_s + 1))
-#     python_pseudoflow[:, :, 0] = x_s.copy()
+def get_posterior_score_fn(
+    prior_score_fn: Callable[[np.ndarray], np.ndarray],
+    likelihood_score_fn: Callable[[np.ndarray], np.ndarray],
+) -> Callable[[np.ndarray], np.ndarray]:
+    """
+    Get the posterior score function.
+    """
 
-#     n_obs = np.sum(obs_vect > -999)
-#     R_inv = np.linalg.inv(R)
+    def posterior_score_fn(x_s: np.ndarray) -> np.ndarray:
+        return prior_score_fn(x_s) + likelihood_score_fn(x_s)
 
-#     # Pseudo-time for data assimilation
-#     while s < max_s:
+    return posterior_score_fn
 
-#         H = np.zeros((n_obs, n_states))
-#         Hx = np.zeros((n_obs, mem))
-#         dHdx = np.zeros((n_obs, n_states, mem))
-#         dpdx = np.zeros((n_states, mem))
 
-#         for i in range(mem):
-#             H = h_operator(n_states, obs_vect)
-#             Hx[:, :] = x_s[index_obs, :]
-#             y = np.ones((n_obs, 1))
-#             y[:, 0] = obs_vect[index_obs]
-#             y_i = np.ones((n_obs, 1))
-#             y_i[:, 0] = Hx[:, i]
+def get_rhs_fn(
+    posterior_score_fn: Callable[[jnp.ndarray], jnp.ndarray],
+    divergence_kernel_fn: Callable[[jnp.ndarray], jnp.ndarray],
+    kernel_matrix_fn: Callable[[jnp.ndarray], jnp.ndarray],
+) -> Callable[[jnp.ndarray], jnp.ndarray]:
+    """
+    Get the right-hand side function.
+    """
 
-#             dpdx[:, i] = grad_log_post(H, R, R_inv, y, y_i, B, x_s[:, i], x0_mean)
+    def rhs_fn(x_s: jnp.ndarray) -> jnp.ndarray:
+        posterior_score = posterior_score_fn(x_s)
 
-#         # Kernel calculation
-#         B_d = np.zeros((n_states))
-#         for d in range(n_states):
-#             B_d[d] = B[d, d]
+        divergence_kernel = divergence_kernel_fn(x_s)
 
-#         kernel = np.zeros((n_states, mem, mem))
-#         dkdx = np.zeros((n_states, mem, mem))
-#         I_f = np.zeros((n_states, mem))
+        kernel_mat = kernel_matrix_fn(x_s)
 
-#         for i in range(mem):
-#             for j in range(i, mem):
-#                 kernel[:, i, j] = np.exp(
-#                     (-1 / 2) * ((x_s[:, i] - x_s[:, j]) ** 2) / (alpha * B_d[:])
-#                 )
-#                 dkdx[:, i, j] = ((x_s[:, i] - x_s[:, j]) / alpha) * kernel[:, i, j]
-#                 if j != i:
-#                     kernel[:, i, j] = kernel[:, j, i]
-#                     dkdx[:, i, j] = -dkdx[:, j, i]
+        divergence_kernel_term = divergence_kernel.sum(axis=1)
 
-#             attractive_term = (1 / mem) * (kernel[:, i, :] * dpdx)
-#             repelling_term = (1 / mem) * dkdx[:, i, :]
-#             I_f[:, i] = np.sum(attractive_term + repelling_term, axis=1)
+        post_term = jnp.einsum("dije,ei->dj", kernel_mat, posterior_score)
 
-#         # Update the state vector for next pseudo time step
-#         fs = I_f
-#         x_s += ds * fs
-#         python_pseudoflow[:, :, s + 1] = x_s
+        I_f = divergence_kernel_term + post_term
 
-#         s += 1
+        return I_f / x_s.shape[-1]
 
-#     # Gathering final results
-#     posterior_vect = python_pseudoflow[:, :, -1]
-#     mean_posterior = np.mean(posterior_vect, axis=1)
-#     cov_posterior = np.cov(posterior_vect)
-
-#     pff_pseudoflow = {
-#         "posterior": posterior_vect,
-#         "mean_post": mean_posterior,
-#         "cov_post": cov_posterior,
-#     }
-
-#     return pff_pseudoflow
+    return rhs_fn
 
 
 class ParticleFlowFilter(BaseDataAssimilationMethod):
@@ -150,14 +101,26 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         obs_operator: ObservationOperator,
         forward_operator: BaseForwardModel,
         localization_distance: Optional[int] = None,
+        num_pseudo_time_steps: int = 100,
+        step_size: float = DEFAULT_STEP_SIZE,
+        alpha: float = DEFAULT_ALPHA,
+        kernel_type: str = "scalar",
+        stepper: str = "runge_kutta_4",
     ) -> None:
         """
         Initialize the Particle Flow Filter.
+
         Args:
-        mem (int): Number of ensemble members.
-        nx (int): Size of the state vector.
-        R (numpy.array): Observation error covariance matrix.
-        obs_operator (Callable[[np.ndarray], np.ndarray]): Observation operator.
+            ensemble_size (int): Number of ensemble members.
+            R (numpy.array): Observation error covariance matrix.
+            obs_operator (Callable[[np.ndarray], np.ndarray]): Observation operator.
+            forward_operator (Callable[[np.ndarray], np.ndarray]): Forward operator.
+            localization_distance (int): Localization distance.
+            num_pseudo_time_steps (int): Number of pseudo-time steps.
+            step_size (float): Step size.
+            alpha (float): Alpha parameter.
+            kernel_type (str): Type of kernel to use.
+            stepper (str): Type of stepper to use.
         """
         super().__init__(obs_operator, forward_operator)
         self.ensemble_size = ensemble_size
@@ -165,8 +128,12 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         self.num_states = forward_operator.num_states
         self.state_dim = forward_operator.state_dim
         self.dofs = self.num_states * self.state_dim
-
+        self.num_pseudo_time_steps = num_pseudo_time_steps
         self.localization_distance = localization_distance
+        self.step_size = step_size
+        self.alpha = alpha
+        self.kernel_type = kernel_type
+        self.stepper = stepper
 
         if self.localization_distance is None:
             self.localization = lambda x: x
@@ -182,85 +149,67 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         rng_key: jax.random.PRNGKey,
     ) -> np.ndarray:
 
-        prior_ensemble = prior_ensemble.reshape(self.ensemble_size, -1).T
+        x_s = prior_ensemble.reshape(self.ensemble_size, -1).T  # [dofs, ensemble]
 
-        B = np.cov(prior_ensemble)
-        B = self.localization(B)
-        x0_mean = np.mean(prior_ensemble, axis=1)
+        prior_cov = jnp.cov(x_s)
+        prior_cov = self.localization(prior_cov)
+        prior_mean = jnp.mean(x_s, axis=1)
+        prior_cov_inv = jnp.linalg.inv(prior_cov)
 
-        # Pseudo-time flow parameters
-        s = 0
-        max_s = 100
-        ds = 0.05 / 10
-        alpha = 0.05 / 10  # Tuning parameter for the covariance of the kernel
+        distance_weight_matrix = jnp.linalg.inv(self.alpha * prior_cov)
 
-        x_s = prior_ensemble.copy()
-        python_pseudoflow = np.zeros((self.dofs, self.ensemble_size, max_s + 1))
-        python_pseudoflow[:, :, 0] = x_s.copy()
+        obs_cov_inv = jnp.linalg.inv(self.R)
 
-        n_obs = np.sum(obs_vect > -999)
-        R_inv = np.linalg.inv(self.R)
-
-        # Pseudo-time for data assimilation
-        while s < max_s:
-
-            H = np.zeros((n_obs, self.dofs))
-            Hx = np.zeros((n_obs, self.ensemble_size))
-            dHdx = np.zeros((n_obs, self.dofs, self.ensemble_size))
-            dpdx = np.zeros((self.dofs, self.ensemble_size))
-
-            for i in range(self.ensemble_size):
-                H = self.obs_operator.obs_matrix
-
-                Hx[:, :] = H @ x_s
-
-                # x_s[index_obs, :]
-                y = np.ones((n_obs, 1))
-                y[:, 0] = obs_vect
-                y_i = np.ones((n_obs, 1))
-                y_i[:, 0] = Hx[:, i]
-
-                dpdx[:, i] = grad_log_post(
-                    H, self.R, R_inv, y, y_i, B, x_s[:, i], x0_mean
-                )
-
-            # Kernel calculation
-            B_d = np.zeros((self.dofs))
-            for d in range(self.dofs):
-                B_d[d] = B[d, d]
-
-            kernel = np.zeros((self.dofs, self.ensemble_size, self.ensemble_size))
-            dkdx = np.zeros((self.dofs, self.ensemble_size, self.ensemble_size))
-            I_f = np.zeros((self.dofs, self.ensemble_size))
-
-            for i in range(self.ensemble_size):
-                for j in range(i, self.ensemble_size):
-                    kernel[:, i, j] = np.exp(
-                        (-1 / 2) * ((x_s[:, i] - x_s[:, j]) ** 2) / (alpha * B_d[:])
-                    )
-                    dkdx[:, i, j] = ((x_s[:, i] - x_s[:, j]) / alpha) * kernel[:, i, j]
-                    if j != i:
-                        kernel[:, i, j] = kernel[:, j, i]
-                        dkdx[:, i, j] = -dkdx[:, j, i]
-
-                attractive_term = (1 / self.ensemble_size) * (kernel[:, i, :] * dpdx)
-                repelling_term = (1 / self.ensemble_size) * dkdx[:, i, :]
-                I_f[:, i] = np.sum(attractive_term + repelling_term, axis=1)
-
-            # Update the state vector for next pseudo time step
-            fs = I_f
-            x_s += ds * fs
-            python_pseudoflow[:, :, s + 1] = x_s
-
-            s += 1
-
-        # Gathering final results
-        posterior_ensemble = python_pseudoflow[:, :, -1]
-        # mean_posterior = np.mean(posterior_vect, axis=1)
-        # cov_posterior = np.cov(posterior_vect)
-
-        posterior_ensemble = posterior_ensemble.reshape(
-            self.ensemble_size, self.num_states, self.state_dim
+        # Distributions
+        prior_score_fn = get_prior_score_fn(
+            prior_mean=prior_mean,
+            prior_cov_inv=prior_cov_inv,
+        )
+        likelihood_score_fn = get_likelihood_score_fn(
+            obs_vect=obs_vect,
+            obs_matrix=self.obs_operator.obs_matrix,
+            obs_cov_inv=obs_cov_inv,
+        )
+        posterior_score_fn = get_posterior_score_fn(
+            prior_score_fn=prior_score_fn,
+            likelihood_score_fn=likelihood_score_fn,
         )
 
-        return posterior_ensemble
+        posterior_score_vmap = jax.vmap(posterior_score_fn, in_axes=-1, out_axes=-1)
+
+        # Kernels
+        divergence_kernel_fn = get_pairwise_interactions_fn(
+            kernel_fn=get_divergence_kernel_fn(
+                kernel_type=self.kernel_type,
+                distance_weight_matrix=distance_weight_matrix,
+            ),
+        )
+        kernel_matrix_fn = get_pairwise_interactions_fn(
+            kernel_fn=get_kernel_matrix_fn(
+                kernel_type=self.kernel_type,
+                distance_weight_matrix=distance_weight_matrix,
+            ),
+        )
+
+        # RHS
+        rhs_fn = get_rhs_fn(
+            posterior_score_fn=jax.jit(posterior_score_vmap),
+            divergence_kernel_fn=jax.jit(divergence_kernel_fn),
+            kernel_matrix_fn=jax.jit(kernel_matrix_fn),
+        )
+        # stepper = RungeKutta4(self.step_size, rhs_fn)
+        # stepper = jax.jit(self._get_stepper(rhs_fn))
+        stepper = get_stepper(self.stepper, self.step_size, rhs_fn)
+
+        rollout_fn = rollout(stepper, self.num_pseudo_time_steps)
+        rollout_fn = jax.jit(rollout_fn)
+
+        x_s = rollout_fn(x_s)
+
+        # Pseudo-time for data assimilation
+        # for _ in range(self.num_pseudo_time_steps):
+        #     x_s = rk_stepper(x_s)
+
+        x_s = x_s.T
+
+        return x_s.reshape(self.ensemble_size, self.num_states, self.state_dim)
