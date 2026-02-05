@@ -20,17 +20,17 @@ from non_gaussian_data_assim.observation_operator import ObservationOperator
 
 SEED = 42
 
-OUTER_STEPS = 300
-INNER_STEPS = 5
-ENSEMBLE_SIZE = 100
+OUTER_STEPS = 300  # Number of steps where the DA method is applied
+INNER_STEPS = 5  # Number of steps between each assimilation step
+ENSEMBLE_SIZE = 100  # Number of ensemble members
 
-DA_METHOD = "enkf"
+DA_METHOD = "enkf"  # Which DA method to use. only EnKF, AGMF, and PFF are supported
 DA_METHODS = {
     "enkf": EnsembleKalmanFilter,
     "agmf": AdaptiveGaussianMixtureFilter,
     "pff": ParticleFlowFilter,
 }
-SPECIFIC_DA_ARGS = {
+SPECIFIC_DA_ARGS = {  # Specific arguments for each DA method. Modify here for trying different settings
     "enkf": {
         "inflation_factor": 1.0,
         "localization_distance": 10,
@@ -49,14 +49,16 @@ SPECIFIC_DA_ARGS = {
     },
 }
 
-# Constants and parameters
-DT = 0.05
+# Model constants and parameters
+DT = 0.05  # Model step size
 NU = 1.0
 DOMAIN_LENGTH = 100
 
-NUM_STATES = 1
-STATE_DIM = 512
-NUM_SKIP_OBS = 4
+NUM_STATES = (
+    1  # Number of states in the model. E.g. velocity-x, velocity-y, temperature, etc.
+)
+STATE_DIM = 512  # Number of spatial grid points
+NUM_SKIP_OBS = 4  # Spatial points to skip between observations
 
 # Observation ids
 OBS_IDS = np.arange(0, STATE_DIM, NUM_SKIP_OBS)
@@ -69,9 +71,10 @@ R = jnp.eye(len(OBS_IDS)) * 0.1
 x = jnp.linspace(start=0, stop=DOMAIN_LENGTH, num=STATE_DIM)
 
 # initial condition function
-X_0_FN = lambda magnitude: magnitude * jnp.cos(
-    (2 * jnp.pi * x) / DOMAIN_LENGTH
-) + magnitude * jnp.cos((4 * jnp.pi * x) / DOMAIN_LENGTH)
+X_0_FN = lambda magnitude: (
+    magnitude * jnp.cos((2 * jnp.pi * x) / DOMAIN_LENGTH)
+    + magnitude * jnp.cos((4 * jnp.pi * x) / DOMAIN_LENGTH)
+)
 
 
 def main() -> None:
