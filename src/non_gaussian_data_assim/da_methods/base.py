@@ -1,6 +1,6 @@
 import functools
 from abc import abstractmethod
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import jax
 import jax.numpy as jnp
@@ -84,6 +84,7 @@ class BaseDataAssimilationMethod:
         obs_vect: np.ndarray,
         rng_key: jax.random.PRNGKey,
         return_inner_steps: bool = False,
+        **kwargs: Any,
     ) -> np.ndarray:
         """Assimilate the data."""
 
@@ -91,7 +92,7 @@ class BaseDataAssimilationMethod:
             prior_ensemble, return_inner_steps=return_inner_steps
         )
         analysis_ensemble = self._analysis_step(
-            forecast_ensemble[:, -1], obs_vect, rng_key=rng_key
+            forecast_ensemble[:, -1], obs_vect, rng_key=rng_key, **kwargs
         )
         if return_inner_steps:
             analysis_ensemble = jnp.concatenate(
@@ -107,6 +108,7 @@ class BaseDataAssimilationMethod:
         prior_ensemble: np.ndarray,
         obs_vect: np.ndarray,
         rng_key: jax.random.PRNGKey,
+        **kwargs: Any,
     ) -> np.ndarray:
         """
         Assimilate the data.
@@ -137,6 +139,7 @@ class BaseDataAssimilationMethod:
         obs_vect: np.ndarray,
         rng_key: jax.random.PRNGKey,
         return_inner_steps: bool = False,
+        **kwargs: Any,
     ) -> np.ndarray:
         """Run the data assimilation method."""
         return self._assimilate_data(
@@ -144,6 +147,7 @@ class BaseDataAssimilationMethod:
             obs_vect,
             rng_key=rng_key,
             return_inner_steps=return_inner_steps,
+            **kwargs,
         )
 
     def rollout(
@@ -152,6 +156,7 @@ class BaseDataAssimilationMethod:
         observations: jnp.ndarray,
         rng_key: jax.random.PRNGKey,
         return_inner_steps: bool = False,
+        **kwargs: Any,
     ) -> jnp.ndarray:
         """Rollout the data assimilation method."""
 
@@ -161,6 +166,7 @@ class BaseDataAssimilationMethod:
                 observations,
                 rng_key,
                 include_initial_state=True,
+                **kwargs,
             )
         else:
             da_rollout_fn = da_rollout(
@@ -168,6 +174,7 @@ class BaseDataAssimilationMethod:
                 observations,
                 rng_key,
                 include_initial_state=True,
+                **kwargs,
             )
 
         da_rollout_fn = jax.jit(da_rollout_fn)

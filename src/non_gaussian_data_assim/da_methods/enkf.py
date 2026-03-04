@@ -54,6 +54,7 @@ class EnsembleKalmanFilter(BaseDataAssimilationMethod):
         prior_ensemble: np.ndarray,
         obs_vect: np.ndarray,
         rng_key: jax.random.PRNGKey,
+        **kwargs: Any,
     ) -> np.ndarray:
         """Analysis step of the Ensemble Kalman Filter.
 
@@ -82,13 +83,13 @@ class EnsembleKalmanFilter(BaseDataAssimilationMethod):
         # Filter and perturb the observation vector
         rng_key, key = jax.random.split(rng_key)
         perturb = jax.random.multivariate_normal(
-            key, jnp.zeros(self.obs_operator.num_obs), self.R, shape=self.ensemble_size
+            key, jnp.zeros(self.obs_operator.num_obs), self.R, shape=(self.ensemble_size,)  # type: ignore[attr-defined]
         )
         obs_vect_perturbed = obs_vect + perturb
         obs_vect_perturbed = obs_vect_perturbed.T
 
         # Observation operator matrix
-        obs_matrix = self.obs_operator.obs_matrix
+        obs_matrix = self.obs_operator.obs_matrix  # type: ignore[attr-defined]
 
         # Calculate the Kalman gain
         k_left = cov_prior @ obs_matrix.T

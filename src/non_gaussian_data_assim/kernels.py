@@ -1,6 +1,7 @@
 import functools
 from typing import Any, Callable
 
+import jax
 import jax.numpy as jnp
 
 from non_gaussian_data_assim.jax_utils import compute_pairwise_interaction
@@ -12,6 +13,13 @@ def exp_scalar_kernel_fn(
     distance_weight_matrix: jnp.ndarray,
 ) -> jnp.ndarray:
     """Get the scalar kernel function."""
+
+    # dx = x-y
+    # sqdist = jnp.sum(dx**2)
+    # kernel = jnp.exp(-0.5 * sqdist * distance_weight_matrix)
+
+    # return kernel
+
     return jnp.exp(-0.5 * (x - y).T @ distance_weight_matrix @ (x - y))
 
 
