@@ -118,9 +118,9 @@ def get_true_posterior(
 
 SEED = 42
 
-ENSEMBLE_SIZE = 50
+ENSEMBLE_SIZE = 500
 
-DA_METHOD = "pff"
+DA_METHOD = "enkf"
 DA_METHODS = {
     "enkf": EnsembleKalmanFilter,
     "agmf": AdaptiveGaussianMixtureFilter,
@@ -137,9 +137,9 @@ SPECIFIC_DA_ARGS = {
     },
     "pff": {
         # "return_pff_trajectory": True,
-        "num_pseudo_time_steps": 1000,
-        "step_size": 1 / 100,
-        "alpha": 1 / 100,
+        "num_pseudo_time_steps": 200,
+        "step_size": 1 / 10,
+        "alpha": 1 / 10,
         # "stepper": "runge_kutta_4",
         "stepper": "forward_euler",
         # "stepper": "backward_euler",

@@ -20,5 +20,4 @@ class IdentityModel(BaseForwardModel):
 
     def one_step(self, x: jnp.ndarray) -> jnp.ndarray:
         """Identity model one step."""
-        q = np.random.normal(0, 0.25)
-        return x + q
+        return x

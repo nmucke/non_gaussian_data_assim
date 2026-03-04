@@ -71,7 +71,6 @@ def main() -> None:
     forward_model = IdentityModel(state_dim=STATE_DIM)
 
     # Define the observation operator
-    rng_key, key = jax.random.split(rng_key)
     obs_operator = SineObservationOperatorNoError(
         obs_states=OBS_STATES,
         obs_indices=OBS_IDS,
@@ -90,8 +89,6 @@ def main() -> None:
     )
 
     # Initialize the prior ensemble
-    # rng_key, key = jax.random.split(rng_key)
-    # prior_ensemble = jax.random.normal(key, (ENSEMBLE_SIZE, NUM_STATES, STATE_DIM)) * B + 1.0
     prior_ensemble = jnp.linspace(-1.0, 3.0, ENSEMBLE_SIZE).reshape(ENSEMBLE_SIZE, 1, 1)
     prior_kde = gaussian_kde(prior_ensemble[:, 0, 0])
 
@@ -102,13 +99,10 @@ def main() -> None:
     posterior_ensemble = posterior_ensemble.reshape(
         ENSEMBLE_SIZE, 1, NUM_STATES, STATE_DIM
     )
-    rng_key, key = jax.random.split(rng_key)
-
     t0 = time.time()
     posterior_ensemble = da_model(
         prior_ensemble=posterior_ensemble[:, -1],
         obs_vect=observations,
-        rng_key=key,
         return_inner_steps=False,
         prior_mean=jnp.ones(1),
         prior_cov=jnp.eye(1),

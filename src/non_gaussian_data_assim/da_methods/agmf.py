@@ -176,7 +176,10 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
         # Filter and perturb the observation vector
         rng_key, key = jax.random.split(rng_key)
         obs_vect_perturbed = obs_vect + jax.random.multivariate_normal(
-            key, jnp.zeros(self.obs_operator.num_obs), self.R, shape=(self.ensemble_size,)  # type: ignore[attr-defined, arg-type]
+            key,
+            jnp.zeros(self.obs_operator.num_obs),  # type: ignore[attr-defined]
+            self.R,
+            shape=(self.ensemble_size,),
         )
         obs_vect_perturbed = obs_vect_perturbed.T
 

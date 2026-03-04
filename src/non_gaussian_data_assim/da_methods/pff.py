@@ -6,10 +6,10 @@ import numpy as np
 
 from non_gaussian_data_assim.da_methods.base import BaseDataAssimilationMethod
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
+from non_gaussian_data_assim.jax_utils import get_pairwise_interaction_fn
 from non_gaussian_data_assim.kernels import (
     get_divergence_kernel_fn,
     get_kernel_matrix_fn,
-    get_pairwise_interactions_fn,
 )
 from non_gaussian_data_assim.localization import distance_based_localization
 from non_gaussian_data_assim.observation_operator import (
@@ -44,7 +44,6 @@ def get_likelihood_score_fn_with_linear_obs_operator(
     """Get the likelihood score function."""
 
     def likelihood_score_fn(x_s: np.ndarray) -> np.ndarray:
-        # return obs_matrix.T @ obs_cov_inv @ (obs_vect - obs_matrix @ x_s)
         return -obs_matrix.T @ obs_cov_inv @ (obs_matrix @ x_s - obs_vect)
 
     return likelihood_score_fn
@@ -83,47 +82,27 @@ def get_rhs_fn(
     divergence_kernel_fn: Callable[[jnp.ndarray], jnp.ndarray],
     kernel_matrix_fn: Callable[[jnp.ndarray], jnp.ndarray],
 ) -> Callable[[jnp.ndarray], jnp.ndarray]:
-    """Get the right-hand side function."""
+    """Get the right-hand side function.
+
+    Args:
+        posterior_score_fn: Maps x_s [ensemble, dofs] -> posterior_score [ensemble, dofs].
+        divergence_kernel_fn: Maps x_s -> [ensemble, ensemble, dofs].
+        kernel_matrix_fn: Maps x_s -> [ensemble, ensemble, 1].
+    """
 
     def rhs_fn(x_s: jnp.ndarray) -> jnp.ndarray:
+        """Get the right-hand side function."""
+
         posterior_score = posterior_score_fn(x_s)
 
-        posterior_score = posterior_score.T
-        x_s = x_s.T
+        kernel_matrix = kernel_matrix_fn(x_s)
+        divergence_kernel = divergence_kernel_fn(x_s)
 
-        out = jnp.zeros_like(x_s)
-        for i in range(x_s.shape[0]):
+        out = divergence_kernel + kernel_matrix[:, :, None] * posterior_score[None]
 
-            kernel_matrix_fn_vmap = jax.vmap(
-                lambda x: kernel_matrix_fn(x, x_s[i, :]), in_axes=0, out_axes=0
-            )
-            kernel_mat = kernel_matrix_fn_vmap(x_s)
+        out = out.sum(axis=1)
 
-            divergence_kernel_fn_vmap = jax.vmap(
-                lambda x: divergence_kernel_fn(x, x_s[i, :]), in_axes=0, out_axes=0
-            )
-            divergence_kernel = divergence_kernel_fn_vmap(x_s)
-
-            # val = divergence_kernel + (kernel_mat[:, None] * posterior_score)
-            val = divergence_kernel + jnp.matvec(kernel_mat, posterior_score)
-            val = jnp.sum(val, 0)
-            out = out.at[i, :].set(val)
-
-        out = out.T
-
-        return out / out.shape[-1]
-
-        # kernel_mat = kernel_matrix_fn(x_s)
-
-        # divergence_kernel = divergence_kernel_fn(x_s)
-
-        # divergence_kernel_term = divergence_kernel.sum(axis=1)
-
-        # posterior_term = jnp.einsum("dije,ei->dj", kernel_mat, posterior_score)
-
-        # I_f = divergence_kernel_term + posterior_term
-
-        # return I_f / x_s.shape[-1]
+        return out / x_s.shape[0]
 
     return rhs_fn
 
@@ -184,18 +163,18 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         self,
         prior_ensemble: np.ndarray,
         obs_vect: np.ndarray,
-        rng_key: jax.random.PRNGKey,
+        rng_key: Optional[jax.random.PRNGKey] = None,
         prior_mean: Optional[np.ndarray] = None,
         prior_cov: Optional[np.ndarray] = None,
         **kwargs: Any,
     ) -> np.ndarray:
 
-        x_s = prior_ensemble.reshape(self.ensemble_size, -1).T  # [dofs, ensemble]
+        x_s = prior_ensemble.reshape(self.ensemble_size, -1)  # [dofs, ensemble]
 
         if prior_mean is None:
-            prior_mean = jnp.mean(x_s, axis=1)
+            prior_mean = jnp.mean(x_s, axis=0)
         if prior_cov is None:
-            prior_cov = jnp.cov(x_s)
+            prior_cov = jnp.cov(x_s.T)
         prior_cov = self.localization(prior_cov)
         prior_cov_inv = jnp.linalg.inv(prior_cov)
 
@@ -204,7 +183,6 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
 
         # distance_weight_matrix = jnp.linalg.inv(self.alpha * prior_cov)
         distance_weight_matrix = jnp.eye(self.state_dim) * jnp.pi
-        # distance_weight_matrix = jnp.pi
 
         obs_cov_inv = jnp.linalg.inv(self.R)
 
@@ -214,10 +192,9 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
             prior_cov_inv=prior_cov_inv,
         )
         if self.is_linear_obs_operator:
-            obs_matrix = self.obs_operator.obs_matrix  # type: ignore[attr-defined]
             likelihood_score_fn = get_likelihood_score_fn_with_linear_obs_operator(
                 obs_vect=obs_vect,
-                obs_matrix=obs_matrix,
+                obs_matrix=self.obs_operator.obs_matrix,  # type: ignore[attr-defined]
                 obs_cov_inv=obs_cov_inv,
             )
         else:
@@ -230,31 +207,23 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
             prior_score_fn=prior_score_fn,
             likelihood_score_fn=likelihood_score_fn,
         )
-        posterior_score_vmap = jax.vmap(posterior_score_fn, in_axes=-1, out_axes=-1)
+        posterior_score_vmap = jax.vmap(posterior_score_fn, in_axes=0, out_axes=0)
 
         # Kernels
-        # divergence_kernel_fn = get_pairwise_interactions_fn(
-        #     kernel_fn=get_divergence_kernel_fn(
-        #         kernel_type=self.kernel_type,
-        #         distance_weight_matrix=distance_weight_matrix,
-        #     ),
-        # )
-        # kernel_matrix_fn = get_pairwise_interactions_fn(
-        #     kernel_fn=get_kernel_matrix_fn(
-        #         kernel_type=self.kernel_type,
-        #         distance_weight_matrix=distance_weight_matrix,
-        #     ),
-        # )
-        divergence_kernel_fn = get_divergence_kernel_fn(
-            kernel_type=self.kernel_type,
-            distance_weight_matrix=distance_weight_matrix,
+        divergence_kernel_fn = get_pairwise_interaction_fn(
+            pair_fn=get_divergence_kernel_fn(
+                kernel_type=self.kernel_type,
+                distance_weight_matrix=distance_weight_matrix,
+            ),
         )
-        kernel_matrix_fn = get_kernel_matrix_fn(
-            kernel_type=self.kernel_type,
-            distance_weight_matrix=distance_weight_matrix,
+        kernel_matrix_fn = get_pairwise_interaction_fn(
+            pair_fn=get_kernel_matrix_fn(
+                kernel_type=self.kernel_type,
+                distance_weight_matrix=distance_weight_matrix,
+            ),
         )
 
-        compile_rhs = False
+        compile_rhs = True
         if compile_rhs:
             posterior_score_vmap = jax.jit(posterior_score_vmap)
             divergence_kernel_fn = jax.jit(divergence_kernel_fn)
@@ -266,8 +235,6 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
             divergence_kernel_fn=divergence_kernel_fn,
             kernel_matrix_fn=kernel_matrix_fn,
         )
-        # stepper = RungeKutta4(self.step_size, rhs_fn)
-        # stepper = jax.jit(self._get_stepper(rhs_fn))
         stepper = get_stepper(self.stepper, self.step_size, rhs_fn)
 
         rollout_fn = rollout(
@@ -286,9 +253,10 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         #     flow.append(x_s)
 
         # x_s = jnp.array(flow)
+        # x_s = x_s[-1]
 
         if self.return_pff_trajectory:
-            x_s = jnp.transpose(x_s, (2, 0, 1))
+            x_s = jnp.transpose(x_s, (1, 0, 2))
             return x_s.reshape(
                 self.ensemble_size,
                 self.num_pseudo_time_steps,
@@ -296,6 +264,4 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
                 self.state_dim,
             )
 
-        # x_s = x_s[-1]
-        x_s = x_s.T
         return x_s.reshape(self.ensemble_size, self.num_states, self.state_dim)

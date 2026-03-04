@@ -82,7 +82,7 @@ class BaseDataAssimilationMethod:
         self,
         prior_ensemble: np.ndarray,
         obs_vect: np.ndarray,
-        rng_key: jax.random.PRNGKey,
+        rng_key: Optional[jax.random.PRNGKey] = None,
         return_inner_steps: bool = False,
         **kwargs: Any,
     ) -> np.ndarray:
@@ -137,7 +137,7 @@ class BaseDataAssimilationMethod:
         self,
         prior_ensemble: np.ndarray,
         obs_vect: np.ndarray,
-        rng_key: jax.random.PRNGKey,
+        rng_key: Optional[jax.random.PRNGKey] = None,
         return_inner_steps: bool = False,
         **kwargs: Any,
     ) -> np.ndarray:
@@ -154,7 +154,7 @@ class BaseDataAssimilationMethod:
         self,
         prior_ensemble: np.ndarray,
         observations: jnp.ndarray,
-        rng_key: jax.random.PRNGKey,
+        rng_key: Optional[jax.random.PRNGKey] = None,
         return_inner_steps: bool = False,
         **kwargs: Any,
     ) -> jnp.ndarray:

@@ -4,28 +4,45 @@ import jax
 import jax.numpy as jnp
 
 
-def compute_pairwise_interaction(
-    x_s: jnp.ndarray, pair_function: Callable
-) -> jnp.ndarray:
+def get_pairwise_interaction_fn(
+    pair_fn: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
+) -> Callable[[jnp.ndarray], jnp.ndarray]:
     """
-    Compute the pairwise interaction of the ensemble.
+    Create a vectorized function that computes pairwise interactions over an ensemble.
+
+    For pair_fn(x, y) with x, y of shape [dofs], returns a function that takes
+    x_s of shape [ensemble, dofs] and returns an array of shape
+    [ensemble, ensemble, *output_shape] where result[i, j, ...] = pair_fn(x_s[j], x_s[i]).
+
+    The first dimension (i) corresponds to the outer loop (anchor particle).
+    The second dimension (j) corresponds to the inner loop (interacting particle).
 
     Args:
-    x_s: State array of shape [dofs, ensemble].
-    pair_function: Function f(x, y) taking two [dofs] vectors, returns [dofs].
+        pair_fn: Function f(x, y) taking two [dofs] vectors, returns an array of any shape.
 
     Returns:
-    Array of shape [dofs, ensemble, ensemble] where
-    result[:, i, j] = pair_function(x_s[:, i], x_s[:, j]).
+        A function that takes x_s [ensemble, dofs] and returns [ensemble, ensemble, *output_shape].
     """
-    # Inner vmap over j: for fixed i, compute pair_function(x_s[:, i], x_s[:, j]) for all j
-    # in_axes=(None, 1): batch over columns (axis 1) of second arg
-    # out_axes=1: stack j along axis 1 -> [dofs, ensemble]
-    inner_vmap = jax.vmap(pair_function, in_axes=(None, 1), out_axes=1)
 
-    # Outer vmap over i: for each i, run inner_vmap(x_s[:, i], x_s)
-    # in_axes=(1, None): batch over columns (axis 1) of first arg
-    # out_axes=1: stack i along axis 1 -> [dofs, ensemble, ensemble]
-    vmap_func = jax.vmap(inner_vmap, in_axes=(1, None), out_axes=1)
+    def pairwise_interaction_fn(x_s: jnp.ndarray) -> jnp.ndarray:
+        """
+        Compute pairwise interactions.
 
-    return vmap_func(x_s, x_s)
+        Args:
+            x_s: State array of shape [ensemble, dofs].
+
+        Returns:
+            Array of shape [ensemble, ensemble, *output_shape] where
+            result[i, j, ...] = pair_fn(x_s[j, :], x_s[i, :]).
+        """
+        # Inner vmap over j: for fixed i, compute pair_fn(x_s[j, :], x_s[i, :]) for all j
+        # in_axes=(0, None): batch over rows (axis 0) of first arg, second arg is broadcast
+        inner_vmap = jax.vmap(pair_fn, in_axes=(0, None), out_axes=0)
+
+        # Outer vmap over i: for each i, run inner_vmap over all j
+        # in_axes=(None, 0): batch over rows of second arg (x_s[i] for each i)
+        vmap_func = jax.vmap(inner_vmap, in_axes=(None, 0), out_axes=0)
+
+        return vmap_func(x_s, x_s)
+
+    return pairwise_interaction_fn
