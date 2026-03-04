@@ -13,15 +13,17 @@ from non_gaussian_data_assim.da_methods.enkf import EnsembleKalmanFilter
 from non_gaussian_data_assim.da_methods.pff import ParticleFlowFilter
 from non_gaussian_data_assim.forward_models.lorenz_63 import Lorenz63Model
 from non_gaussian_data_assim.forward_models.lorenz_96 import Lorenz96Model
-from non_gaussian_data_assim.observation_operator import ObservationOperator
+from non_gaussian_data_assim.observation_operator import LinearObservationOperator
 
 SEED = 42
 
 OUTER_STEPS = 100
-INNER_STEPS = 10
-ENSEMBLE_SIZE = 50
+INNER_STEPS = 50
+ENSEMBLE_SIZE = 100
 
-DA_METHOD = "pff"
+DA_METHOD = "enkf"
+
+
 DA_METHODS = {
     "enkf": EnsembleKalmanFilter,
     "agmf": AdaptiveGaussianMixtureFilter,
@@ -37,9 +39,9 @@ SPECIFIC_DA_ARGS = {
         "w_prev": np.ones(ENSEMBLE_SIZE) / ENSEMBLE_SIZE,
     },
     "pff": {
-        "num_pseudo_time_steps": 100,
-        "step_size": 3.0,
-        "stepper": "backward_euler",
+        "num_pseudo_time_steps": 1500,
+        "step_size": 0.05,
+        "stepper": "runge_kutta_4",
     },
 }
 
@@ -58,7 +60,7 @@ OBS_IDS = np.arange(0, 3)
 OBS_STATES = (0,)
 
 # Observation error covariance matrix
-R = jnp.eye(len(OBS_IDS)) * 20.0
+R = jnp.eye(len(OBS_IDS)) * 5.0
 
 
 def main() -> None:
@@ -82,7 +84,7 @@ def main() -> None:
     true_sol = forward_model.rollout(X_0, OUTER_STEPS, return_inner_steps=True)
 
     # Define the observation operator
-    obs_operator = ObservationOperator(
+    obs_operator = LinearObservationOperator(
         obs_states=OBS_STATES, obs_indices=OBS_IDS, state_dim=STATE_DIM
     )
 
@@ -166,7 +168,12 @@ def main() -> None:
     std_post = posterior_ensemble.std(axis=(0, 2))
     time_axis = np.arange(posterior_ensemble.shape[1])
 
+    state_names = ["x", "y", "z"]
+
     plt.figure()
+    plt.suptitle(
+        f"Lorenz 63, DA Method: {DA_METHOD}, Ensemble Size: {ENSEMBLE_SIZE}, \n Prior Error: {prior_error:.2f}, Posterior Error: {posterior_error:.2f}"
+    )
     for state_idx in range(STATE_DIM):
         plt.subplot(STATE_DIM, 1, state_idx + 1)
         for i, (state_name, state_data, color) in enumerate(
@@ -194,7 +201,7 @@ def main() -> None:
         )
         plt.legend()
         plt.xlabel("Time")
-        plt.ylabel("State")
+        plt.ylabel(f"{state_names[state_idx]}")
         plt.ylim(true_sol[:, state_idx].min(), true_sol[:, state_idx].max())
     plt.show()
 

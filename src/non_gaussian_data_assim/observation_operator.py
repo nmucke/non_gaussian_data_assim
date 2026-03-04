@@ -1,11 +1,39 @@
 import pdb
+from abc import abstractmethod
+from typing import Callable
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 from jax.experimental import sparse
 from numpy.typing import NDArray
 
 
 class ObservationOperator:
+    """Observation operator for selecting specific states and indices from a 3D state array."""
+
+    def __init__(
+        self,
+        is_linear: bool = True,
+    ):
+        self.is_linear = is_linear
+
+    @abstractmethod
+    def _obs_operator(self, x: jnp.ndarray) -> jnp.ndarray:
+        """Apply the observation operator to a single state."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def grad_obs_operator(self, x: jnp.ndarray) -> jnp.ndarray:
+        """Gradient of the observation operator."""
+        raise NotImplementedError
+
+    def __call__(self, ensemble: jnp.ndarray) -> jnp.ndarray:
+        """Apply the observation operator to the ensemble."""
+        return jax.vmap(self._obs_operator)(ensemble)
+
+
+class LinearObservationOperator(ObservationOperator):
     """Observation operator for selecting specific states and indices from a 3D state array.
 
     The state array is expected to have shape [ensemble_size, num_states, state_dim].
@@ -16,7 +44,12 @@ class ObservationOperator:
     The output is flattened to shape [ensemble_size, len(obs_states) * len(obs_indices)].
     """
 
-    def __init__(self, obs_states: np.ndarray, obs_indices: np.ndarray, state_dim: int):
+    def __init__(
+        self,
+        obs_states: np.ndarray,
+        obs_indices: np.ndarray,
+        state_dim: int,
+    ):
         """
         Initialize the observation operator.
 
@@ -32,14 +65,20 @@ class ObservationOperator:
         self.num_states = len(obs_states)
         self.num_obs = len(obs_indices) * len(obs_states)
 
+        self.is_linear = True
+
         self.obs_matrix = get_obs_matrix(
             obs_states, obs_indices, self.num_states, self.state_dim
         )
         self.obs_matrix = sparse.BCOO.fromdense(self.obs_matrix)
 
-    def __call__(self, ensemble: np.ndarray) -> np.ndarray:
-        """Apply the observation operator to the ensemble."""
-        return ensemble[:, self.obs_states, self.obs_indices]
+    def grad_obs_operator(self, x: jnp.ndarray) -> jnp.ndarray:
+        """Gradient of the observation operator."""
+        return self.obs_matrix.T
+
+    def _obs_operator(self, x: jnp.ndarray) -> jnp.ndarray:
+        """Apply the observation operator to a single state."""
+        return self.obs_matrix @ x.flatten()
 
 
 def get_obs_matrix(
@@ -91,26 +130,83 @@ def get_obs_matrix(
     return H.T
 
 
-def obs_operator(nx: int, obs_vect: np.ndarray) -> np.ndarray:
-    """
-    Create the observation operator matrix H.
+class NonlinearObservationOperator(ObservationOperator):
+    """Observation operator"""
 
-    Args:
-    nx (int): Size of the state vector.
-    obs_vect (numpy.array): Observation vector, where -999 indicates missing data.
+    def __init__(
+        self,
+        obs_states: np.ndarray,
+        obs_indices: np.ndarray,
+        state_dim: int,
+        nonlinear_fn: Callable[[jnp.ndarray], jnp.ndarray],
+    ):
+        """Initialize the observation operator."""
+        self.obs_states = obs_states
+        self.obs_indices = obs_indices
+        self.state_dim = state_dim
+        self.num_states = len(obs_states)
+        self.num_obs = len(obs_indices) * len(obs_states)
 
-    Returns:
-    numpy.array: The observation operator matrix.
-    """
-    # Identifying indices of valid observations (not -999)
-    index_obs = np.where(obs_vect > -999)[0]
-    num_obs = len(index_obs)
+        self.is_linear = False
 
-    # Initializing the H matrix with zeros
-    h_matrix = np.zeros((num_obs, nx))
+        self.nonlinear_fn = nonlinear_fn
 
-    # Setting 1 at positions corresponding to actual observations
-    for i in range(num_obs):
-        h_matrix[i, index_obs[i]] = 1
+    def grad_obs_operator(self, x: jnp.ndarray) -> jnp.ndarray:
+        """Gradient of the observation operator."""
+        return jax.grad(self._obs_operator)(x)
 
-    return h_matrix
+    def _obs_operator(self, x: jnp.ndarray) -> jnp.ndarray:
+        return self.nonlinear_fn(x)
+
+
+class SineObservationOperator(NonlinearObservationOperator):
+    """Observation operator"""
+
+    def __init__(
+        self,
+        obs_states: np.ndarray,
+        obs_indices: np.ndarray,
+        state_dim: int,
+    ):
+        """Initialize the observation operator."""
+        self.obs_states = obs_states
+        self.obs_indices = obs_indices
+        self.state_dim = state_dim
+        self.num_states = len(obs_states)
+        self.num_obs = len(obs_indices) * len(obs_states)
+
+        self.is_linear = False
+
+    def grad_obs_operator(self, x: jnp.ndarray) -> jnp.ndarray:
+        """Gradient of the observation operator."""
+        return jnp.array([jnp.pi * jnp.cos(jnp.pi * x[0]), 1.0])
+
+    def _obs_operator(self, x: jnp.ndarray) -> jnp.ndarray:
+
+        return 1.0 + jnp.sin(jnp.pi * x[0]) + x[1]
+
+
+class SineObservationOperatorNoError(NonlinearObservationOperator):
+    """Observation operator"""
+
+    def __init__(
+        self,
+        obs_states: np.ndarray,
+        obs_indices: np.ndarray,
+        state_dim: int,
+    ):
+        """Initialize the observation operator."""
+        self.obs_states = obs_states
+        self.obs_indices = obs_indices
+        self.state_dim = state_dim
+        self.num_states = len(obs_states)
+        self.num_obs = len(obs_indices) * len(obs_states)
+        self.is_linear = False
+
+    def grad_obs_operator(self, x: jnp.ndarray) -> jnp.ndarray:
+        """Gradient of the observation operator."""
+        return jnp.pi * jnp.cos(jnp.pi * x)
+
+    def _obs_operator(self, x: jnp.ndarray) -> jnp.ndarray:
+        """Apply the observation operator to a single state."""
+        return 1.0 + jnp.sin(jnp.pi * x)

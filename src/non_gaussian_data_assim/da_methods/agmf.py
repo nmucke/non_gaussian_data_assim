@@ -162,6 +162,7 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
         prior_ensemble: np.ndarray,
         obs_vect: np.ndarray,
         rng_key: jax.random.PRNGKey,
+        **kwargs: Any,
     ) -> np.ndarray:
         """Analysis step of the Adaptive Gaussian Mixture Filter."""
 
@@ -175,12 +176,15 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
         # Filter and perturb the observation vector
         rng_key, key = jax.random.split(rng_key)
         obs_vect_perturbed = obs_vect + jax.random.multivariate_normal(
-            key, jnp.zeros(self.obs_operator.num_obs), self.R, shape=self.ensemble_size
+            key,
+            jnp.zeros(self.obs_operator.num_obs),  # type: ignore[attr-defined]
+            self.R,
+            shape=(self.ensemble_size,),
         )
         obs_vect_perturbed = obs_vect_perturbed.T
 
         # Calculating the observation operator matrix
-        obs_matrix = self.obs_operator.obs_matrix
+        obs_matrix = self.obs_operator.obs_matrix  # type: ignore[attr-defined]
 
         # Calculate the Kalman gain
         k_left = cov_prior @ obs_matrix.T
@@ -200,7 +204,7 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
         # Recalculating weights
         w_t = gaussian_mixt(
             self.w_prev,
-            self.obs_operator.num_obs,
+            self.obs_operator.num_obs,  # type: ignore[attr-defined]
             posterior_ensemble,
             obs_vect_perturbed,
             obs_matrix,
