@@ -528,31 +528,23 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         )
         stepper = get_stepper(self.stepper, self.step_size, rhs_fn)
 
-        # rollout_fn = rollout(
-        #     stepper,
-        #     self.num_pseudo_time_steps,
-        #     return_inner_steps=self.return_pff_trajectory,
-        # )
-        # rollout_fn = jax.jit(rollout_fn)
+        rollout_fn = rollout(
+            stepper,
+            self.num_pseudo_time_steps,
+            return_inner_steps=self.return_pff_trajectory,
+        )
+        rollout_fn = jax.jit(rollout_fn)
 
-        # x_s = rollout_fn(x_s)
-
-        x = [x_s]
-        for i in range(self.num_pseudo_time_steps):
-            x.append(stepper(x[-1]))
-
-        x_s = jnp.array(x)
+        x_s = rollout_fn(x_s)
 
         if self.return_pff_trajectory:
             x_s = jnp.transpose(x_s, (1, 0, 2))
-            return (
-                x_s.reshape(
-                    self.ensemble_size,
-                    self.num_pseudo_time_steps + 1,
-                    self.num_states,
-                    self.state_dim,
-                ),
-                rhs_fn,
+            return x_s.reshape(
+                self.ensemble_size,
+                self.num_pseudo_time_steps,
+                self.num_states,
+                self.state_dim,
             )
+            # rhs_fn,
 
-        return (x_s.reshape(self.ensemble_size, self.num_states, self.state_dim),)
+        return x_s.reshape(self.ensemble_size, self.num_states, self.state_dim)

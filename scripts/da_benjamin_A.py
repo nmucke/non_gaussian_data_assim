@@ -103,7 +103,7 @@ def main() -> None:
         ENSEMBLE_SIZE, 1, NUM_STATES, STATE_DIM
     )
     t0 = time.time()
-    posterior_ensemble, nikolaj_rhs_fn = da_model(
+    posterior_ensemble = da_model(
         prior_ensemble=posterior_ensemble[:, -1],
         obs_vect=observations,
         return_inner_steps=False,
@@ -117,6 +117,40 @@ def main() -> None:
     kde = gaussian_kde(posterior_ensemble)
 
     x = np.linspace(-2.5, 5.0, 100)
+
+    benjamin_samples = loadmat("benjamin_case/testcaseA_det.mat")
+    X_PFF = benjamin_samples["X_PFF"][:, 0, -1]
+    kde_benjamin = gaussian_kde(X_PFF)
+
+    n_bins = 100
+
+    plt.figure()
+    plt.plot(x, prior_kde.pdf(x), color="tab:orange", linewidth=3, label="Prior")
+    plt.hist(X_PFF, bins=n_bins, density=True, color="tab:red", alpha=0.2)
+    plt.plot(x, kde_benjamin.pdf(x), color="tab:red", linewidth=3, label="Benjamin PFF")
+    # plt.plot(x_pdf_SDE, pdf_SDE, color="tab:blue", linewidth=3, label="Benjamin SDE")
+    plt.hist(
+        posterior_ensemble, bins=n_bins, density=True, color="tab:green", alpha=0.2
+    )
+    plt.plot(
+        x,
+        kde.pdf(x),
+        color="tab:green",
+        linewidth=3,
+        label="Nikolaj PFF",
+        linestyle="--",
+    )
+    plt.grid(True)
+    plt.xlim(x.min(), x.max())
+    plt.legend()
+    plt.xlabel("x")
+    plt.ylabel("p(x|y)")
+    plt.title("Posterior Distribution")
+    plt.show()
+
+
+if __name__ == "__main__":
+    main()
 
     # # Load reference data for verification
     # benjamin_init_rhs = loadmat("benjamin_case/testcaseA_IC.mat")
@@ -163,39 +197,3 @@ def main() -> None:
     # print("     Compare: X_PFF[:,:,0] + 0.01*Nikolaj_RHS(X_PFF[:,:,0]) vs X_PFF[:,:,1]")
     # print(f"     Inf norm: {step_benjamin_norm:.6e}")
     # print(f"{sep}\n")
-
-    benjamin_samples = loadmat("benjamin_case/testcaseA_det.mat")
-
-    X_PFF = benjamin_samples["X_PFF"][:, 0, -1]
-
-    kde_benjamin = gaussian_kde(X_PFF)
-
-    n_bins = 100
-
-    plt.figure()
-    plt.plot(x, prior_kde.pdf(x), color="tab:orange", linewidth=3, label="Prior")
-    plt.hist(X_PFF, bins=n_bins, density=True, color="tab:red", alpha=0.2)
-    plt.plot(x, kde_benjamin.pdf(x), color="tab:red", linewidth=3, label="Benjamin PFF")
-    # plt.plot(x_pdf_SDE, pdf_SDE, color="tab:blue", linewidth=3, label="Benjamin SDE")
-    plt.hist(
-        posterior_ensemble, bins=n_bins, density=True, color="tab:green", alpha=0.2
-    )
-    plt.plot(
-        x,
-        kde.pdf(x),
-        color="tab:green",
-        linewidth=3,
-        label="Nikolaj PFF",
-        linestyle="--",
-    )
-    plt.grid(True)
-    plt.xlim(x.min(), x.max())
-    plt.legend()
-    plt.xlabel("x")
-    plt.ylabel("p(x|y)")
-    plt.title("Posterior Distribution")
-    plt.show()
-
-
-if __name__ == "__main__":
-    main()
