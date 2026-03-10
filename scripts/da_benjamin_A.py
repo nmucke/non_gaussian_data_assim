@@ -7,20 +7,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 from jax.scipy.stats import gaussian_kde
 from scipy.io import loadmat
-from tqdm import tqdm
 
 from non_gaussian_data_assim.da_methods.agmf import AdaptiveGaussianMixtureFilter
 from non_gaussian_data_assim.da_methods.enkf import EnsembleKalmanFilter
 from non_gaussian_data_assim.da_methods.pff import ParticleFlowFilter
 from non_gaussian_data_assim.forward_models.identity import IdentityModel
-from non_gaussian_data_assim.forward_models.sine import SineModel
-from non_gaussian_data_assim.observation_operator import (
-    LinearObservationOperator,
-    SineObservationOperator,
-    SineObservationOperatorNoError,
-)
+from non_gaussian_data_assim.observation_operator import SineObservationOperatorNoError
 
 jax.config.update("jax_disable_jit", False)
+jax.config.update("jax_enable_x64", True)
+
 
 SEED = 42
 
@@ -44,10 +40,14 @@ SPECIFIC_DA_ARGS = {
     "pff": {
         "return_pff_trajectory": True,
         "num_pseudo_time_steps": 10000,
-        "step_size": 1 / 100,
+        "step_size": 0.01,
         # "stepper": "runge_kutta_4",
         "stepper": "forward_euler",
         # "stepper": "backward_euler",
+        # "divergence_type": "hellinger",
+        # "weight_estimation": "kde",
+        # "kde_bandwidth": 0.1,
+        # "hellinger_cov_regularization": 1e-6,
     },
 }
 
@@ -89,7 +89,10 @@ def main() -> None:
     )
 
     # Initialize the prior ensemble
-    prior_ensemble = jnp.linspace(-1.0, 3.0, ENSEMBLE_SIZE).reshape(ENSEMBLE_SIZE, 1, 1)
+    # prior_ensemble = jnp.linspace(-1.0, 3.0, ENSEMBLE_SIZE).reshape(ENSEMBLE_SIZE, 1, 1)
+    prior_ensemble = loadmat("benjamin_case/testcaseA_det.mat")["X_PFF"][
+        :, 0, 0
+    ].reshape(ENSEMBLE_SIZE, 1, 1)
     prior_kde = gaussian_kde(prior_ensemble[:, 0, 0])
 
     # Initialize the posterior ensemble
@@ -100,7 +103,7 @@ def main() -> None:
         ENSEMBLE_SIZE, 1, NUM_STATES, STATE_DIM
     )
     t0 = time.time()
-    posterior_ensemble = da_model(
+    posterior_ensemble, nikolaj_rhs_fn = da_model(
         prior_ensemble=posterior_ensemble[:, -1],
         obs_vect=observations,
         return_inner_steps=False,
@@ -115,24 +118,76 @@ def main() -> None:
 
     x = np.linspace(-2.5, 5.0, 100)
 
-    benjamin_samples = loadmat("benjamin_case/testcaseA_det.mat")
-    X_PFF = benjamin_samples["X_PFF"][:, 0, -1]
-    pdf_PFF = benjamin_samples["pdf_PFF"].flatten()
-    pdf_SDE = benjamin_samples["pdf_SDE"].flatten()
-    x_pdf_PFF = benjamin_samples["x_pdf_PFF"].flatten()
-    x_pdf_SDE = benjamin_samples["x_pdf_SDE"].flatten()
+    # # Load reference data for verification
+    # benjamin_init_rhs = loadmat("benjamin_case/testcaseA_IC.mat")
+    # benjamin_pff_trajectory = loadmat("benjamin_case/testcaseA_det.mat")
+    # x0_PFF = benjamin_init_rhs["x0_PFF"]  # [ensemble, state]
+    # res_initial = benjamin_init_rhs["res_initial"]  # [ensemble, state]
+    # X_PFF = benjamin_pff_trajectory["X_PFF"]  # [ensemble, state, time]
 
-    n_bins = 50
+    # nikolaj_rhs_eval = nikolaj_rhs_fn(x0_PFF)
+
+    # # Verification report
+    # sep = "=" * 60
+    # print(f"\n{sep}")
+    # print("  BENJAMIN vs NIKOLAJ PFF VERIFICATION")
+    # print(f"{sep}\n")
+
+    # print(f"  x0_PFF comes from testcaseA_IC.mat")
+    # print(f"  res_initial comes from testcaseA_IC.mat")
+    # print(f"  X_PFF comes from testcaseA_det.mat")
+    # print()
+
+    # # 1. RHS comparison at initial condition
+    # rhs_diff = nikolaj_rhs_eval - res_initial
+    # rhs_norm = float(jnp.linalg.norm(rhs_diff, ord=jnp.inf))
+    # print("  1. RHS at x0_PFF (testcaseA_IC.mat)")
+    # print("     Compare: Nikolaj_RHS(x0_PFF) vs Benjamin res_initial")
+    # print(f"     Inf norm: {rhs_norm:.6e}")
+    # print()
+
+    # # 2. Euler step from x0_PFF
+    # nikolaj_step = x0_PFF + 0.01 * nikolaj_rhs_eval
+    # step_diff = nikolaj_step - X_PFF[:, :, 1]
+    # step_norm = float(jnp.linalg.norm(step_diff, ord=jnp.inf))
+    # print("  2. Euler step from x0_PFF (IC)")
+    # print("     Compare: x0_PFF + 0.01*Nikolaj_RHS(x0_PFF) vs X_PFF[:,:,1]")
+    # print(f"     Inf norm: {step_norm:.6e}")
+    # print()
+
+    # # 3. Euler step from X_PFF[:,:,0]
+    # step_benjamin = X_PFF[:, :, 0] + 0.01 * nikolaj_rhs_fn(X_PFF[:, :, 0])
+    # step_benjamin_diff = step_benjamin - X_PFF[:, :, 1]
+    # step_benjamin_norm = float(jnp.linalg.norm(step_benjamin_diff, ord=jnp.inf))
+    # print("  3. Euler step from X_PFF[:,:,0] (first det step)")
+    # print("     Compare: X_PFF[:,:,0] + 0.01*Nikolaj_RHS(X_PFF[:,:,0]) vs X_PFF[:,:,1]")
+    # print(f"     Inf norm: {step_benjamin_norm:.6e}")
+    # print(f"{sep}\n")
+
+    benjamin_samples = loadmat("benjamin_case/testcaseA_det.mat")
+
+    X_PFF = benjamin_samples["X_PFF"][:, 0, -1]
+
+    kde_benjamin = gaussian_kde(X_PFF)
+
+    n_bins = 100
 
     plt.figure()
     plt.plot(x, prior_kde.pdf(x), color="tab:orange", linewidth=3, label="Prior")
     plt.hist(X_PFF, bins=n_bins, density=True, color="tab:red", alpha=0.2)
-    plt.plot(x_pdf_PFF, pdf_PFF, color="tab:red", linewidth=3, label="Benjamin PFF")
-    plt.plot(x_pdf_SDE, pdf_SDE, color="tab:blue", linewidth=3, label="Benjamin SDE")
+    plt.plot(x, kde_benjamin.pdf(x), color="tab:red", linewidth=3, label="Benjamin PFF")
+    # plt.plot(x_pdf_SDE, pdf_SDE, color="tab:blue", linewidth=3, label="Benjamin SDE")
     plt.hist(
         posterior_ensemble, bins=n_bins, density=True, color="tab:green", alpha=0.2
     )
-    plt.plot(x, kde.pdf(x), color="tab:green", linewidth=3, label="Nikolaj PFF")
+    plt.plot(
+        x,
+        kde.pdf(x),
+        color="tab:green",
+        linewidth=3,
+        label="Nikolaj PFF",
+        linestyle="--",
+    )
     plt.grid(True)
     plt.xlim(x.min(), x.max())
     plt.legend()
@@ -140,60 +195,6 @@ def main() -> None:
     plt.ylabel("p(x|y)")
     plt.title("Posterior Distribution")
     plt.show()
-
-    # pdb.set_trace()
-
-    # # Calculate the prior and posterior errors
-    # true_sol = true_sol.reshape(OUTER_STEPS * INNER_STEPS + 1, STATE_DIM)
-
-    # # Calculate the prior and posterior errors
-    # prior_error = true_sol - prior_ensemble.mean(axis=(0, 2))
-    # prior_error = np.sqrt(np.sum(prior_error**2))
-    # posterior_error = true_sol - posterior_ensemble.mean(axis=(0, 2))
-    # posterior_error = np.sqrt(np.sum(posterior_error**2))
-
-    # print(f"Prior error: {prior_error}")
-    # print(f"Posterior error: {posterior_error}")
-
-    # mean_prior = prior_ensemble.mean(axis=(0, 2))
-    # mean_post = posterior_ensemble.mean(axis=(0, 2))
-    # std_post = posterior_ensemble.std(axis=(0, 2))
-    # time_axis = np.arange(posterior_ensemble.shape[1])
-
-    # state_names = ["x", "y", "z"]
-
-    # plt.figure()
-    # plt.suptitle(f"Lorenz 63, DA Method: {DA_METHOD}, Ensemble Size: {ENSEMBLE_SIZE}, \n Prior Error: {prior_error:.2f}, Posterior Error: {posterior_error:.2f}")
-    # for state_idx in range(STATE_DIM):
-    #     plt.subplot(STATE_DIM, 1, state_idx + 1)
-    #     for i, (state_name, state_data, color) in enumerate(
-    #         zip(
-    #             ["Prior Ensemble Mean", "Posterior Ensemble Mean", "True Solution"],
-    #             [mean_prior, mean_post, true_sol],
-    #             ["tab:red", "tab:blue", "black"],
-    #         )
-    #     ):
-    #         plt.plot(
-    #             time_axis,
-    #             state_data[:, state_idx],
-    #             label=state_name,
-    #             color=color,
-    #             linewidth=3,
-    #             linestyle="--" if state_name == "True Solution" else "-",
-    #         )
-    #     plt.fill_between(
-    #         time_axis,
-    #         mean_post[:, state_idx] - std_post[:, state_idx],
-    #         mean_post[:, state_idx] + std_post[:, state_idx],
-    #         color="tab:blue",
-    #         alpha=0.2,
-    #         label="Posterior ± Std",
-    #     )
-    #     plt.legend()
-    #     plt.xlabel("Time")
-    #     plt.ylabel(f"{state_names[state_idx]}")
-    #     plt.ylim(true_sol[:, state_idx].min(), true_sol[:, state_idx].max())
-    # plt.show()
 
 
 if __name__ == "__main__":

@@ -17,9 +17,9 @@ from non_gaussian_data_assim.observation_operator import LinearObservationOperat
 
 SEED = 42
 
-OUTER_STEPS = 50
+OUTER_STEPS = 250
 INNER_STEPS = 1
-ENSEMBLE_SIZE = 100
+ENSEMBLE_SIZE = 150
 
 DA_METHOD = "pff"
 DA_METHODS = {
@@ -39,8 +39,8 @@ SPECIFIC_DA_ARGS = {
         "w_prev": np.ones(ENSEMBLE_SIZE) / ENSEMBLE_SIZE,
     },
     "pff": {
-        "num_pseudo_time_steps": 200,
-        "step_size": 0.1,
+        "num_pseudo_time_steps": 250,
+        "step_size": 0.01,
         "stepper": "runge_kutta_4",
         "localization_distance": 5,
     },

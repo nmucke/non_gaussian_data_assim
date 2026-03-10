@@ -17,11 +17,11 @@ from non_gaussian_data_assim.observation_operator import LinearObservationOperat
 
 SEED = 42
 
-OUTER_STEPS = 100
-INNER_STEPS = 50
+OUTER_STEPS = 500
+INNER_STEPS = 20
 ENSEMBLE_SIZE = 100
 
-DA_METHOD = "enkf"
+DA_METHOD = "pff"
 
 
 DA_METHODS = {
@@ -39,9 +39,13 @@ SPECIFIC_DA_ARGS = {
         "w_prev": np.ones(ENSEMBLE_SIZE) / ENSEMBLE_SIZE,
     },
     "pff": {
-        "num_pseudo_time_steps": 1500,
-        "step_size": 0.05,
-        "stepper": "runge_kutta_4",
+        "num_pseudo_time_steps": 500,
+        "step_size": 0.1,
+        "stepper": "forward_euler",
+        # "divergence_type": "hellinger",
+        # "weight_estimation": "kde",
+        # "kde_bandwidth": 0.1,
+        # "hellinger_cov_regularization": 1e-6,
     },
 }
 
@@ -56,11 +60,11 @@ NUM_STATES = 1
 STATE_DIM = 3
 
 # Observation ids
-OBS_IDS = np.arange(0, 3)
+OBS_IDS = np.arange(0, 1)
 OBS_STATES = (0,)
 
 # Observation error covariance matrix
-R = jnp.eye(len(OBS_IDS)) * 5.0
+R = jnp.eye(len(OBS_IDS)) * 1.0
 
 
 def main() -> None:

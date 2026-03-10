@@ -120,7 +120,7 @@ SEED = 42
 
 ENSEMBLE_SIZE = 500
 
-DA_METHOD = "enkf"
+DA_METHOD = "pff"
 DA_METHODS = {
     "enkf": EnsembleKalmanFilter,
     "agmf": AdaptiveGaussianMixtureFilter,
@@ -137,12 +137,16 @@ SPECIFIC_DA_ARGS = {
     },
     "pff": {
         # "return_pff_trajectory": True,
-        "num_pseudo_time_steps": 200,
+        "num_pseudo_time_steps": 10000,
         "step_size": 1 / 10,
         "alpha": 1 / 10,
         # "stepper": "runge_kutta_4",
         "stepper": "forward_euler",
         # "stepper": "backward_euler",
+        "divergence_type": "hellinger",
+        "weight_estimation": "kde",
+        "kde_bandwidth": 0.1,
+        "hellinger_cov_regularization": 1e-6,
     },
 }
 
