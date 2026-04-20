@@ -17,11 +17,11 @@ from non_gaussian_data_assim.observation_operator import LinearObservationOperat
 
 SEED = 42
 
-OUTER_STEPS = 250
+OUTER_STEPS = 50
 INNER_STEPS = 1
-ENSEMBLE_SIZE = 150
+ENSEMBLE_SIZE = 50
 
-DA_METHOD = "pff"
+DA_METHOD = "enkf"
 DA_METHODS = {
     "enkf": EnsembleKalmanFilter,
     "agmf": AdaptiveGaussianMixtureFilter,

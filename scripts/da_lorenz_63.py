@@ -17,11 +17,11 @@ from non_gaussian_data_assim.observation_operator import LinearObservationOperat
 
 SEED = 42
 
-OUTER_STEPS = 500
-INNER_STEPS = 20
-ENSEMBLE_SIZE = 100
+OUTER_STEPS = 50
+INNER_STEPS = 15
+ENSEMBLE_SIZE = 3
 
-DA_METHOD = "pff"
+DA_METHOD = "enkf"
 
 
 DA_METHODS = {
@@ -31,7 +31,7 @@ DA_METHODS = {
 }
 SPECIFIC_DA_ARGS = {
     "enkf": {
-        "inflation_factor": 1.0,
+        "inflation_factor": 0.1,
     },
     "agmf": {
         "inflation_factor": 1.0,
@@ -40,9 +40,9 @@ SPECIFIC_DA_ARGS = {
     },
     "pff": {
         "num_pseudo_time_steps": 500,
-        "step_size": 0.1,
+        "step_size": 20.0,
         "stepper": "forward_euler",
-        # "divergence_type": "hellinger",
+        "divergence_type": "hellinger",
         # "weight_estimation": "kde",
         # "kde_bandwidth": 0.1,
         # "hellinger_cov_regularization": 1e-6,
@@ -125,6 +125,8 @@ def main() -> None:
     prior_ensemble = forward_model.rollout(
         prior_ensemble, OUTER_STEPS, return_inner_steps=True
     )
+
+    pdb.set_trace()
 
     # Perform the data assimilation
     # rng_key, key = jax.random.split(rng_key)
