@@ -13,6 +13,13 @@ from non_gaussian_data_assim.da_methods.enkf import EnsembleKalmanFilter
 from non_gaussian_data_assim.da_methods.pff import ParticleFlowFilter
 from non_gaussian_data_assim.forward_models.lorenz_63 import Lorenz63Model
 from non_gaussian_data_assim.forward_models.lorenz_96 import Lorenz96Model
+from non_gaussian_data_assim.metrics.ensemble_metrics import CRPS
+from non_gaussian_data_assim.metrics.trajectory_metrics import (
+    MAE,
+    MAPE,
+    RMSE,
+    print_metrics_table,
+)
 from non_gaussian_data_assim.observation_operator import LinearObservationOperator
 
 SEED = 42
@@ -152,17 +159,28 @@ def main() -> None:
         )
 
     # Calculate the prior and posterior errors
+
+    rmse = RMSE(aggregation_method="mean")
+    mae = MAE(aggregation_method="mean")
+    mape = MAPE(aggregation_method="mean")
+    crps = CRPS(aggregation_method="mean")
+
+    prior_error = {
+        "rmse": rmse(prior_ensemble, true_sol[0]),
+        "mae": mae(prior_ensemble, true_sol[0]),
+        "mape": mape(prior_ensemble, true_sol[0]),
+        "crps": crps(prior_ensemble, true_sol[0]),
+    }
+    posterior_error = {
+        "rmse": rmse(posterior_ensemble, true_sol[0]),
+        "mae": mae(posterior_ensemble, true_sol[0]),
+        "mape": mape(posterior_ensemble, true_sol[0]),
+        "crps": crps(posterior_ensemble, true_sol[0]),
+    }
+
+    print_metrics_table(prior_error, posterior_error, title="Lorenz 63 Metrics")
+
     true_sol = true_sol.reshape(OUTER_STEPS * INNER_STEPS + 1, STATE_DIM)
-
-    # Calculate the prior and posterior errors
-    prior_error = true_sol - prior_ensemble.mean(axis=(0, 2))
-    prior_error = np.sqrt(np.sum(prior_error**2))
-    posterior_error = true_sol - posterior_ensemble.mean(axis=(0, 2))
-    posterior_error = np.sqrt(np.sum(posterior_error**2))
-
-    print(f"Prior error: {prior_error}")
-    print(f"Posterior error: {posterior_error}")
-
     mean_prior = prior_ensemble.mean(axis=(0, 2))
     mean_post = posterior_ensemble.mean(axis=(0, 2))
     std_post = posterior_ensemble.std(axis=(0, 2))
@@ -172,7 +190,7 @@ def main() -> None:
 
     plt.figure()
     plt.suptitle(
-        f"Lorenz 63, DA Method: {DA_METHOD}, Ensemble Size: {ENSEMBLE_SIZE}, \n Prior Error: {prior_error:.2f}, Posterior Error: {posterior_error:.2f}"
+        f"Lorenz 63, DA Method: {DA_METHOD}, Ensemble Size: {ENSEMBLE_SIZE}, \n Prior RMSE: {prior_error['rmse']:.4f}, Posterior RMSE: {posterior_error['rmse']:.4f}"
     )
     for state_idx in range(STATE_DIM):
         plt.subplot(STATE_DIM, 1, state_idx + 1)
