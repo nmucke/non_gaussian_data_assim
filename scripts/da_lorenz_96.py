@@ -159,22 +159,22 @@ def main() -> None:
 
     # Calculate the prior and posterior errors
 
-    rmse = RMSE(aggregation_method="mean")
-    mae = MAE(aggregation_method="mean")
-    mape = MAPE(aggregation_method="mean")
-    crps = CRPS(aggregation_method="mean")
+    rmse = RMSE(ensemble_aggregation="mean", time_aggregation="mean")
+    mae = MAE(ensemble_aggregation="mean", time_aggregation="mean")
+    mape = MAPE(ensemble_aggregation="mean", time_aggregation="mean")
+    crps = CRPS(time_aggregation="mean")
 
     # Calculate the prior and posterior errors
     prior_error = {
-        "rmse": rmse(prior_ensemble, true_sol),
-        "mae": mae(prior_ensemble, true_sol),
-        "mape": mape(prior_ensemble, true_sol),
+        "rmse": rmse(prior_ensemble, true_sol[0]),
+        "mae": mae(prior_ensemble, true_sol[0]),
+        "mape": mape(prior_ensemble, true_sol[0]),
         "crps": crps(prior_ensemble, true_sol[0]),
     }
     posterior_error = {
-        "rmse": rmse(posterior_ensemble, true_sol),
-        "mae": mae(posterior_ensemble, true_sol),
-        "mape": mape(posterior_ensemble, true_sol),
+        "rmse": rmse(posterior_ensemble, true_sol[0]),
+        "mae": mae(posterior_ensemble, true_sol[0]),
+        "mape": mape(posterior_ensemble, true_sol[0]),
         "crps": crps(posterior_ensemble, true_sol[0]),
     }
 
