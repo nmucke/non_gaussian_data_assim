@@ -21,7 +21,7 @@ class Metric:
         name: str,
         ensemble_aggregation: Optional[str] = None,
         time_aggregation: Optional[str] = None,
-    ):
+    ) -> None:
         self.name = name
         self.ensemble_aggregation = (
             ensemble_aggregation if ensemble_aggregation is not None else "none"
@@ -31,7 +31,7 @@ class Metric:
         )
 
     @abstractmethod
-    def compute(self, pred: jnp.ndarray, truth: jnp.ndarray) -> float:
+    def compute(self, pred: jnp.ndarray, truth: jnp.ndarray) -> jnp.ndarray:
         """Compute metric for a single ensemble member at a single time step.
 
         Args:
@@ -72,10 +72,10 @@ class RMSE(Metric):
         self,
         ensemble_aggregation: Optional[str] = None,
         time_aggregation: Optional[str] = None,
-    ):
+    ) -> None:
         super().__init__("rmse", ensemble_aggregation, time_aggregation)
 
-    def compute(self, pred: jnp.ndarray, truth: jnp.ndarray) -> float:
+    def compute(self, pred: jnp.ndarray, truth: jnp.ndarray) -> jnp.ndarray:
         return jnp.sqrt(jnp.mean((pred - truth) ** 2))
 
 
@@ -84,10 +84,10 @@ class MAE(Metric):
         self,
         ensemble_aggregation: Optional[str] = None,
         time_aggregation: Optional[str] = None,
-    ):
+    ) -> None:
         super().__init__("mae", ensemble_aggregation, time_aggregation)
 
-    def compute(self, pred: jnp.ndarray, truth: jnp.ndarray) -> float:
+    def compute(self, pred: jnp.ndarray, truth: jnp.ndarray) -> jnp.ndarray:
         return jnp.mean(jnp.abs(pred - truth))
 
 
@@ -96,15 +96,15 @@ class MAPE(Metric):
         self,
         ensemble_aggregation: Optional[str] = None,
         time_aggregation: Optional[str] = None,
-    ):
+    ) -> None:
         super().__init__("mape", ensemble_aggregation, time_aggregation)
 
-    def compute(self, pred: jnp.ndarray, truth: jnp.ndarray) -> float:
+    def compute(self, pred: jnp.ndarray, truth: jnp.ndarray) -> jnp.ndarray:
         return jnp.mean(jnp.abs(pred - truth) / (jnp.abs(truth) + 1e-6))
 
 
 def print_metrics_table(
-    prior_errors: dict, posterior_errors: dict, title: str = ""
+    prior_errors: dict[str, float], posterior_errors: dict[str, float], title: str = ""
 ) -> None:
     col_w = 14
     header = f"{'Metric':<10} | {'Prior':>{col_w}} | {'Posterior':>{col_w}}"

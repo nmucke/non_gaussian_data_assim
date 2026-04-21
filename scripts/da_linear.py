@@ -16,6 +16,7 @@ from non_gaussian_data_assim.da_methods.enkf import EnsembleKalmanFilter
 from non_gaussian_data_assim.da_methods.pff import ParticleFlowFilter
 from non_gaussian_data_assim.forward_models.identity import IdentityModel
 from non_gaussian_data_assim.forward_models.sine import SineModel
+from non_gaussian_data_assim.metrics.probability_metrics import KLDivergence
 from non_gaussian_data_assim.observation_operator import (
     LinearObservationOperator,
     SineObservationOperator,
@@ -239,6 +240,20 @@ def main() -> None:
     true_posterior_samples = prepare_samples(
         true_posterior_samples, 100, X_RANGE, Y_RANGE
     )
+    # KL divergence: compare prior and posterior against the true posterior
+    kl = KLDivergence(time_aggregation="mean")
+
+    def to_metric_shape(samples: jnp.ndarray) -> jnp.ndarray:
+        """Reshape (n_ensemble, state_dim) → (n_ensemble, n_time=1, n_states=1, state_dim)."""
+        return samples.reshape(samples.shape[0], 1, 1, STATE_DIM)
+
+    true_post = to_metric_shape(jnp.array(true_posterior_samples.samples))
+    kl_prior = kl(to_metric_shape(prior_ensemble[:, 0]), true_post)
+    kl_posterior = kl(to_metric_shape(posterior_ensemble), true_post)
+
+    print(f"KL(prior     || true posterior): {float(kl_prior):.4f}")
+    print(f"KL(posterior || true posterior): {float(kl_posterior):.4f}")
+
     # plot a density
     plt.figure(figsize=(20, 10))
     plt.subplot(3, 3, 1)

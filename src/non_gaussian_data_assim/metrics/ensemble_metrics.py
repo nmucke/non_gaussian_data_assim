@@ -21,12 +21,14 @@ class EnsembleMetric:
     vmaps that over the time axis and applies an optional time aggregation.
     """
 
-    def __init__(self, name: str, time_aggregation: Optional[str] = None):
+    def __init__(self, name: str, time_aggregation: Optional[str] = None) -> None:
         self.name = name
-        self.time_aggregation = time_aggregation if time_aggregation is not None else "none"
+        self.time_aggregation = (
+            time_aggregation if time_aggregation is not None else "none"
+        )
 
     @abstractmethod
-    def compute(self, ensemble: jnp.ndarray, truth: jnp.ndarray) -> float:
+    def compute(self, ensemble: jnp.ndarray, truth: jnp.ndarray) -> jnp.ndarray:
         """Compute metric for a single time step.
 
         Args:
@@ -80,10 +82,10 @@ class CRPS(EnsembleMetric):
     state to return a scalar per time step.
     """
 
-    def __init__(self, time_aggregation: Optional[str] = None):
+    def __init__(self, time_aggregation: Optional[str] = None) -> None:
         super().__init__("crps", time_aggregation)
 
-    def compute(self, ensemble: jnp.ndarray, truth: jnp.ndarray) -> float:
+    def compute(self, ensemble: jnp.ndarray, truth: jnp.ndarray) -> jnp.ndarray:
         truth_flat = truth.reshape(-1)
         ensemble_flat = ensemble.reshape(ensemble.shape[0], -1)
         pointwise = jax.vmap(_crps_pointwise, in_axes=(1, 0))(ensemble_flat, truth_flat)
