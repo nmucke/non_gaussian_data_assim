@@ -49,6 +49,7 @@ class LinearObservationOperator(ObservationOperator):
         obs_states: np.ndarray,
         obs_indices: np.ndarray,
         state_dim: int,
+        num_states: int = 1
     ):
         """
         Initialize the observation operator.
@@ -62,7 +63,7 @@ class LinearObservationOperator(ObservationOperator):
         self.obs_states = obs_states
         self.obs_indices = obs_indices
         self.state_dim = state_dim
-        self.num_states = len(obs_states)
+        self.num_states = num_states
         self.num_obs = len(obs_indices) * len(obs_states)
 
         self.is_linear = True

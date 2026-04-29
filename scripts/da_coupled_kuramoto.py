@@ -11,8 +11,8 @@ from non_gaussian_data_assim.da_methods.agmf import AdaptiveGaussianMixtureFilte
 from non_gaussian_data_assim.da_methods.base import da_rollout
 from non_gaussian_data_assim.da_methods.enkf import EnsembleKalmanFilter
 from non_gaussian_data_assim.da_methods.pff import ParticleFlowFilter
-from non_gaussian_data_assim.forward_models.kuramoto_sivashinsky import (
-    KuramotoSivashinsky,
+from non_gaussian_data_assim.forward_models.coupled_kuramoto_sivashinsky import (
+    CoupledKuramotoSivashinsky,
 )
 from non_gaussian_data_assim.forward_models.lorenz_63 import Lorenz63Model
 from non_gaussian_data_assim.forward_models.lorenz_96 import Lorenz96Model
@@ -29,7 +29,7 @@ SEED = 42
 
 OUTER_STEPS = 200  # Number of steps where the DA method is applied
 INNER_STEPS = 5  # Number of steps between each assimilation step
-ENSEMBLE_SIZE = 50  # Number of ensemble members
+ENSEMBLE_SIZE = 150  # Number of ensemble members
 
 DA_METHOD = "enkf"  # Which DA method to use. only EnKF, AGMF, and PFF are supported
 DA_METHODS = {
@@ -61,68 +61,55 @@ DT = 0.05  # Model step size
 NU = 1.0
 DOMAIN_LENGTH = 100
 
-NUM_STATES = (
-    1  # Number of states in the model. E.g. velocity-x, velocity-y, temperature, etc.
-)
+# Number of states in the model. E.g. velocity-x, velocity-y, temperature, etc.
+NUM_STATES = 2
 STATE_DIM = 512  # Number of spatial grid points
 NUM_SKIP_OBS = 2  # Spatial points to skip between observations
 
 # Observation ids
 OBS_IDS = np.arange(0, STATE_DIM, NUM_SKIP_OBS)
-OBS_STATES = (0,)
+OBS_STATES = (0, )
+NUM_OBS = len(OBS_STATES) * len(OBS_IDS)
 
 # Observation error covariance matrix
-R = jnp.eye(len(OBS_IDS)) * 0.1
+R = jnp.eye(NUM_OBS) * 0.1
 
 # spatial grid
 x = jnp.linspace(start=0, stop=DOMAIN_LENGTH, num=STATE_DIM)
 
 # initial condition function
-X_0_FN = lambda magnitude: (
-    magnitude * jnp.cos((2 * jnp.pi * x) / DOMAIN_LENGTH)
-    + magnitude * jnp.cos((4 * jnp.pi * x) / DOMAIN_LENGTH)
-)
-
+def X_0_FN(magnitude):
+    state = magnitude * jnp.cos((2 * jnp.pi * x) / DOMAIN_LENGTH) + magnitude * jnp.cos((4 * jnp.pi * x) / DOMAIN_LENGTH)
+    return jnp.stack([state, state])
 
 def main() -> None:
     """Main function."""
     rng_key = jax.random.PRNGKey(SEED)
 
     # initial condition
-    X_0 = X_0_FN(0.1).reshape(1, 1, STATE_DIM)
+    X_0 = X_0_FN(0.1).reshape(1, NUM_STATES, STATE_DIM)
 
     # Define the forward model
-    forward_model = KuramotoSivashinsky(
+    forward_model = CoupledKuramotoSivashinsky(
         dt=DT, inner_steps=INNER_STEPS, state_dim=STATE_DIM, domain_length=DOMAIN_LENGTH
     )
-
-
-    # Initialize the prior ensemble
-    rng_key, key = jax.random.split(rng_key)
-    magnitude_samples = jax.random.uniform(
-        key, (ENSEMBLE_SIZE,), minval=0.0, maxval=1.5
-    )
-    prior_ensemble = jnp.array([X_0_FN(magnitude) for magnitude in magnitude_samples])
-    prior_ensemble = prior_ensemble.reshape(ENSEMBLE_SIZE, NUM_STATES, STATE_DIM)
-
-    out = forward_model(prior_ensemble, is_ensemble=True)
 
     # Rollout the true solution
     true_sol = forward_model.rollout(X_0, OUTER_STEPS, return_inner_steps=True)
 
     # Define the observation operator
     obs_operator = LinearObservationOperator(
-        obs_states=OBS_STATES, obs_indices=OBS_IDS, state_dim=STATE_DIM
+        obs_states=OBS_STATES, obs_indices=OBS_IDS, state_dim=STATE_DIM, num_states=NUM_STATES
     )
 
     # Generate observations
-    observations = jnp.zeros((OUTER_STEPS, len(OBS_IDS)))
+    observations = jnp.zeros((OUTER_STEPS, NUM_OBS))
     for i in range(0, OUTER_STEPS):
         obs_at_t = obs_operator(true_sol[:, 1 + INNER_STEPS * (i + 1)])  # [1, num_obs]
 
         rng_key, key = jax.random.split(rng_key)
         obs_at_t = obs_at_t + jax.random.multivariate_normal(
-            key, jnp.zeros(len(OBS_IDS)), R
+            key, jnp.zeros(NUM_OBS), R
         )  # np.sqrt(R)
         observations = observations.at[i].set(obs_at_t.flatten())  # [num_obs]
 
@@ -189,6 +176,14 @@ def main() -> None:
     mape = MAPE(ensemble_aggregation="mean", time_aggregation="mean")
     crps = CRPS(time_aggregation="mean")
 
+
+    rmse = RMSE(ensemble_aggregation="mean", time_aggregation=None)
+
+    plt.figure()
+    plt.plot(rmse(prior_ensemble, true_sol[0]))
+    plt.show()
+
+
     prior_error = {
         "rmse": rmse(prior_ensemble, true_sol[0]),
         "mae": mae(prior_ensemble, true_sol[0]),
@@ -205,6 +200,10 @@ def main() -> None:
     print_metrics_table(
         prior_error, posterior_error, title="Kuramoto-Sivashinsky Metrics"
     )
+
+    true_sol = true_sol[:, :, :1]
+    prior_ensemble = prior_ensemble[:, :, :1]
+    posterior_ensemble = posterior_ensemble[:, :, :1]
 
     true_sol = true_sol.reshape(OUTER_STEPS * INNER_STEPS + 1, STATE_DIM)
     mean_prior = prior_ensemble.mean(axis=(0, 2))

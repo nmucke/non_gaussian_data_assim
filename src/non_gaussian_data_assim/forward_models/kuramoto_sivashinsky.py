@@ -53,5 +53,4 @@ class KuramotoSivashinsky(BaseForwardModel):
         u_nonlin_der_hat = self.derivative_operator * u_nonlin_hat
 
         u_next_hat = self.exp_term * u_hat + self.coef * u_nonlin_der_hat
-        u_next = jnp.fft.irfft(u_next_hat, n=self.state_dim)
-        return u_next
+        return jnp.fft.irfft(u_next_hat, n=self.state_dim)

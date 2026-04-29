@@ -104,6 +104,7 @@ class EnsembleKalmanFilter(BaseDataAssimilationMethod):
         # Calculate the posterior ensemble
         posterior_ensemble = prior_ensemble + kalman_gain @ innovation
         posterior_ensemble = posterior_ensemble.T
+
         posterior_ensemble = posterior_ensemble.reshape(
             self.ensemble_size, self.num_states, self.state_dim
         )
