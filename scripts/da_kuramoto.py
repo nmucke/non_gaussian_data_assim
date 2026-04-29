@@ -27,7 +27,7 @@ from non_gaussian_data_assim.observation_operator import LinearObservationOperat
 
 SEED = 42
 
-OUTER_STEPS = 2  # Number of steps where the DA method is applied
+OUTER_STEPS = 200  # Number of steps where the DA method is applied
 INNER_STEPS = 10  # Number of steps between each assimilation step
 ENSEMBLE_SIZE = 50  # Number of ensemble members
 
@@ -179,15 +179,15 @@ def main() -> None:
     crps = CRPS(time_aggregation="mean")
 
     prior_error = {
-        "rmse": rmse(prior_ensemble, true_sol),
-        "mae": mae(prior_ensemble, true_sol),
-        "mape": mape(prior_ensemble, true_sol),
+        "rmse": rmse(prior_ensemble, true_sol[0]),
+        "mae": mae(prior_ensemble, true_sol[0]),
+        "mape": mape(prior_ensemble, true_sol[0]),
         "crps": crps(prior_ensemble, true_sol[0]),
     }
     posterior_error = {
-        "rmse": rmse(posterior_ensemble, true_sol),
-        "mae": mae(posterior_ensemble, true_sol),
-        "mape": mape(posterior_ensemble, true_sol),
+        "rmse": rmse(posterior_ensemble, true_sol[0]),
+        "mae": mae(posterior_ensemble, true_sol[0]),
+        "mape": mape(posterior_ensemble, true_sol[0]),
         "crps": crps(posterior_ensemble, true_sol[0]),
     }
 
