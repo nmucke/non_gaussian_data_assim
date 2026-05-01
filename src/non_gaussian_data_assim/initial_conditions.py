@@ -2,7 +2,6 @@
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 
 
 def random_normal_initial_state(
@@ -74,6 +73,3 @@ def kuramoto_cosine_prior_ensemble(
     return profiles.reshape(ensemble_size, 1, state_dim)
 
 
-def uniform_weights(ensemble_size: int) -> np.ndarray:
-    """Uniform-weight vector used by AGMF."""
-    return np.ones(ensemble_size) / ensemble_size

@@ -1,125 +1,103 @@
-from typing import Any, Callable, Dict
+"""Sequential-importance-resampling (SIR / bootstrap) particle filter."""
 
-import numpy as np
+from typing import Any
+
+import jax
+import jax.numpy as jnp
 
 from non_gaussian_data_assim.da_methods.base import BaseDataAssimilationMethod
-from non_gaussian_data_assim.observation_operator import h_operator
+from non_gaussian_data_assim.forward_models.base import BaseForwardModel
+from non_gaussian_data_assim.observations.observation_operator import (
+    ObservationOperator,
+)
 
 
-def observation_likelihood(
-    obs_vect: np.ndarray,
-    pred_vect: np.ndarray,
-    R: np.ndarray,
-) -> Any:
-    """
-    Compute the likelihood of an observation given a predicted state.
-
-    Args:
-    obs_vect (numpy.array): The actual observation vector.
-    pred_vect (numpy.array): The predicted state vector.
-    R (numpy.array): Observation error covariance matrix.
-
-    Returns:
-    float: The likelihood of observing `obs_vect` given the predicted state `pred_vect`.
-    """
-    # Calculate the residual (difference) between the observation and prediction
-    residual = obs_vect - pred_vect
-
-    # Compute the likelihood assuming a Gaussian observation model
-    likelihood = np.exp(-0.5 * np.dot(residual.T, np.linalg.inv(R)).dot(residual))
-    return likelihood
-
-
-def particle_filter(
-    mem: int,
-    nx: int,
-    particles: np.ndarray,
-    obs_vect: np.ndarray,
-    R: np.ndarray,
-) -> Dict[str, Any]:
-    """
-    Implement the Particle Filter algorithm.
-
-    Args:
-    mem (int): Number of particles.
-    nx (int): Number of state dimensions.
-    particles (numpy.array): Array representing the particles.
-    obs_vect (numpy.array): Observation vector.
-    R (numpy.array): Observation error covariance matrix.
-
-    Returns:
-    dict: Dictionary containing updated particles, weights, a flag indicating resampling,
-          and the covariance of the updated particles.
-    """
-    # Find indices of valid observations
-    index_obs = np.where(obs_vect > -999)[0]
-
-    # Observation operator matrix
-    h_matrix = h_operator(nx, obs_vect)
-
-    # Update weights for each particle based on observation likelihood
-    w_t = np.zeros(mem)
-    for i in range(mem):
-        pred_vect = h_matrix.dot(particles[:, i])
-        pred_vect = pred_vect.reshape(len(pred_vect), 1)
-        w_t[i] = observation_likelihood(obs_vect[index_obs], pred_vect[:, 0], R)
-
-    # Normalize the weights
-    w_t /= np.sum(w_t) + 1e-10
-
-    # Compute covariance before resampling
-    cov_posterior = np.cov(particles)
-
-    # Degeneracy evaluation to determine if resampling is needed
-    N_eff = 1 / (np.sum(w_t**2) + 1e-10)
-    nc_threshold = 0.8 * mem
-    resamp = 0
-    if N_eff < nc_threshold:
-        print("Resampling")
-        # Perform resampling
-        J = np.random.choice(mem, size=mem, p=w_t)
-        for i in range(mem):
-            particles[:, i] = particles[:, int(J[i])] + np.sqrt(
-                np.diag(cov_posterior)
-            ) * np.random.normal(0, 0.1)
-        resamp = 1
-
-    # Update the particles with the resampled values
-    posterior_vect = particles.copy()
-    cov_posterior = np.cov(particles)
-
-    # Construct the return object
-    pf_output = {
-        "posterior": posterior_vect,
-        "weights": w_t,
-        "resamp": resamp,
-        "cov_post": cov_posterior,
-    }
-
-    return pf_output
+def _systematic_resample(weights: jnp.ndarray, rng_key: jax.Array) -> jnp.ndarray:
+    """Systematic resampling. Returns ``ensemble_size`` indices drawn from ``weights``."""
+    n = weights.shape[0]
+    cumulative = jnp.cumsum(weights)
+    u0 = jax.random.uniform(rng_key, ()) / n
+    u = u0 + jnp.arange(n) / n
+    indices = jnp.searchsorted(cumulative, u)
+    return jnp.clip(indices, 0, n - 1)
 
 
 class ParticleFilter(BaseDataAssimilationMethod):
+    """Bootstrap (SIR) particle filter.
+
+    The forecast step is the deterministic propagation of each particle
+    through the forward model (handled by the base class). The analysis step:
+
+      1. Computes log-likelihoods of each particle under
+         :math:`y \\sim \\mathcal{N}(H(x_i), R)`.
+      2. Normalizes weights with the log-sum-exp trick.
+      3. Computes the effective sample size
+         :math:`N_\\text{eff} = 1 / \\sum_i w_i^2`.
+      4. Systematically resamples when
+         ``N_eff < resample_threshold * ensemble_size``.
+      5. Optionally jitters resampled particles by
+         ``jitter_scale * N(0, I)`` to combat sample impoverishment.
+
+    The bootstrap PF is asymptotically exact but degenerates rapidly in
+    high dimensions; for L96 / Kuramoto it is included mainly as a baseline.
+    """
+
     def __init__(
         self,
-        mem: int,
-        nx: int,
-        R: np.ndarray,
-        obs_operator: Callable[[np.ndarray], np.ndarray],
+        ensemble_size: int,
+        R: jnp.ndarray,
+        obs_operator: ObservationOperator,
+        forward_operator: BaseForwardModel,
         name: str = "particle_filter",
+        resample_threshold: float = 0.5,
+        jitter_scale: float = 0.0,
     ) -> None:
-        super().__init__(name, obs_operator)
-        self.mem = mem
-        self.nx = nx
+        super().__init__(name, obs_operator, forward_operator)
+        self.ensemble_size = ensemble_size
         self.R = R
+        self.R_inv = jnp.linalg.inv(R)
+        self.num_states = forward_operator.num_states
+        self.state_dim = forward_operator.state_dim
+        self.resample_threshold = resample_threshold
+        self.jitter_scale = jitter_scale
 
-    def _assimilate_data(
-        self, prior_ensemble: np.ndarray, obs_vect: np.ndarray
-    ) -> np.ndarray:
-        return particle_filter(
-            mem=self.mem,
-            nx=self.nx,
-            particles=prior_ensemble,
-            obs_vect=obs_vect,
-            R=self.R,
-        )["posterior"]
+    def _analysis_step(
+        self,
+        prior_ensemble: jnp.ndarray,
+        obs_vect: jnp.ndarray,
+        rng_key: jax.random.PRNGKey,
+        **kwargs: Any,
+    ) -> jnp.ndarray:
+        # Predicted observations for each particle: [ensemble, num_obs].
+        predicted_obs = self.obs_operator(prior_ensemble)
+
+        # Log-likelihood under N(., R).
+        residual = predicted_obs - obs_vect[None, :]
+        log_w = -0.5 * jnp.einsum("ei,ij,ej->e", residual, self.R_inv, residual)
+
+        # Numerically stable normalization.
+        log_w = log_w - jnp.max(log_w)
+        weights = jnp.exp(log_w)
+        weights = weights / jnp.sum(weights)
+
+        # Effective sample size.
+        n_eff = 1.0 / jnp.sum(weights**2)
+        threshold = self.resample_threshold * self.ensemble_size
+
+        resample_key, jitter_key = jax.random.split(rng_key)
+
+        def _resample(_: Any) -> jnp.ndarray:
+            indices = _systematic_resample(weights, resample_key)
+            resampled = prior_ensemble[indices]
+            if self.jitter_scale > 0.0:
+                resampled = resampled + self.jitter_scale * jax.random.normal(
+                    jitter_key, resampled.shape
+                )
+            return resampled
+
+        def _no_resample(_: Any) -> jnp.ndarray:
+            return prior_ensemble
+
+        return jax.lax.cond(
+            n_eff < threshold, _resample, _no_resample, operand=None
+        )

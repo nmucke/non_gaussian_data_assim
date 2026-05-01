@@ -5,5 +5,5 @@ inflation_factor: 1.0
 nc_threshold: 0.5
 localization_distance: null
 w_prev: 
-    _target_: non_gaussian_data_assim.experiment.uniform_weights
+    _target_: non_gaussian_data_assim.da_methods.agmf.uniform_weights
     ensemble_size: ${ensemble_size}

@@ -104,18 +104,18 @@ class MAPE(Metric):
 
 
 def print_metrics_table(
-    prior_errors: dict[str, float], posterior_errors: dict[str, float], title: str = ""
+    reference_errors: dict[str, float], posterior_errors: dict[str, float], title: str = ""
 ) -> None:
     col_w = 14
-    header = f"{'Metric':<10} | {'Prior':>{col_w}} | {'Posterior':>{col_w}}"
+    header = f"{'Metric':<10} | {'Reference':>{col_w}} | {'Posterior':>{col_w}}"
     sep = "-" * len(header)
     if title:
         print(f"\n{title}")
     print(sep)
     print(header)
     print(sep)
-    for metric in prior_errors:
-        prior_val = float(prior_errors[metric])
-        post_val = float(posterior_errors[metric])
-        print(f"{metric.upper():<10} | {prior_val:{col_w}.6f} | {post_val:{col_w}.6f}")
+    for metric in reference_errors:
+        reference_val = float(reference_errors[metric])
+        posterior_val = float(posterior_errors[metric])
+        print(f"{metric.upper():<10} | {reference_val:{col_w}.6f} | {posterior_val:{col_w}.6f}")
     print(sep)

@@ -138,6 +138,7 @@ def main(cfg: DictConfig) -> None:
     )
 
     # Plot.
+    logger.info(f"Plotting...")
     plotter = instantiate(plotter_cfg)
     plotter(
         true_sol=true_sol,

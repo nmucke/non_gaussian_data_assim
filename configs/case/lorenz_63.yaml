@@ -2,6 +2,7 @@
 data_assimilation_steps: 100
 model_integration_steps: 50
 ensemble_size: 100
+inflation_factor: 1.0
 
 case:
   name: lorenz_63
@@ -28,7 +29,7 @@ case:
       stop: 3
 
   initial_state:
-    _target_: non_gaussian_data_assim.experiment.random_normal_initial_state
+    _target_: non_gaussian_data_assim.initial_conditions.random_normal_initial_state
     _partial_: true
     num_states: ${case.num_states}
     state_dim: ${case.state_dim}
@@ -36,7 +37,7 @@ case:
     periodic_boundary: false
 
   prior_ensemble:
-    _target_: non_gaussian_data_assim.experiment.random_normal_prior_ensemble
+    _target_: non_gaussian_data_assim.initial_conditions.random_normal_prior_ensemble
     _partial_: true
     num_states: ${case.num_states}
     state_dim: ${case.state_dim}
@@ -52,10 +53,10 @@ case:
   # da_method config in main.py.
   da_method_overrides:
     enkf:
-      inflation_factor: 5.0
+      inflation_factor: ${inflation_factor}
       localization_distance: null
     agmf:
-      inflation_factor: 1.0
+      inflation_factor: ${inflation_factor}
       nc_threshold: 0.5
       localization_distance: null
     pff:
@@ -63,3 +64,7 @@ case:
       step_size: 0.05
       stepper: runge_kutta_4
       localization_distance: null
+      inflation_factor: ${inflation_factor}
+    particle_filter:
+      resample_threshold: 0.5
+      jitter_scale: 0.5

@@ -13,6 +13,11 @@ from non_gaussian_data_assim.observations.observation_operator import Observatio
 from non_gaussian_data_assim.rand_utils import randsample
 
 
+def uniform_weights(ensemble_size: int) -> np.ndarray:
+    """Uniform-weight vector used to initialize AGMF particle weights."""
+    return np.ones(ensemble_size) / ensemble_size
+
+
 class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
     def __init__(
         self,
