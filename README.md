@@ -393,6 +393,38 @@ Edit code, add tests under `tests/`, run the suite locally:
 uv run pytest tests/ -v
 ```
 
+### Pre-commit hooks
+
+The repository ships a [`pre-commit`](https://pre-commit.com/) configuration ([`.pre-commit-config.yaml`](.pre-commit-config.yaml)) that runs automatically on every `git commit`. The hooks installed are:
+
+- **Built-ins** — `trailing-whitespace`, `end-of-file-fixer`, `check-yaml`, `check-added-large-files`, `check-merge-conflict`.
+- **`black`** — Python formatting (line length 88, Python 3.13).
+- **`isort`** — import sorting (`black` profile).
+- **`mypy`** — static type checking with `--ignore-missing-imports`. mypy strictness is configured in `[tool.mypy]` in [`pyproject.toml`](pyproject.toml).
+
+Both `archive/` and `scripts/archive/` are excluded from every hook.
+
+Install the git hook the first time you clone:
+
+```bash
+uv run pre-commit install
+```
+
+Run all hooks against every tracked file (e.g. before opening a PR):
+
+```bash
+uv run pre-commit run --all-files
+```
+
+Run a single hook:
+
+```bash
+uv run pre-commit run mypy --all-files
+uv run pre-commit run black --all-files
+```
+
+If a hook fails, fix the underlying issue and re-stage. Don't bypass with `git commit --no-verify` unless you have a very specific reason — CI also runs the hooks.
+
 ### 4. Stage and commit
 
 Stage specific files (avoid `git add .` to keep accidental files out of commits):

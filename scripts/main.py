@@ -6,6 +6,8 @@ Examples:
     python scripts/main.py case=kuramoto da_method=agmf data_assimilation_steps=100
 """
 
+import logging
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -15,18 +17,18 @@ from omegaconf import DictConfig, OmegaConf
 from tqdm import tqdm
 
 from non_gaussian_data_assim.metrics.ensemble_metrics import CRPS
-from non_gaussian_data_assim.observations.observation_utils import generate_observations
 from non_gaussian_data_assim.metrics.trajectory_metrics import (
     MAE,
     MAPE,
     RMSE,
     print_metrics_table,
 )
-import logging
+from non_gaussian_data_assim.observations.observation_utils import generate_observations
 
 logger = logging.getLogger(__name__)
 
-@hydra_main(config_path="../configs", config_name="config", version_base=None)
+
+@hydra_main(config_path="../configs", config_name="config", version_base=None)  # type: ignore[misc]
 def main(cfg: DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
 
@@ -35,7 +37,9 @@ def main(cfg: DictConfig) -> None:
     obs_operator_cfg = cfg.case.obs_operator
     prior_ensemble_cfg = cfg.case.prior_ensemble
     plotter_cfg = cfg.case.plotter
-    da_method_cfg = OmegaConf.merge(cfg.da_method, cfg.case.da_method_overrides[cfg.da_method.name])
+    da_method_cfg = OmegaConf.merge(
+        cfg.da_method, cfg.case.da_method_overrides[cfg.da_method.name]
+    )
 
     rng_key = jax.random.PRNGKey(cfg.seed)
 
@@ -54,7 +58,9 @@ def main(cfg: DictConfig) -> None:
     X_0 = initial_state_fn(rng_key=key)
 
     # Rollout the truth.
-    true_sol = forward_model.rollout(X_0, cfg.data_assimilation_steps, return_model_integration_steps=True)
+    true_sol = forward_model.rollout(
+        X_0, cfg.data_assimilation_steps, return_model_integration_steps=True
+    )
 
     # Observation noise covariance.
     R = jnp.eye(obs_operator.num_obs) * cfg.case.obs_noise_variance
@@ -94,7 +100,9 @@ def main(cfg: DictConfig) -> None:
 
     # Rollout the prior ensemble for comparison.
     reference_ensemble = forward_model.rollout(
-        reference_ensemble, cfg.data_assimilation_steps, return_model_integration_steps=True
+        reference_ensemble,
+        cfg.data_assimilation_steps,
+        return_model_integration_steps=True,
     )
 
     # Run the DA loop.

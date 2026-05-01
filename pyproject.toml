@@ -58,6 +58,7 @@ known_first_party = ["scientific_stochastic_interpolants"]
 
 [tool.mypy]
 python_version = "3.13"
+exclude = ['^scripts/archive/']
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true

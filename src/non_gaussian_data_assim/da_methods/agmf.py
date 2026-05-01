@@ -9,7 +9,9 @@ from non_gaussian_data_assim.da_methods.base import BaseDataAssimilationMethod
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 from non_gaussian_data_assim.gaussian_mixture import gaussian_mixt
 from non_gaussian_data_assim.localization import distance_based_localization
-from non_gaussian_data_assim.observations.observation_operator import ObservationOperator
+from non_gaussian_data_assim.observations.observation_operator import (
+    ObservationOperator,
+)
 from non_gaussian_data_assim.rand_utils import randsample
 
 

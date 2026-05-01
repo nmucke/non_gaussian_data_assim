@@ -7,7 +7,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from non_gaussian_data_assim.time_integrators import rollout, rollout_with_model_integration_steps
+from non_gaussian_data_assim.time_integrators import (
+    rollout,
+    rollout_with_model_integration_steps,
+)
 
 
 class BaseForwardModel:

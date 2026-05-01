@@ -68,4 +68,3 @@ case:
     particle_filter:
       resample_threshold: 0.5
       jitter_scale: 0.05
-

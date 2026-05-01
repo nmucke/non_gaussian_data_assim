@@ -7,7 +7,9 @@ import jax.numpy as jnp
 import numpy as np
 
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
-from non_gaussian_data_assim.observations.observation_operator import ObservationOperator
+from non_gaussian_data_assim.observations.observation_operator import (
+    ObservationOperator,
+)
 
 
 def da_rollout(
@@ -91,7 +93,8 @@ class BaseDataAssimilationMethod:
         """Assimilate the data."""
 
         forecast_ensemble = self._forecast_step(
-            prior_ensemble, return_model_integration_steps=return_model_integration_steps
+            prior_ensemble,
+            return_model_integration_steps=return_model_integration_steps,
         )
         analysis_ensemble = self._analysis_step(
             forecast_ensemble[:, -1], obs_vect, rng_key=rng_key, **kwargs

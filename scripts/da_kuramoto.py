@@ -93,11 +93,16 @@ def main() -> None:
 
     # Define the forward model
     forward_model = KuramotoSivashinsky(
-        dt=DT, model_integration_steps=MODEL_INTEGRATION_STEPS, state_dim=STATE_DIM, domain_length=DOMAIN_LENGTH
+        dt=DT,
+        model_integration_steps=MODEL_INTEGRATION_STEPS,
+        state_dim=STATE_DIM,
+        domain_length=DOMAIN_LENGTH,
     )
 
     # Rollout the true solution
-    true_sol = forward_model.rollout(X_0, DATA_ASSIMILATION_STEPS, return_model_integration_steps=True)
+    true_sol = forward_model.rollout(
+        X_0, DATA_ASSIMILATION_STEPS, return_model_integration_steps=True
+    )
 
     # Define the observation operator
     obs_operator = LinearObservationOperator(
@@ -107,7 +112,9 @@ def main() -> None:
     # Generate observations
     observations = jnp.zeros((DATA_ASSIMILATION_STEPS, len(OBS_IDS)))
     for i in range(0, DATA_ASSIMILATION_STEPS):
-        obs_at_t = obs_operator(true_sol[:, 1 + MODEL_INTEGRATION_STEPS * (i + 1)])  # [1, num_obs]
+        obs_at_t = obs_operator(
+            true_sol[:, 1 + MODEL_INTEGRATION_STEPS * (i + 1)]
+        )  # [1, num_obs]
 
         rng_key, key = jax.random.split(rng_key)
         obs_at_t = obs_at_t + jax.random.multivariate_normal(
@@ -195,7 +202,9 @@ def main() -> None:
         prior_error, posterior_error, title="Kuramoto-Sivashinsky Metrics"
     )
 
-    true_sol = true_sol.reshape(DATA_ASSIMILATION_STEPS * MODEL_INTEGRATION_STEPS + 1, STATE_DIM)
+    true_sol = true_sol.reshape(
+        DATA_ASSIMILATION_STEPS * MODEL_INTEGRATION_STEPS + 1, STATE_DIM
+    )
     mean_prior = prior_ensemble.mean(axis=(0, 2))
     mean_post = posterior_ensemble.mean(axis=(0, 2))
     std_post = posterior_ensemble.std(axis=(0, 2))

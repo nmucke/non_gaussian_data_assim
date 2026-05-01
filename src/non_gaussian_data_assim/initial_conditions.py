@@ -71,5 +71,3 @@ def kuramoto_cosine_prior_ensemble(
 
     profiles = jax.vmap(profile)(magnitudes)
     return profiles.reshape(ensemble_size, 1, state_dim)
-
-

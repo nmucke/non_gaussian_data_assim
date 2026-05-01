@@ -98,6 +98,4 @@ class ParticleFilter(BaseDataAssimilationMethod):
         def _no_resample(_: Any) -> jnp.ndarray:
             return prior_ensemble
 
-        return jax.lax.cond(
-            n_eff < threshold, _resample, _no_resample, operand=None
-        )
+        return jax.lax.cond(n_eff < threshold, _resample, _no_resample, operand=None)

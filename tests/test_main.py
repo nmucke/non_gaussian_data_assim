@@ -14,8 +14,8 @@ CASES = ["lorenz_63", "lorenz_96", "kuramoto"]
 DA_METHODS = ["enkf", "agmf", "pff", "particle_filter"]
 
 
-@pytest.mark.parametrize("case", CASES)
-@pytest.mark.parametrize("da_method", DA_METHODS)
+@pytest.mark.parametrize("case", CASES)  # type: ignore[misc]
+@pytest.mark.parametrize("da_method", DA_METHODS)  # type: ignore[misc]
 def test_main_combination(case: str, da_method: str) -> None:
     """Run scripts/main.py end-to-end for every (case, da_method) pair."""
     env = {**os.environ, "MPLBACKEND": "Agg"}

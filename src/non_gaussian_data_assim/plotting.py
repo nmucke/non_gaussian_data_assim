@@ -23,7 +23,9 @@ def plot_low_dim_trajectory(
     model_integration_steps: int,
 ) -> None:
     """Per-state-dimension subplots for low-dimensional systems (e.g. Lorenz 63)."""
-    true_sol_2d = true_sol.reshape(data_assimilation_steps * model_integration_steps + 1, state_dim)
+    true_sol_2d = true_sol.reshape(
+        data_assimilation_steps * model_integration_steps + 1, state_dim
+    )
     mean_reference = reference_ensemble.mean(axis=(0, 2))
     mean_post = posterior_ensemble.mean(axis=(0, 2))
     std_post = posterior_ensemble.std(axis=(0, 2))
@@ -82,7 +84,9 @@ def plot_high_dim_field(
 ) -> None:
     """Spatial-field heatmaps + per-point time series for high-dim systems (L96, KS)."""
     del state_names
-    true_sol_2d = true_sol.reshape(data_assimilation_steps * model_integration_steps + 1, state_dim)
+    true_sol_2d = true_sol.reshape(
+        data_assimilation_steps * model_integration_steps + 1, state_dim
+    )
     ids_to_plot = [state_dim // 4, state_dim // 2, 3 * state_dim // 4]
 
     fields = [
