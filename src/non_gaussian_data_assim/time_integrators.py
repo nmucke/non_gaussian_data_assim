@@ -8,7 +8,7 @@ import jax.numpy as jnp
 def rollout(
     stepper: Callable,
     num_steps: int,
-    return_inner_steps: bool = False,
+    return_model_integration_steps: bool = False,
     include_initial_state: bool = False,
 ) -> jnp.ndarray:
     """Rollout the system using the given stepper."""
@@ -22,7 +22,7 @@ def rollout(
         """Rollout function for the rollout."""
         last_step, trajectory = jax.lax.scan(scan_fn, init, xs=None, length=num_steps)
 
-        if return_inner_steps:
+        if return_model_integration_steps:
             if include_initial_state:
                 trajectory = jnp.concatenate([init[None, ...], trajectory], axis=0)
 
@@ -33,9 +33,9 @@ def rollout(
     return rollout_fn
 
 
-def rollout_with_inner_steps(
+def rollout_with_model_integration_steps(
     inner_rollout_fn: Callable,
-    outer_steps: int,
+    data_assimilation_steps: int,
     include_initial_state: bool = False,
 ) -> jnp.ndarray:
     """Rollout the system using the given stepper with inner steps."""
@@ -55,7 +55,7 @@ def rollout_with_inner_steps(
             init,
             # (init, init),
             xs=None,
-            length=outer_steps,
+            length=data_assimilation_steps,
         )
         trajectory = trajectory.reshape(-1, num_states, state_dim)
 

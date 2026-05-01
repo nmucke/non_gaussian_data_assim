@@ -8,7 +8,9 @@ import numpy as np
 from non_gaussian_data_assim.da_methods.base import BaseDataAssimilationMethod
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 from non_gaussian_data_assim.localization import distance_based_localization
-from non_gaussian_data_assim.observation_operator import ObservationOperator
+from non_gaussian_data_assim.observations.observation_operator import (
+    ObservationOperator,
+)
 
 
 class EnsembleKalmanFilter(BaseDataAssimilationMethod):
@@ -20,6 +22,7 @@ class EnsembleKalmanFilter(BaseDataAssimilationMethod):
         R: np.ndarray,
         forward_operator: BaseForwardModel,
         obs_operator: ObservationOperator,
+        name: str = "enkf",
         inflation_factor: float = 1.0,
         localization_distance: Optional[int] = None,
     ) -> None:
@@ -33,7 +36,7 @@ class EnsembleKalmanFilter(BaseDataAssimilationMethod):
         obs_operator (Callable[[np.ndarray], np.ndarray]): Observation operator.
         localization_distance (int): Localization distance.
         """
-        super().__init__(obs_operator, forward_operator)
+        super().__init__(name, obs_operator, forward_operator)
         self.ensemble_size = ensemble_size
         self.inflation_factor = inflation_factor
         self.num_states = forward_operator.num_states

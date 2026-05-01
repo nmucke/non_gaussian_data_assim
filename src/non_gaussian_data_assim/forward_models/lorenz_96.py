@@ -23,11 +23,11 @@ class Lorenz96Model(BaseForwardModel):
         forcing_term: float,
         state_dim: int,
         dt: float,
-        inner_steps: int,
+        model_integration_steps: int,
         stepper_type: str = "runge_kutta_4",
     ) -> None:
         """Initialize the forward model."""
-        super().__init__(dt, inner_steps, state_dim)
+        super().__init__(dt, model_integration_steps, state_dim)
 
         self.forcing_term = forcing_term
         self.num_states = 1
