@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
-from non_gaussian_data_assim.observation_operator import ObservationOperator
+from non_gaussian_data_assim.observations.observation_operator import ObservationOperator
 
 
 def da_rollout(
@@ -71,10 +71,12 @@ class BaseDataAssimilationMethod:
 
     def __init__(
         self,
+        name: str,
         obs_operator: ObservationOperator,
         forward_operator: BaseForwardModel,
     ):
         """Initialize the data assimilation method."""
+        self.name = name
         self.obs_operator = obs_operator
         self.forward_operator = forward_operator
 

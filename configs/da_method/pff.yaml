@@ -1,0 +1,7 @@
+# @package da_method
+name: pff
+_target_: non_gaussian_data_assim.da_methods.pff.ParticleFlowFilter
+num_pseudo_time_steps: 100
+step_size: 0.05
+stepper: runge_kutta_4
+localization_distance: null

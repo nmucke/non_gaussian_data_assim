@@ -12,7 +12,7 @@ from non_gaussian_data_assim.kernels import (
     get_kernel_matrix_fn,
 )
 from non_gaussian_data_assim.localization import distance_based_localization
-from non_gaussian_data_assim.observation_operator import (
+from non_gaussian_data_assim.observations.observation_operator import (
     LinearObservationOperator,
     NonlinearObservationOperator,
     ObservationOperator,
@@ -114,6 +114,7 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         R: np.ndarray,
         obs_operator: ObservationOperator,
         forward_operator: BaseForwardModel,
+        name: str = "pff",
         localization_distance: Optional[int] = None,
         num_pseudo_time_steps: int = 100,
         step_size: float = DEFAULT_STEP_SIZE,
@@ -137,7 +138,7 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
             kernel_type (str): Type of kernel to use.
             stepper (str): Type of stepper to use.
         """
-        super().__init__(obs_operator, forward_operator)
+        super().__init__(name, obs_operator, forward_operator)
         self.ensemble_size = ensemble_size
         self.R = R
         self.num_states = forward_operator.num_states

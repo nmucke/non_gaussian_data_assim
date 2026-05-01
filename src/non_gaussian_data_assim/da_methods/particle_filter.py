@@ -106,8 +106,9 @@ class ParticleFilter(BaseDataAssimilationMethod):
         nx: int,
         R: np.ndarray,
         obs_operator: Callable[[np.ndarray], np.ndarray],
+        name: str = "particle_filter",
     ) -> None:
-        super().__init__(obs_operator)
+        super().__init__(name, obs_operator)
         self.mem = mem
         self.nx = nx
         self.R = R
