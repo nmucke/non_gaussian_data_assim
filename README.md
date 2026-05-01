@@ -431,6 +431,46 @@ Or open it via the web UI from the branch page on GitHub. In the description, su
 
 Address review feedback by pushing more commits to the same branch. Once approved and CI is green, the PR can be merged.
 
+### Implementing a new forward model
+
+Adding a new dynamical system to the harness only requires **subclassing `BaseForwardModel`** ([`src/non_gaussian_data_assim/forward_models/base.py`](src/non_gaussian_data_assim/forward_models/base.py)) **and implementing the `one_step` method**. Everything else — single-call rollout with optional inner-step trajectories, ensemble vmapping, JIT compilation — is provided by the base class.
+
+**`one_step` acts on a single state with shape `[num_states, state_dim]`.** You write the dynamics as if there were one trajectory; `jax.vmap` (applied inside the base class) lifts it to operate over the ensemble axis, and the base class rollout machinery composes `one_step` `model_integration_steps` times per inner call and `data_assimilation_steps` times across outer cycles. You never need to write a vmapped, batched, or rollout-aware version yourself.
+
+```python
+# src/non_gaussian_data_assim/forward_models/my_model.py
+import jax.numpy as jnp
+
+from non_gaussian_data_assim.forward_models.base import BaseForwardModel
+
+
+class MyModel(BaseForwardModel):
+    def __init__(self, dt: float, model_integration_steps: int, state_dim: int, ...) -> None:
+        super().__init__(dt, model_integration_steps, state_dim)
+        # Store any model-specific parameters here.
+
+    def one_step(self, x: jnp.ndarray) -> jnp.ndarray:
+        """Advance a single state ``x`` of shape [num_states, state_dim] by ``self.dt``."""
+        ...
+        return x_next  # same shape: [num_states, state_dim]
+```
+
+That's it — the base class handles `__call__` (vmapped, JIT'd inner rollout for `model_integration_steps`) and `rollout` (outer loop over `data_assimilation_steps` with optional inner-step return).
+
+To use the new model, point a case file at it via `_target_`:
+
+```yaml
+# configs/case/my_case.yaml — under case.forward_model
+forward_model:
+  _target_: non_gaussian_data_assim.forward_models.my_model.MyModel
+  dt: 0.01
+  model_integration_steps: ${model_integration_steps}
+  state_dim: 64
+  # any extra constructor arguments
+```
+
+No edits to `scripts/main.py` are needed.
+
 ---
 
 ## License
