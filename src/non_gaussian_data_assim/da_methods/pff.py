@@ -241,7 +241,7 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         rollout_fn = rollout(
             stepper,
             self.num_pseudo_time_steps,
-            return_inner_steps=self.return_pff_trajectory,
+            return_model_integration_steps=self.return_pff_trajectory,
         )
         rollout_fn = jax.jit(rollout_fn)
 

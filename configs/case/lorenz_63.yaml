@@ -1,6 +1,6 @@
 # @package _global_
-outer_steps: 100
-inner_steps: 50
+data_assimilation_steps: 100
+model_integration_steps: 50
 ensemble_size: 100
 
 case:
@@ -13,7 +13,7 @@ case:
   forward_model:
     _target_: non_gaussian_data_assim.forward_models.lorenz_63.Lorenz63Model
     dt: 0.01
-    inner_steps: ${inner_steps}
+    model_integration_steps: ${model_integration_steps}
     sigma: 10.0
     beta: 2.6666666
     rho: 28.0

@@ -1,6 +1,6 @@
 # @package _global_
-outer_steps: 50
-inner_steps: 1
+data_assimilation_steps: 50
+model_integration_steps: 1
 ensemble_size: 100
 
 case:
@@ -15,7 +15,7 @@ case:
     forcing_term: 8.0
     state_dim: ${case.state_dim}
     dt: 0.01
-    inner_steps: ${inner_steps}
+    model_integration_steps: ${model_integration_steps}
 
   obs_operator:
     _target_: non_gaussian_data_assim.observations.observation_operator.LinearObservationOperator

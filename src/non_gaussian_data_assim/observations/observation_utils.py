@@ -13,8 +13,8 @@ def generate_observations(
     true_sol: jnp.ndarray,
     obs_operator: ObservationOperator,
     R: jnp.ndarray,
-    outer_steps: int,
-    inner_steps: int,
+    data_assimilation_steps: int,
+    model_integration_steps: int,
 ) -> jnp.ndarray:
     """Sample noisy observations of the true trajectory at each outer step.
 
@@ -23,15 +23,15 @@ def generate_observations(
         true_sol: Truth trajectory with shape [1, total_steps, num_states, state_dim].
         obs_operator: Observation operator applied to each truth snapshot.
         R: Observation-noise covariance matrix.
-        outer_steps: Number of assimilation steps.
-        inner_steps: Number of inner integration steps between assimilation steps.
+        data_assimilation_steps: Number of assimilation steps.
+        model_integration_steps: Number of inner integration steps between assimilation steps.
 
     Returns:
-        Observations array of shape [outer_steps, obs_operator.num_obs].
+        Observations array of shape [data_assimilation_steps, obs_operator.num_obs].
     """
-    observations = jnp.zeros((outer_steps, obs_operator.num_obs))
-    for i in range(outer_steps):
-        obs_at_t = obs_operator(true_sol[:, 1 + inner_steps * (i + 1)])
+    observations = jnp.zeros((data_assimilation_steps, obs_operator.num_obs))
+    for i in range(data_assimilation_steps):
+        obs_at_t = obs_operator(true_sol[:, 1 + model_integration_steps * (i + 1)])
         rng_key, key = jax.random.split(rng_key)
         obs_at_t = obs_at_t + jax.random.multivariate_normal(
             key, jnp.zeros(obs_operator.num_obs), R

@@ -7,8 +7,8 @@ defaults:
 seed: 42
 
 # Sensible fallbacks; each case file overrides these to match its needs.
-outer_steps: 100
-inner_steps: 50
+data_assimilation_steps: 100
+model_integration_steps: 50
 ensemble_size: 100
 
 hydra:

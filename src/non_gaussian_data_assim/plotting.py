@@ -15,16 +15,16 @@ def plot_low_dim_trajectory(
     title: str,
     da_method_name: str,
     ensemble_size: int,
-    prior_metrics: Mapping[str, float],
+    reference_metrics: Mapping[str, float],
     posterior_metrics: Mapping[str, float],
     state_dim: int,
     state_names: Sequence[str],
-    outer_steps: int,
-    inner_steps: int,
+    data_assimilation_steps: int,
+    model_integration_steps: int,
 ) -> None:
     """Per-state-dimension subplots for low-dimensional systems (e.g. Lorenz 63)."""
-    true_sol_2d = true_sol.reshape(outer_steps * inner_steps + 1, state_dim)
-    mean_prior = reference_ensemble.mean(axis=(0, 2))
+    true_sol_2d = true_sol.reshape(data_assimilation_steps * model_integration_steps + 1, state_dim)
+    mean_reference = reference_ensemble.mean(axis=(0, 2))
     mean_post = posterior_ensemble.mean(axis=(0, 2))
     std_post = posterior_ensemble.std(axis=(0, 2))
     time_axis = np.arange(posterior_ensemble.shape[1])
@@ -32,15 +32,15 @@ def plot_low_dim_trajectory(
     plt.figure()
     plt.suptitle(
         f"{title}, DA Method: {da_method_name}, Ensemble Size: {ensemble_size}, \n"
-        f"Prior RMSE: {prior_metrics['rmse']:.4f}, "
+        f"Reference RMSE: {reference_metrics['rmse']:.4f}, "
         f"Posterior RMSE: {posterior_metrics['rmse']:.4f}"
     )
     for state_idx in range(state_dim):
         plt.subplot(state_dim, 1, state_idx + 1)
         for state_name, state_data, color in zip(
             ["Reference Ensemble Mean", "Posterior Ensemble Mean", "True Solution"],
-            [mean_prior, mean_post, true_sol_2d],
-            ["tab:red", "tab:blue", "black"],
+            [mean_reference, mean_post, true_sol_2d],
+            ["tab:blue", "tab:red", "black"],
         ):
             plt.plot(
                 time_axis,
@@ -68,36 +68,36 @@ def plot_low_dim_trajectory(
 def plot_high_dim_field(
     *,
     true_sol: jnp.ndarray,
-    prior_ensemble: jnp.ndarray,
+    reference_ensemble: jnp.ndarray,
     posterior_ensemble: jnp.ndarray,
     title: str,
     da_method_name: str,
     ensemble_size: int,
-    prior_metrics: Mapping[str, float],
+    reference_metrics: Mapping[str, float],
     posterior_metrics: Mapping[str, float],
     state_dim: int,
-    outer_steps: int,
-    inner_steps: int,
+    data_assimilation_steps: int,
+    model_integration_steps: int,
     state_names: Optional[Sequence[str]] = None,
 ) -> None:
     """Spatial-field heatmaps + per-point time series for high-dim systems (L96, KS)."""
     del state_names
-    true_sol_2d = true_sol.reshape(outer_steps * inner_steps + 1, state_dim)
+    true_sol_2d = true_sol.reshape(data_assimilation_steps * model_integration_steps + 1, state_dim)
     ids_to_plot = [state_dim // 4, state_dim // 2, 3 * state_dim // 4]
 
     fields = [
         true_sol_2d,
-        prior_ensemble.mean(axis=(0, 2)),
+        reference_ensemble.mean(axis=(0, 2)),
         posterior_ensemble.mean(axis=(0, 2)),
-        true_sol_2d - prior_ensemble.mean(axis=(0, 2)),
+        true_sol_2d - reference_ensemble.mean(axis=(0, 2)),
         true_sol_2d - posterior_ensemble.mean(axis=(0, 2)),
         posterior_ensemble.var(axis=(0, 2)),
     ]
     field_names = [
         "True Solution",
-        "Prior Ensemble Mean",
+        "Reference Ensemble Mean",
         "Posterior Ensemble Mean",
-        "|True - Prior| difference",
+        "|True - Reference| difference",
         "|True - Posterior| difference",
         "Posterior Ensemble Variance",
     ]
@@ -105,7 +105,7 @@ def plot_high_dim_field(
     plt.figure()
     plt.suptitle(
         f"{title}, DA Method: {da_method_name}, Ensemble Size: {ensemble_size}, \n"
-        f"Prior RMSE: {prior_metrics['rmse']:.4f}, "
+        f"Reference RMSE: {reference_metrics['rmse']:.4f}, "
         f"Posterior RMSE: {posterior_metrics['rmse']:.4f}"
     )
 
@@ -138,11 +138,11 @@ def plot_high_dim_field(
         )
         for state_at_point, state_name, color in zip(
             [
-                prior_ensemble.mean(axis=(0, 2))[:, idx_to_plot],
+                reference_ensemble.mean(axis=(0, 2))[:, idx_to_plot],
                 posterior_ensemble.mean(axis=(0, 2))[:, idx_to_plot],
                 true_sol_2d[:, idx_to_plot],
             ],
-            ["Prior Ensemble Mean", "Posterior Ensemble Mean", "True Solution"],
+            ["Reference Ensemble Mean", "Posterior Ensemble Mean", "True Solution"],
             ["tab:red", "tab:blue", "black"],
         ):
             plt.plot(

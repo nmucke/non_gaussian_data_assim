@@ -1,6 +1,6 @@
 # @package _global_
-outer_steps: 200
-inner_steps: 10
+data_assimilation_steps: 200
+model_integration_steps: 10
 ensemble_size: 50
 
 case:
@@ -14,7 +14,7 @@ case:
   forward_model:
     _target_: non_gaussian_data_assim.forward_models.kuramoto_sivashinsky.KuramotoSivashinsky
     dt: 0.05
-    inner_steps: ${inner_steps}
+    model_integration_steps: ${model_integration_steps}
     state_dim: ${case.state_dim}
     domain_length: ${case.domain_length}
 

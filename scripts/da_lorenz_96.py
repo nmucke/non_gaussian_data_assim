@@ -24,8 +24,8 @@ from non_gaussian_data_assim.observation_operator import LinearObservationOperat
 
 SEED = 42
 
-OUTER_STEPS = 50
-INNER_STEPS = 1
+DATA_ASSIMILATION_STEPS = 50
+MODEL_INTEGRATION_STEPS = 1
 ENSEMBLE_SIZE = 100
 
 DA_METHOD = "pff"
@@ -81,11 +81,11 @@ def main() -> None:
 
     # Define the forward model
     forward_model = Lorenz96Model(
-        forcing_term=F, state_dim=STATE_DIM, dt=DT, inner_steps=INNER_STEPS
+        forcing_term=F, state_dim=STATE_DIM, dt=DT, model_integration_steps=MODEL_INTEGRATION_STEPS
     )
 
     # Rollout the true solution
-    true_sol = forward_model.rollout(X_0, OUTER_STEPS, return_inner_steps=True)
+    true_sol = forward_model.rollout(X_0, DATA_ASSIMILATION_STEPS, return_model_integration_steps=True)
 
     # Define the observation operator
     obs_operator = LinearObservationOperator(
@@ -93,9 +93,9 @@ def main() -> None:
     )
 
     # Generate observations
-    observations = jnp.zeros((OUTER_STEPS, len(OBS_IDS)))
-    for i in range(0, OUTER_STEPS):
-        obs_at_t = obs_operator(true_sol[:, 1 + INNER_STEPS * (i + 1)])  # [1, num_obs]
+    observations = jnp.zeros((DATA_ASSIMILATION_STEPS, len(OBS_IDS)))
+    for i in range(0, DATA_ASSIMILATION_STEPS):
+        obs_at_t = obs_operator(true_sol[:, 1 + MODEL_INTEGRATION_STEPS * (i + 1)])  # [1, num_obs]
 
         rng_key, key = jax.random.split(rng_key)
         obs_at_t = obs_at_t + jax.random.multivariate_normal(
@@ -125,7 +125,7 @@ def main() -> None:
     )
     # Rollout the prior ensemble
     prior_ensemble = forward_model.rollout(
-        prior_ensemble, OUTER_STEPS, return_inner_steps=True
+        prior_ensemble, DATA_ASSIMILATION_STEPS, return_model_integration_steps=True
     )
 
     # Perform the data assimilation
@@ -141,13 +141,13 @@ def main() -> None:
     posterior_ensemble = posterior_ensemble.reshape(
         ENSEMBLE_SIZE, 1, NUM_STATES, STATE_DIM
     )
-    for i in tqdm(range(0, OUTER_STEPS)):
+    for i in tqdm(range(0, DATA_ASSIMILATION_STEPS)):
         rng_key, key = jax.random.split(rng_key)
         posterior_next = da_model(
             prior_ensemble=posterior_ensemble[:, -1],
             obs_vect=observations[i],
             rng_key=key,
-            return_inner_steps=True,
+            return_model_integration_steps=True,
         )
         if jnp.isnan(posterior_next).any():
             print(f"NaN in posterior_next at time {i}")
@@ -180,7 +180,7 @@ def main() -> None:
 
     print_metrics_table(prior_error, posterior_error, title="Lorenz 96 Metrics")
 
-    true_sol = true_sol.reshape(OUTER_STEPS * INNER_STEPS + 1, STATE_DIM)
+    true_sol = true_sol.reshape(DATA_ASSIMILATION_STEPS * MODEL_INTEGRATION_STEPS + 1, STATE_DIM)
     mean_prior = prior_ensemble.mean(axis=(0, 2))
     mean_post = posterior_ensemble.mean(axis=(0, 2))
     std_post = posterior_ensemble.std(axis=(0, 2))

@@ -114,7 +114,7 @@ def main() -> None:
         prior_ensemble=posterior_ensemble[:, -1],
         obs_vect=observations,
         rng_key=key,
-        return_inner_steps=True,
+        return_model_integration_steps=True,
     )
 
     posterior_ensemble = posterior_ensemble[:, 0, 0, 0]
@@ -134,7 +134,7 @@ def main() -> None:
     # pdb.set_trace()
 
     # # Calculate the prior and posterior errors
-    # true_sol = true_sol.reshape(OUTER_STEPS * INNER_STEPS + 1, STATE_DIM)
+    # true_sol = true_sol.reshape(DATA_ASSIMILATION_STEPS * MODEL_INTEGRATION_STEPS + 1, STATE_DIM)
 
     # # Calculate the prior and posterior errors
     # prior_error = true_sol - prior_ensemble.mean(axis=(0, 2))

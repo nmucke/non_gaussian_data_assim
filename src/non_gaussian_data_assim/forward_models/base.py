@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from non_gaussian_data_assim.time_integrators import rollout, rollout_with_inner_steps
+from non_gaussian_data_assim.time_integrators import rollout, rollout_with_model_integration_steps
 
 
 class BaseForwardModel:
@@ -16,7 +16,7 @@ class BaseForwardModel:
     def __init__(
         self,
         dt: float,
-        inner_steps: int,
+        model_integration_steps: int,
         state_dim: int,
         num_states: int = 1,
     ):
@@ -24,7 +24,7 @@ class BaseForwardModel:
         self.num_states = num_states
         self.state_dim = state_dim
         self.dt = dt
-        self.inner_steps = inner_steps
+        self.model_integration_steps = model_integration_steps
 
     @abstractmethod
     def one_step(self, x: jnp.ndarray) -> jnp.ndarray:
@@ -35,7 +35,7 @@ class BaseForwardModel:
         self,
         x: jnp.ndarray,
         _: None = None,
-        return_inner_steps: bool = False,
+        return_model_integration_steps: bool = False,
         is_ensemble: bool = False,
     ) -> jnp.ndarray | tuple[jnp.ndarray, jnp.ndarray]:
         """
@@ -50,9 +50,9 @@ class BaseForwardModel:
 
         rollout_fn = rollout(
             self.one_step,
-            self.inner_steps,
-            return_inner_steps=return_inner_steps,
-            include_initial_state=not return_inner_steps,
+            self.model_integration_steps,
+            return_model_integration_steps=return_model_integration_steps,
+            include_initial_state=not return_model_integration_steps,
         )
         if is_ensemble:
             rollout_fn = jax.vmap(rollout_fn)
@@ -62,35 +62,35 @@ class BaseForwardModel:
     def rollout(
         self,
         x: jnp.ndarray,
-        outer_steps: int,
-        return_inner_steps: bool = False,
+        data_assimilation_steps: int,
+        return_model_integration_steps: bool = False,
     ) -> jnp.ndarray:
         """
         Outer rollout the model for the given number of outer steps.
 
         Args:
             x: State array of shape [ensemble, num_states, state_dim]
-            outer_steps: Number of outer steps to rollout
+            data_assimilation_steps: Number of outer steps to rollout
 
         Returns:
             State array of shape [ensemble, num_states, state_dim]
         """
 
-        if return_inner_steps:
+        if return_model_integration_steps:
             inner_rollout_fn = functools.partial(
                 self.__call__,
-                return_inner_steps=True,
+                return_model_integration_steps=True,
             )
-            rollout_fn = rollout_with_inner_steps(
+            rollout_fn = rollout_with_model_integration_steps(
                 inner_rollout_fn,
-                outer_steps,
+                data_assimilation_steps,
                 include_initial_state=False,
             )
         else:
             rollout_fn = rollout(
                 self.__call__,
-                outer_steps,
-                return_inner_steps=True,
+                data_assimilation_steps,
+                return_model_integration_steps=True,
                 include_initial_state=True,
             )
         rollout_fn = jax.jit(rollout_fn)
