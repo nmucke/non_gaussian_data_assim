@@ -13,7 +13,7 @@ class SineModel(BaseForwardModel):
         self,
     ) -> None:
         """Initialize the forward model."""
-        super().__init__(dt=0.01, inner_steps=1, state_dim=2, num_states=1)
+        super().__init__(dt=0.01, model_integration_steps=1, state_dim=2, num_states=1)
 
     def one_step(self, x: jnp.ndarray) -> jnp.ndarray:
         """Sine model one step."""

@@ -210,7 +210,7 @@ def main() -> None:
         prior_ensemble=posterior_ensemble[:, -1],
         obs_vect=observations,
         rng_key=key,
-        return_inner_steps=False,
+        return_model_integration_steps=False,
     )
     t1 = time.time()
     print(f"Time taken: {t1 - t0} seconds")

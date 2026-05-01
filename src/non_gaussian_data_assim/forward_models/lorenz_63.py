@@ -22,14 +22,14 @@ class Lorenz63Model(BaseForwardModel):
     def __init__(
         self,
         dt: float,
-        inner_steps: int,
+        model_integration_steps: int,
         sigma: float = 10.0,
         beta: float = 2.6666666,
         rho: float = 28.0,
         stepper_type: str = "runge_kutta_4",
     ) -> None:
         """Initialize the forward model."""
-        super().__init__(dt, inner_steps, 3)
+        super().__init__(dt, model_integration_steps, 3)
 
         self.sigma = sigma
         self.beta = beta

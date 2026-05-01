@@ -12,7 +12,7 @@ from non_gaussian_data_assim.kernels import (
     get_kernel_matrix_fn,
 )
 from non_gaussian_data_assim.localization import distance_based_localization
-from non_gaussian_data_assim.observation_operator import (
+from non_gaussian_data_assim.observations.observation_operator import (
     LinearObservationOperator,
     NonlinearObservationOperator,
     ObservationOperator,
@@ -114,13 +114,16 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         R: np.ndarray,
         obs_operator: ObservationOperator,
         forward_operator: BaseForwardModel,
+        name: str = "pff",
         localization_distance: Optional[int] = None,
         num_pseudo_time_steps: int = 100,
         step_size: float = DEFAULT_STEP_SIZE,
         alpha: float = DEFAULT_ALPHA,
         kernel_type: str = "scalar",
-        stepper: str = "runge_kutta_4",
+        stepper: str = "forward_euler",
         return_pff_trajectory: bool = False,
+        inflation_factor: float = 1.0,
+        prior_cov_regularization: Optional[float] = None,
     ) -> None:
         """
         Initialize the Particle Flow Filter.
@@ -136,8 +139,12 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
             alpha (float): Alpha parameter.
             kernel_type (str): Type of kernel to use.
             stepper (str): Type of stepper to use.
+            prior_cov_regularization: If not None, add
+                ``prior_cov_regularization * mean(diag(prior_cov)) * I`` to the
+                localized prior covariance before inversion. Stabilizes the
+                inverse when the empirical covariance is rank-deficient.
         """
-        super().__init__(obs_operator, forward_operator)
+        super().__init__(name, obs_operator, forward_operator)
         self.ensemble_size = ensemble_size
         self.R = R
         self.num_states = forward_operator.num_states
@@ -151,7 +158,8 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         self.stepper = stepper
         self.return_pff_trajectory = return_pff_trajectory
         self.is_linear_obs_operator = obs_operator.is_linear
-
+        self.inflation_factor = inflation_factor
+        self.prior_cov_regularization = prior_cov_regularization
         if self.localization_distance is None:
             self.localization = lambda x: x
         else:
@@ -176,6 +184,10 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         if prior_cov is None:
             prior_cov = jnp.cov(x_s.T)
         prior_cov = self.localization(prior_cov)
+        prior_cov = self.inflation_factor * prior_cov
+        if self.prior_cov_regularization is not None:
+            eps = self.prior_cov_regularization * jnp.mean(jnp.diag(prior_cov))
+            prior_cov = prior_cov + eps * jnp.eye(prior_cov.shape[0])
         prior_cov_inv = jnp.linalg.inv(prior_cov)
 
         if len(prior_cov.shape) == 0:
@@ -240,7 +252,7 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         rollout_fn = rollout(
             stepper,
             self.num_pseudo_time_steps,
-            return_inner_steps=self.return_pff_trajectory,
+            return_model_integration_steps=self.return_pff_trajectory,
         )
         rollout_fn = jax.jit(rollout_fn)
 
