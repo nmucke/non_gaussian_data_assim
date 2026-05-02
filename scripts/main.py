@@ -40,6 +40,12 @@ def main(cfg: DictConfig) -> None:
     da_method_cfg = OmegaConf.merge(
         cfg.da_method, cfg.case.da_method_overrides[cfg.da_method.name]
     )
+    # Settings for Ensembel Generation (ensgen) --> add-perturbatiomns-to-best-guess
+    add_perturbs_to_bg: bool = cfg.case.prior_ensemble.add_perturbs_to_bg
+    # rationale: Bool-flag, if true, ensemble is created by adding perts to best-guess reference state, else perturb fields are ensemble members directly
+    ensgen_method: str = (
+        cfg.case.prior_ensemble.ensgen_method
+    )  # rationale: Which ensemble generation method will be used to ceate perturbations
 
     rng_key = jax.random.PRNGKey(cfg.seed)
 
@@ -54,8 +60,13 @@ def main(cfg: DictConfig) -> None:
     # Initial state for the truth.
     initial_state_fn = instantiate(initial_state_cfg)
     logger.info(f"Initial state: {initial_state_fn}")
-    rng_key, key = jax.random.split(rng_key)
+    rng_key, key, key_bg = jax.random.split(
+        rng_key, 3
+    )  # Added random-seed for a best-guess I.C. field
     X_0 = initial_state_fn(rng_key=key)
+
+    # Create an inital best-guess field (different sample from same distri. as ground-truth)
+    X0_bg = initial_state_fn(rng_key=key_bg) if add_perturbs_to_bg else None
 
     # Rollout the truth.
     true_sol = forward_model.rollout(
@@ -92,6 +103,10 @@ def main(cfg: DictConfig) -> None:
     logger.info(f"Prior ensemble: {prior_ensemble_fn}")
     rng_key, key = jax.random.split(rng_key)
     reference_ensemble = prior_ensemble_fn(rng_key=key, ensemble_size=cfg.ensemble_size)
+
+    # If add_perturbs_to_bg: then reference_ensemble is ensemble of perturbations and must be added to reference best-guess field
+    if add_perturbs_to_bg:
+        reference_ensemble += X0_bg
 
     # Initialize the posterior ensemble from the prior.
     posterior_ensemble = reference_ensemble.copy().reshape(

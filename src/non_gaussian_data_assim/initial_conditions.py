@@ -1,7 +1,60 @@
 """Helpers for unified DA experiments: initial states and prior ensembles."""
 
+from typing import Literal
+
 import jax
 import jax.numpy as jnp
+
+from non_gaussian_data_assim.ensemble_generation import random_noise
+
+ensgen_method = Literal["white_noise", "red_noise", "breeding"]
+
+
+def prior_ensemble(
+    rng_key: jax.Array,
+    ensemble_size: int,
+    num_states: int,
+    state_dim: int,
+    ensgen_method: ensgen_method,
+    scale: float,
+    periodic_boundary: bool,
+    alpha: float,
+    add_perturbs_to_bg: bool,  # Non-sense argumetn: not-used in function, but otherwise HYDRA complains that an unexpected keyword is received!
+) -> jnp.ndarray:
+    """
+    Wrapper func that selects the correct prior ensemble generation method
+
+    Supported ensemble-generation methods:
+    - white_noise: uncorrelated perts
+    - red_noise: correlated perts with P(k) ~ k^{-alpha}
+    - breeding: flow-dependent perts
+    """
+
+    if ensgen_method == "white_noise":
+        return random_normal_prior_ensemble(
+            rng_key=rng_key,
+            ensemble_size=ensemble_size,
+            num_states=num_states,
+            state_dim=state_dim,
+            scale=scale,
+            periodic_boundary=periodic_boundary,
+        )
+
+    if ensgen_method == "red_noise":
+        return random_noise.red_noise_prior_ensemble(
+            rng_key=rng_key,
+            ensemble_size=ensemble_size,
+            num_states=num_states,
+            state_dim=state_dim,
+            scale=scale,
+            alpha=alpha,
+            periodic_boundary=periodic_boundary,
+        )
+
+    if ensgen_method == "breeding":
+        raise NotImplementedError()
+
+    raise ValueError(ensgen_method)
 
 
 def random_normal_initial_state(
@@ -23,13 +76,14 @@ def random_normal_prior_ensemble(
     ensemble_size: int,
     num_states: int,
     state_dim: int,
-    scale: float = 1.0,
-    periodic_boundary: bool = False,
+    scale: float,
+    periodic_boundary: bool,
 ) -> jnp.ndarray:
     """Sample a random-normal prior ensemble of shape [ensemble_size, num_states, state_dim]."""
     ensemble = (
         jax.random.normal(rng_key, (ensemble_size, num_states, state_dim)) * scale
     )
+
     if periodic_boundary:
         ensemble = ensemble.at[:, :, -1].set(ensemble[:, :, 0])
     return ensemble

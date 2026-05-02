@@ -1,5 +1,7 @@
 import random
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 
 
@@ -126,3 +128,43 @@ class RandomNoise:
             field = field / field.std()
 
         return field
+
+
+def _seed_from_jax_key(rng_key: jax.Array) -> int:
+    """Convert a jax PRNG key to a numpy int seed."""
+    seed = jax.random.randint(
+        rng_key, shape=(), minval=0, maxval=np.iinfo(np.int32).max
+    )
+    return int(jax.device_get(seed))
+
+
+def red_noise_prior_ensemble(
+    rng_key: jax.Array,
+    ensemble_size: int,
+    num_states: int,
+    state_dim: int,
+    scale: float,
+    alpha: float,
+    periodic_boundary: bool,
+) -> jnp.ndarray:
+    """Create RedNoise (spectrally correlated) perturbatons."""
+
+    ensemble_members = jax.random.split(rng_key, ensemble_size)
+    members = []
+    for key in ensemble_members:
+        seed = _seed_from_jax_key(key)
+        noise_generator = RandomNoise(redness=alpha, seed=seed)
+
+        member = noise_generator.generate_perturbation(
+            shape_like=(num_states, state_dim),
+            sigma=scale,
+        )
+
+        members.append(member)
+
+    ensemble = jnp.asarray(np.stack(members, axis=0))
+
+    if periodic_boundary:
+        ensemble = ensemble.at[:, :, -1].set(ensemble[:, :, 0])
+
+    return ensemble

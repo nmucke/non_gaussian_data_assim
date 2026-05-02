@@ -1,8 +1,8 @@
 # @package _global_
-data_assimilation_steps: 50
-model_integration_steps: 1
+data_assimilation_steps: 40
+model_integration_steps: 2
 ensemble_size: 100
-inflation_factor: 1.0
+inflation_factor: 1.1
 localization_distance: 10
 
 case:
@@ -37,13 +37,29 @@ case:
     scale: 10.0
     periodic_boundary: true
 
+
   prior_ensemble:
-    _target_: non_gaussian_data_assim.initial_conditions.random_normal_prior_ensemble
+    _target_: non_gaussian_data_assim.initial_conditions.prior_ensemble
     _partial_: true
     num_states: ${case.num_states}
     state_dim: ${case.state_dim}
-    scale: 10.0
     periodic_boundary: true
+
+    add_perturbs_to_bg: true  # If true, ensgen creates perturbations that are added
+                              # If false, ensgen creates the ensemble member's states directly
+    scale: 1.0 # 10.0
+
+    ensgen_method: red_noise  # choices: white_noise, red_noise, breeding
+
+    # Only for red_noise
+    alpha: 1.5
+
+    # # Only for breeding --> Not-implememented-yet
+    # breeding_cycles: 10
+    # breeding_cycle_steps: 5
+    # breeding_initial_perturbation_scale: ${prior_ensemble.scale}
+    # breeding_rescale_amplitude: ${case.scale}
+
 
   plotter:
     _target_: non_gaussian_data_assim.plotting.plot_high_dim_field

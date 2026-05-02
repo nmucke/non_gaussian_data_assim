@@ -3,6 +3,7 @@ from typing import Optional
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 AGGREGATION_METHODS = {
     "none": lambda x, axis: x,
@@ -142,7 +143,6 @@ def crps_ensemble_1d(x: np.ndarray, y: np.ndarray) -> np.ndarray:
 
 
 ## Max: Innovation metrics (Chi-sq + Normalized-Innov-Ranks)
-import numpy as np
 
 
 def _cholesky_S(U: np.ndarray, R: np.ndarray) -> np.ndarray:
