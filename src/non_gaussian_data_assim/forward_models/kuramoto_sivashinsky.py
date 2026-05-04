@@ -11,7 +11,7 @@ class KuramotoSivashinsky(BaseForwardModel):
     def __init__(
         self,
         dt: float,
-        inner_steps: int,
+        model_integration_steps: int,
         state_dim: int,
         domain_length: float,
     ):
@@ -23,7 +23,7 @@ class KuramotoSivashinsky(BaseForwardModel):
             state_dim: Number of spatial grid points
             domain_length: Length of the periodic domain
         """
-        super().__init__(dt, inner_steps, state_dim)
+        super().__init__(dt, model_integration_steps, state_dim)
 
         self.L = domain_length
         self.state_dim = state_dim

@@ -8,7 +8,9 @@ import jax.numpy as jnp
 import numpy as np
 
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
-from non_gaussian_data_assim.observation_operator import ObservationOperator
+from non_gaussian_data_assim.observations.observation_operator import (
+    ObservationOperator,
+)
 
 
 def da_rollout(
@@ -72,10 +74,12 @@ class BaseDataAssimilationMethod:
 
     def __init__(
         self,
+        name: str,
         obs_operator: ObservationOperator,
         forward_operator: BaseForwardModel,
     ):
         """Initialize the data assimilation method."""
+        self.name = name
         self.obs_operator = obs_operator
         self.forward_operator = forward_operator
 
@@ -84,18 +88,19 @@ class BaseDataAssimilationMethod:
         prior_ensemble: np.ndarray,
         obs_vect: np.ndarray,
         rng_key: Optional[jax.random.PRNGKey] = None,
-        return_inner_steps: bool = False,
+        return_model_integration_steps: bool = False,
         **kwargs: Any,
     ) -> np.ndarray:
         """Assimilate the data."""
 
         forecast_ensemble = self._forecast_step(
-            prior_ensemble, return_inner_steps=return_inner_steps
+            prior_ensemble,
+            return_model_integration_steps=return_model_integration_steps,
         )
         analysis_ensemble = self._analysis_step(
             forecast_ensemble[:, -1], obs_vect, rng_key=rng_key, **kwargs
         )
-        if return_inner_steps:
+        if return_model_integration_steps:
             analysis_ensemble = jnp.concatenate(
                 [forecast_ensemble[:, :-1, :, :], analysis_ensemble[:, None, :, :]],
                 axis=1,
@@ -125,12 +130,12 @@ class BaseDataAssimilationMethod:
         raise NotImplementedError
 
     def _forecast_step(
-        self, ensemble: np.ndarray, return_inner_steps: bool = False
+        self, ensemble: np.ndarray, return_model_integration_steps: bool = False
     ) -> np.ndarray:
         """Forecast the ensemble."""
         return self.forward_operator(
             ensemble,
-            return_inner_steps=return_inner_steps,
+            return_model_integration_steps=return_model_integration_steps,
             is_ensemble=True,
         )
 
@@ -139,7 +144,7 @@ class BaseDataAssimilationMethod:
         prior_ensemble: np.ndarray,
         obs_vect: np.ndarray,
         rng_key: Optional[jax.random.PRNGKey] = None,
-        return_inner_steps: bool = False,
+        return_model_integration_steps: bool = False,
         **kwargs: Any,
     ) -> np.ndarray:
         """Run the data assimilation method."""
@@ -147,7 +152,7 @@ class BaseDataAssimilationMethod:
             prior_ensemble,
             obs_vect,
             rng_key=rng_key,
-            return_inner_steps=return_inner_steps,
+            return_model_integration_steps=return_model_integration_steps,
             **kwargs,
         )
 
@@ -156,12 +161,12 @@ class BaseDataAssimilationMethod:
         prior_ensemble: np.ndarray,
         observations: jnp.ndarray,
         rng_key: Optional[jax.random.PRNGKey] = None,
-        return_inner_steps: bool = False,
+        return_model_integration_steps: bool = False,
         **kwargs: Any,
     ) -> jnp.ndarray:
         """Rollout the data assimilation method."""
 
-        if return_inner_steps:
+        if return_model_integration_steps:
             da_rollout_fn = da_rollout(
                 self._assimilate_data,
                 observations,
