@@ -93,6 +93,22 @@ def main(cfg: DictConfig) -> None:
     rng_key, key = jax.random.split(rng_key)
     reference_ensemble = prior_ensemble_fn(rng_key=key, ensemble_size=cfg.ensemble_size)
 
+    if cfg.spinup_steps:
+        spinup_integration_steps = (
+            cfg.spinup_steps * forward_model_cfg.model_integration_steps
+        )
+        spinup_seconds = spinup_integration_steps * forward_model_cfg.dt
+        logger.info(
+            f"Model spinup for {spinup_integration_steps} model integration steps "
+            f"({spinup_seconds} s)"
+        )
+        reference_ensemble = forward_model.rollout(
+            reference_ensemble,
+            cfg.spinup_steps,
+            return_model_integration_steps=False,
+        )
+        reference_ensemble = reference_ensemble[:, -1]
+
     # Initialize the posterior ensemble from the prior.
     posterior_ensemble = reference_ensemble.copy().reshape(
         cfg.ensemble_size, 1, cfg.case.num_states, cfg.case.state_dim

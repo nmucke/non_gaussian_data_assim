@@ -167,3 +167,46 @@ def plot_high_dim_field(
         )
         plt.grid(True)
     plt.show()
+
+
+def plot_multi_state_high_dim_field(
+    *,
+    true_sol: jnp.ndarray,
+    reference_ensemble: jnp.ndarray,
+    posterior_ensemble: jnp.ndarray,
+    title: str,
+    da_method_name: str,
+    ensemble_size: int,
+    reference_metrics: Mapping[str, float],
+    posterior_metrics: Mapping[str, float],
+    state_dim: int,
+    data_assimilation_steps: int,
+    model_integration_steps: int,
+    state_names: Optional[Sequence[str]] = None,
+) -> None:
+    """Multi-state version of `plot_high_dim_field`.
+
+    Expects arrays shaped `[*, time, num_states, state_dim]` and produces one figure
+    per entry along the `num_states` axis.
+    """
+    num_states = true_sol.shape[-2]
+    names = (
+        list(state_names)
+        if state_names is not None
+        else [f"State {s}" for s in range(num_states)]
+    )
+
+    for state_idx in range(num_states):
+        plot_high_dim_field(
+            true_sol=true_sol[:, :, state_idx : state_idx + 1],
+            reference_ensemble=reference_ensemble[:, :, state_idx : state_idx + 1],
+            posterior_ensemble=posterior_ensemble[:, :, state_idx : state_idx + 1],
+            title=f"{title} — {names[state_idx]}",
+            da_method_name=da_method_name,
+            ensemble_size=ensemble_size,
+            reference_metrics=reference_metrics,
+            posterior_metrics=posterior_metrics,
+            state_dim=state_dim,
+            data_assimilation_steps=data_assimilation_steps,
+            model_integration_steps=model_integration_steps,
+        )
