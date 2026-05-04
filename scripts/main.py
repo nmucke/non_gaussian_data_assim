@@ -17,6 +17,10 @@ from omegaconf import DictConfig, OmegaConf
 from tqdm import tqdm
 
 from non_gaussian_data_assim.metrics.ensemble_metrics import CRPS
+from non_gaussian_data_assim.metrics.innovation_metrics import (
+    ChiSquared,
+    NormalizedInnovations,
+)
 from non_gaussian_data_assim.metrics.trajectory_metrics import (
     MAE,
     MAPE,
@@ -24,6 +28,7 @@ from non_gaussian_data_assim.metrics.trajectory_metrics import (
     print_metrics_table,
 )
 from non_gaussian_data_assim.observations.observation_utils import generate_observations
+from non_gaussian_data_assim.plotting import plot_da_diagnostics
 
 logger = logging.getLogger(__name__)
 
@@ -108,10 +113,20 @@ def main(cfg: DictConfig) -> None:
     if add_perturbs_to_bg:
         reference_ensemble += X0_bg
 
-    # Initialize the posterior ensemble from the prior.
+    # Initialize the posterior ensemble from the reference.
     posterior_ensemble = reference_ensemble.copy().reshape(
         cfg.ensemble_size, 1, cfg.case.num_states, cfg.case.state_dim
     )
+    # Initialize the prior ensemble from the reference. NOTE: Prior ensemble only stores fields at assim-steps before assimilation is done
+    prior_ensemble_da = reference_ensemble.copy().reshape(
+        cfg.ensemble_size,
+        1,
+        cfg.case.num_states,
+        cfg.case.state_dim,
+    )
+
+    # Initialize empty lists to track chi-square and normalized nnovations (z)
+    predicted_obs = []
 
     # Rollout the prior ensemble for comparison.
     reference_ensemble = forward_model.rollout(
@@ -124,8 +139,11 @@ def main(cfg: DictConfig) -> None:
     logger.info(f"Running DA loop for {cfg.data_assimilation_steps} steps")
     for i in tqdm(range(cfg.data_assimilation_steps)):
         rng_key, key = jax.random.split(rng_key)
+
+        prior_current = posterior_ensemble[:, -1]
+
         posterior_next = da_model(
-            prior_ensemble=posterior_ensemble[:, -1],
+            prior_ensemble=prior_current,
             obs_vect=observations[i],
             rng_key=key,
             return_model_integration_steps=True,
@@ -133,9 +151,27 @@ def main(cfg: DictConfig) -> None:
         if jnp.isnan(posterior_next).any():
             print(f"NaN in posterior_next at time {i}")
             break
+
+        # ------------- Store Prior ensemble in observation space -----------
+        # Shape:
+        #   prior_current.reshape(K, -1).T -> (state_dim_flat, EnsSize)
+        #   H                              -> (N_obs, state_dim_flat)
+        #   HXf                            -> (N_obs, EnsSize)
+        H = da_model.obs_operator.obs_matrix
+        HXf = H @ prior_current.reshape(cfg.ensemble_size, -1).T
+        predicted_obs.append(HXf.T)  # shape: (EnsSize, N_obs)
+        # -----------------------------------------------------------------
+
+        # Concatenate prior (1time-step) and posterior (2 time-steps) and innovations
+        prior_ensemble_da = jnp.concatenate(
+            [prior_ensemble_da, prior_current[:, None, :, :]], axis=1
+        )
         posterior_ensemble = jnp.concatenate(
             [posterior_ensemble, posterior_next], axis=1
         )
+
+    predicted_obs = jnp.stack(predicted_obs, axis=1)  # shape: (EnsSize, N_obs)
+
     logger.info(f"Finished DA loop")
 
     # Metrics.
@@ -143,22 +179,44 @@ def main(cfg: DictConfig) -> None:
     mae = MAE(ensemble_aggregation="mean", time_aggregation="mean")
     mape = MAPE(ensemble_aggregation="mean", time_aggregation="mean")
     crps = CRPS(time_aggregation="mean")
+    rmse_time = RMSE(ensemble_aggregation="mean", time_aggregation="none")
+    crps_time = CRPS(time_aggregation="none")
+    innov_white = NormalizedInnovations()
+    chi2_mean = ChiSquared(time_aggregation="mean")
+    chi2_time = ChiSquared(time_aggregation="none")
 
     reference_metrics = {
         "rmse": rmse(reference_ensemble, true_sol[0]),
         "mae": mae(reference_ensemble, true_sol[0]),
         "mape": mape(reference_ensemble, true_sol[0]),
         "crps": crps(reference_ensemble, true_sol[0]),
+        "rmse_time": rmse_time(reference_ensemble, true_sol[0]),
+        "crps_time": crps_time(reference_ensemble, true_sol[0]),
     }
     posterior_metrics = {
         "rmse": rmse(posterior_ensemble, true_sol[0]),
         "mae": mae(posterior_ensemble, true_sol[0]),
         "mape": mape(posterior_ensemble, true_sol[0]),
         "crps": crps(posterior_ensemble, true_sol[0]),
+        "rmse_time": rmse_time(posterior_ensemble, true_sol[0]),
+        "crps_time": crps_time(posterior_ensemble, true_sol[0]),
     }
-    print_metrics_table(
-        reference_metrics, posterior_metrics, title=f"{cfg.case.title} Metrics"
-    )
+
+    innovation_metrics = {
+        "chi_sq_mean": chi2_mean(predicted_obs=predicted_obs, obs=observations, R=R),
+        "chi_sq_time": chi2_time(predicted_obs=predicted_obs, obs=observations, R=R),
+        "z": innov_white(predicted_obs=predicted_obs, obs=observations, R=R),
+    }
+
+    ref_metrics = dict(reference_metrics)
+    post_metrics = dict(posterior_metrics)
+
+    # Remove time-dependent metrics to plot
+    for popkey in ["rmse_time", "crps_time"]:
+        del ref_metrics[popkey]
+        del post_metrics[popkey]
+
+    print_metrics_table(ref_metrics, post_metrics, title=f"{cfg.case.title} Metrics")
 
     # Plot.
     logger.info(f"Plotting...")
@@ -177,6 +235,23 @@ def main(cfg: DictConfig) -> None:
         model_integration_steps=cfg.model_integration_steps,
     )
 
+    fig, axs = plot_da_diagnostics(
+        z=innovation_metrics["z"],
+        chi_sq=innovation_metrics["chi_sq_time"],
+        chi_sq_mean=innovation_metrics["chi_sq_mean"],
+        crps_time=posterior_metrics["crps_time"],
+        rmse_time=posterior_metrics["rmse_time"],
+        bins=51,
+        hist_range=(-6.0, 6.0),
+        show_fig=True,
+    )
+
 
 if __name__ == "__main__":
     main()
+
+    # innov_met = results["innovation_metrics"]
+    # chi_sq = np.asarray(innov_met["chi_sq_time"])
+    # posterior_met = results["posterior_metrics"]
+    # crps_time = np.asarray(posterior_met["crps_time"])
+    # rmse_time = np.asarray(posterior_met["rmse_time"])
