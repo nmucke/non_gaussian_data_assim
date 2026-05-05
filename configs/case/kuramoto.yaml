@@ -1,5 +1,5 @@
 # @package _global_
-data_assimilation_steps: 10
+data_assimilation_steps: 150
 model_integration_steps: 10
 ensemble_size: 50
 inflation_factor: 1.0
@@ -31,22 +31,43 @@ case:
       stop: ${case.state_dim}
       step: 4
 
-  initial_state:
-    _target_: non_gaussian_data_assim.initial_conditions.cosine_initial_state
-    _partial_: true
+  true_initial_state:
+    _target_: non_gaussian_data_assim.initial_profiles.CosineProfile
     state_dim: ${case.state_dim}
     domain_length: ${case.domain_length}
     magnitude: 0.1
 
-
-
   prior_ensemble:
-    _target_: non_gaussian_data_assim.initial_conditions.cosine_prior_ensemble
-    _partial_: true
-    state_dim: ${case.state_dim}
-    domain_length: ${case.domain_length}
-    magnitude_min: 0.0
-    magnitude_max: 1.5
+    _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
+    profile:
+      _target_: non_gaussian_data_assim.initial_profiles.CosineProfile
+      state_dim: ${case.state_dim}
+      domain_length: ${case.domain_length}
+      magnitude:
+        _target_: numpy.random.uniform
+        low: 0.0
+        high: 1.5
+        size: ${ensemble_size}
+    noise: null
+    periodic: false
+
+
+  # initial_state:
+  #   _target_: non_gaussian_data_assim.initial_conditions.cosine_initial_state
+  #   _partial_: true
+  #   state_dim: ${case.state_dim}
+  #   domain_length: ${case.domain_length}
+  #   magnitude: 0.1
+
+
+
+  # prior_ensemble:
+  #   _target_: non_gaussian_data_assim.initial_conditions.cosine_prior_ensemble
+  #   _partial_: true
+  #   state_dim: ${case.state_dim}
+  #   domain_length: ${case.domain_length}
+  #   magnitude_min: 0.0
+  #   magnitude_max: 1.5
 
 
 

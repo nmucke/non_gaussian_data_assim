@@ -38,7 +38,7 @@ def main(cfg: DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
 
     forward_model_cfg = cfg.case.forward_model
-    initial_state_cfg = cfg.case.initial_state
+    true_initial_state_cfg = cfg.case.true_initial_state
     obs_operator_cfg = cfg.case.obs_operator
     prior_ensemble_cfg = cfg.case.prior_ensemble
     plotter_cfg = cfg.case.plotter
@@ -62,12 +62,20 @@ def main(cfg: DictConfig) -> None:
     logger.info(f"Observation operator: {obs_operator}")
 
     # Initial state for the truth.
-    initial_state_fn = instantiate(initial_state_cfg)
-    logger.info(f"Initial state: {initial_state_fn}")
-    rng_key, key, key_bg = jax.random.split(
-        rng_key, 3
+    true_initial_state_profile = instantiate(true_initial_state_cfg)
+    logger.info(f"Initial state: {true_initial_state_profile}")
+    rng_key, key = jax.random.split(
+        rng_key
     )  # Added random-seed for a best-guess I.C. field
-    X_0 = initial_state_fn(rng_key=key)
+    X_0 = true_initial_state_profile.sample(rng_key=key, ensemble_size=1)
+
+    # Initial state for the truth.
+    # initial_state_fn = instantiate(initial_state_cfg)
+    # logger.info(f"Initial state: {initial_state_fn}")
+    # rng_key, key, key_bg = jax.random.split(
+    #     rng_key, 3
+    # )  # Added random-seed for a best-guess I.C. field
+    # X_0 = initial_state_fn(rng_key=key)
 
     # TODO
     # # Create an inital best-guess field (different sample from same distri. as ground-truth)
@@ -104,10 +112,18 @@ def main(cfg: DictConfig) -> None:
     logger.info(f"DA method: {da_model}")
 
     # Prior ensemble.
-    prior_ensemble_fn = instantiate(prior_ensemble_cfg)
-    logger.info(f"Prior ensemble: {prior_ensemble_fn}")
+    prior_ensemble_generator = instantiate(prior_ensemble_cfg)
+    logger.info(f"Prior ensemble: {prior_ensemble_generator}")
     rng_key, key = jax.random.split(rng_key)
-    reference_ensemble = prior_ensemble_fn(rng_key=key, ensemble_size=cfg.ensemble_size)
+    reference_ensemble = prior_ensemble_generator.sample(
+        rng_key=key, ensemble_size=cfg.ensemble_size
+    )
+
+    # Prior ensemble.
+    # prior_ensemble_fn = instantiate(prior_ensemble_cfg)
+    # logger.info(f"Prior ensemble: {prior_ensemble_fn}")
+    # rng_key, key = jax.random.split(rng_key)
+    # reference_ensemble = prior_ensemble_fn(rng_key=key, ensemble_size=cfg.ensemble_size)
 
     # TODO
     # # If add_perturbs_to_bg: then reference_ensemble is ensemble of perturbations and must be added to reference best-guess field

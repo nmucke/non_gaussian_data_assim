@@ -1,4 +1,5 @@
 import random
+from abc import ABC, abstractmethod
 from typing import Optional
 
 import jax
@@ -6,171 +7,71 @@ import jax.numpy as jnp
 import numpy as np
 
 
-class RandomNoiseGenerator:
-    """Class that handles the creation of random Noise (Red or White)"""
+class BaseNoise(ABC):
+    """Base class for ensemble perturbations."""
+
+    def __init__(self, name: str, num_states: int, state_dim: int) -> None:
+        self.name = name
+        self.num_states = num_states
+        self.state_dim = state_dim
+
+    @abstractmethod
+    def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
+        """Return perturbations of shape [ensemble_size, num_states, state_dim]."""
+        raise NotImplementedError
+
+
+class WhiteNoise(BaseNoise):
+    """Spatially white Gaussian noise with standard deviation `scale`."""
 
     def __init__(
-        self, redness: Optional[float] = None, seed: Optional[int] = None
-    ) -> None:
-        """
-        Class that creates White or Red Noise.
-
-        Parameter:
-        ----------
-
-        redness : int | None
-            if redness=0 --> WhiteNoise
-
-            default value for typical red-noise if alpha=2.5
-
-            If int, random slope generation of spectrum: alpha is then between 2 and 3. If None is specified, I take a default value of 2.5
-            Also, the seed will be used to specify the random seed. If it is None, a completely random (unreproducible) seed is chosen, otherwise I choose a seed 14*rednes
-
-        alpha : float
-            Power spectrum slope: P(k) ~ k^{-alpha}
-        """
-        # --- Inits
-        if seed is None:
-            seed = random.randrange(2**32)
-            # seed = 14*int(redness)
-        self.rng = np.random.default_rng(seed)
-
-        # --- Redness (whiteness) of noise
-        self.alpha = redness if redness is not None else 0
-
-    def generate_perturbation(
         self,
-        shape_like: tuple,
-        sigma: float,
-    ) -> jnp.ndarray:
-        """
-        Generates a perturbation field. Either white Noise or spatially correlated.
+        num_states: int,
+        state_dim: int,
+        scale: float,
+    ) -> None:
+        super().__init__(name="white_noise", num_states=num_states, state_dim=state_dim)
+        self.scale = scale
 
-        Args:
-            shape_like: Size of perturbation field in following order (x,y,z)
-            sigma (float): Scaling factor for noise. This is the desired standard-deviation of the field
+    def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
+        shape = (ensemble_size, self.num_states, self.state_dim)
+        return jax.random.normal(rng_key, shape) * self.scale
 
-        Returns:
-            Perturbation field.
-        """
 
-        # # ---------------------------------------------
-        # if len(shape_like) == 3:
-        #     nx, ny, nz = shape_like[0], shape_like[1], shape_like[2]
-        #     noise = self.create_rednoise(
-        #         nx, ny, nz, normalize_amplitude=True
-        #     )  # Perturbations are already scaled
-        # elif len(shape_like) == 2:
-        #     nx, ny = shape_like[0], shape_like[1]
-        #     noise = self.create_rednoise(
-        #         nx, ny, normalize_amplitude=True
-        #     )  # Perturbations are already scaled
-        # else:
-        #     nx = shape_like[0]
-        #     noise = self.create_rednoise(
-        #         nx, normalize_amplitude=True
-        #     )  # Perturbations are already scaled
+class RedNoise(BaseNoise):
+    """Spatially correlated red noise with power spectrum P(k) ~ k^{-alpha}.
 
-        noise = self.create_rednoise(*shape_like, normalize_amplitude=True)
+    Returns perturbations rescaled to standard deviation `scale`.
+    """
 
-        # --- Rescale field to unit variance ---
-        noise_norm = noise / np.std(noise)
-        # ---------------------------------------------
+    def __init__(
+        self,
+        num_states: int,
+        state_dim: int,
+        scale: float,
+        alpha: float,
+    ) -> None:
+        super().__init__(name="red_noise", num_states=num_states, state_dim=state_dim)
+        self.scale = scale
+        self.alpha = alpha
 
-        # --- Scale standard deviation to desired level (sigma)
-        perturbation = noise_norm * sigma  # Scale to desired standard-deviation
-        return jnp.asarray(perturbation)
+    def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
+        shape = (self.num_states, self.state_dim)
 
-    # =======================================================================================
-    # -----------------------                RED NOISE                -----------------------
-    # =======================================================================================
-
-    def create_rednoise(
-        self, *args: list, normalize_amplitude: bool = True
-    ) -> np.ndarray:
-        """
-        Generate isotropic red noise with appropriate dimensionality.
-
-        Inputs:
-        *args : int
-            Grid sizes. Length determines dimensionality:
-            - 1 arg (nx,): 1D noise
-            - 2 args (ny, nx): 2D noise
-            - 3 args (nz, ny, nx): 3D noise
-
-        Returns:
-        field : ndarray
-            Real-valued red-noise field with unit variance
-        """
-        ndim = len(args)
-        if ndim < 1 or ndim > 3:
-            raise ValueError(f"Expected 1-3 dimensions, got {ndim}")
-
-        # --- 1) Build wavenumber arrays for each dimension
-        k_arrays = [np.fft.fftfreq(n) for n in args]
-
-        # --- 2) Create meshgrid with "ij" indexing for proper broadcasting
-        if ndim == 1:
-            k_grids = k_arrays
-        else:
-            k_grids = np.meshgrid(*k_arrays, indexing="ij")
-
-        # --- 3) Set isotropic wavenumber magnitude
-        k = np.sqrt(sum(kg**2 for kg in k_grids))
-        k.flat[0] = np.inf  # note, this avoids divis by 0
-
+        k_arrays = [jnp.fft.fftfreq(n) for n in shape]
+        k_grids = jnp.meshgrid(*k_arrays, indexing="ij")
+        k = jnp.sqrt(sum(kg**2 for kg in k_grids))
+        k = k.at[(0,) * len(shape)].set(jnp.inf)
         amplitude = k ** (-self.alpha / 2)
 
-        # --- 4) Define Gaussian noise in Fourier space
-        noise_hat = self.rng.normal(size=amplitude.shape) + 1j * self.rng.normal(
-            size=amplitude.shape
-        )
+        def one_member(key: jax.Array) -> jnp.ndarray:
+            _, key = jax.random.split(key)
+            noise_hat = jax.random.normal(key, shape)
 
-        # --- 5) Inverse FFT to physical space
-        field = np.fft.irfftn(noise_hat * amplitude, s=args)
+            _, key = jax.random.split(key)
+            noise_hat = noise_hat + 1j * jax.random.normal(key, shape)
+            field = jnp.fft.ifftn(noise_hat * amplitude).real
+            return self.scale * field / field.std()
 
-        if normalize_amplitude:
-            field = field / field.std()
-
-        return field
-
-
-# DEPRECATED
-
-# def _seed_from_jax_key(rng_key: jax.Array) -> int:
-#     """Convert a jax PRNG key to a numpy int seed."""
-#     seed = jax.random.randint(
-#         rng_key, shape=(), minval=0, maxval=np.iinfo(np.int32).max
-#     )
-#     return int(jax.device_get(seed))
-
-# def red_noise_ensemble(
-#     rng_key: jax.Array,
-#     ensemble_size: int,
-#     num_states: int,
-#     state_dim: int,
-#     scale: float,
-#     alpha: float,
-#     periodic_boundary: bool,
-# ) -> jnp.ndarray:
-#     """Create RedNoise (spectrally correlated) perturbatons."""
-
-#     ensemble_members = jax.random.split(rng_key, ensemble_size)
-#     members = []
-#     for key in ensemble_members:
-#         seed = _seed_from_jax_key(key)
-#         noise_generator = RandomNoise(redness=alpha, seed=seed)
-
-#         member = noise_generator.generate_perturbation(
-#             shape_like=(num_states, state_dim),
-#             sigma=scale,
-#         )
-
-#         members.append(member)
-
-#     ensemble = jnp.asarray(np.stack(members, axis=0))
-
-#     if periodic_boundary:
-#         ensemble = ensemble.at[:, :, -1].set(ensemble[:, :, 0])
-
-#     return ensemble
+        member_keys = jax.random.split(rng_key, ensemble_size)
+        return jax.vmap(one_member)(member_keys)

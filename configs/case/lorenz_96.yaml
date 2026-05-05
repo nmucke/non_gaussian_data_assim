@@ -30,28 +30,54 @@ case:
       step: 2
 
 
-  initial_state:
-    _target_: non_gaussian_data_assim.initial_conditions.random_noise_initial_state
-    _partial_: true
-    num_states: ${case.num_states}
-    state_dim: ${case.state_dim}
-    scale: 10.0
-    alpha: 0.0        # if >0 this will be red-noise
+  true_initial_state:
+    _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
+    noise:
+      _target_: non_gaussian_data_assim.ensemble_generation.random_noise.RedNoise
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      scale: 10.0
+      alpha: 1.0
     periodic: true
-
 
   prior_ensemble:
-    _target_: non_gaussian_data_assim.initial_conditions.random_noise_prior_ensemble
-    _partial_: true
-    num_states: ${case.num_states}
-    state_dim: ${case.state_dim}
-    scale: 10.0
-    alpha: 1.0           # if >0 this will be red-noise
+    _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
+    profile:
+      _target_: non_gaussian_data_assim.initial_profiles.ConstantProfile
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      value: 0.0
+    noise:
+      _target_: non_gaussian_data_assim.ensemble_generation.random_noise.RedNoise
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      scale: 10.0
+      alpha: 1.0
     periodic: true
 
-    # Not yet properly implemented!
-    X_bestguess: false  # If true, ensgen creates perturbations that are added
-                              # If false, ensgen creates the ensemble member's states directly
+
+  # initial_state:
+  #   _target_: non_gaussian_data_assim.initial_conditions.random_noise_initial_state
+  #   _partial_: true
+  #   num_states: ${case.num_states}
+  #   state_dim: ${case.state_dim}
+  #   scale: 10.0
+  #   alpha: 0.0        # if >0 this will be red-noise
+  #   periodic: true
+
+
+  # prior_ensemble:
+  #   _target_: non_gaussian_data_assim.initial_conditions.random_noise_prior_ensemble
+  #   _partial_: true
+  #   num_states: ${case.num_states}
+  #   state_dim: ${case.state_dim}
+  #   scale: 10.0
+  #   alpha: 1.0           # if >0 this will be red-noise
+  #   periodic: true
+
+  #   # Not yet properly implemented!
+  #   X_bestguess: false  # If true, ensgen creates perturbations that are added
+  #                             # If false, ensgen creates the ensemble member's states directly
 
     # # Only for breeding --> Not-implememented-yet
     # breeding_cycles: 10
