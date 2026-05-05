@@ -18,15 +18,9 @@ class BaseNoise(ABC):
     Base Class that handles creation of Ensemble-perturbations (noise)
     """
 
-    def __init__(
-        self,
-        name: str,
-        rng_key: jax.Array,
-        shape: tuple,
-    ) -> None:
+    def __init__(self, name: str, rng_key: jax.Array) -> None:
         self.name = name
         self.rng_key = rng_key
-        self.shape = shape
 
     @abstractmethod
     def sample(self) -> jnp.ndarray:
@@ -42,14 +36,12 @@ class PriorEnsemble(ABC):
         rng_key: jax.Array,
         ensemble_size: int,
         periodic: bool,
-        shape_member: tuple,
         X_bestguess: Optional[jax.ndarray] = None,
     ) -> None:
 
         self.rng_key = rng_key
         self.ensemble_size = ensemble_size
         self.periodic = periodic
-        self.shape_member = shape_member
         self.X_bestguess = X_bestguess
 
     def set_periodic_bc(self, X: jnp.ndarray) -> jnp.ndarray:
@@ -94,16 +86,19 @@ class RandomNoise(BaseNoise):
     def __init__(
         self,
         rng_key: jax.Array,
-        shape: tuple,
+        num_states: float,
+        state_dim: float,
         scale: float,
         alpha: Optional[float] = None,
     ) -> None:
 
         name = "white_noise" if alpha is None or alpha == 0 else "red_noise"
 
-        super().__init__(name=name, rng_key=rng_key, shape=shape)
+        super().__init__(name=name, rng_key=rng_key)
         self.scale = scale
         self.alpha = alpha
+        self.num_states = num_states
+        self.state_dim = state_dim
         # --- Automaticcally chooses which method is used based on the value of alpha
         self._sampler = (
             self.white_noise if alpha is None or alpha == 0 else self.red_noise
@@ -118,7 +113,10 @@ class RandomNoise(BaseNoise):
     def white_noise(self) -> jnp.ndarray:
         """Sample a white (in space) noise of shape [1, num_states, state_dim]."""
         # Same as X_0 = jax.random.normal(rng_key, (1, num_states, state_dim)) * scale. NOTE: Sshape must be (num_states, state_dim)
-        x_dash = jax.random.normal(self.rng_key, (1, *self.shape)) * self.scale
+        x_dash = (
+            jax.random.normal(self.rng_key, (1, self.num_states, self.state_dim))
+            * self.scale
+        )
         return x_dash
 
     def red_noise(self) -> jnp.ndarray:
@@ -127,7 +125,8 @@ class RandomNoise(BaseNoise):
         seed = self._seed_from_jax_key(self.rng_key)
         noise_generator = RandomNoiseGenerator(redness=self.alpha, seed=seed)
         x_dash = noise_generator.generate_perturbation(
-            shape_like=self.shape, sigma=self.scale  # (num_states, state_dim)
+            shape_like=(self.num_states, self.state_dim),
+            sigma=self.scale,  # (num_states, state_dim)
         )
         return x_dash
 
@@ -141,21 +140,22 @@ class CosineNoise(BaseNoise):
     def __init__(
         self,
         rng_key: jax.Array,
-        shape: tuple,  # is here  state_dim
+        state_dim: int,
         domain_length: float,
         magnitude: float,
     ) -> None:
 
-        super().__init__(name="2mode_cosine_noise", rng_key=rng_key, shape=shape)
+        super().__init__(name="2mode_cosine_noise", rng_key=rng_key)
         self.domain_length = domain_length
+        self.state_dim = state_dim
         self.magnitude = magnitude
 
     def sample(self) -> jnp.ndarray:
-        x = jnp.linspace(0.0, self.domain_length, self.shape)
+        x = jnp.linspace(0.0, self.domain_length, self.state_dim)
         profile = self.magnitude * jnp.cos(
             2 * jnp.pi * x / self.domain_length
         ) + self.magnitude * jnp.cos(4 * jnp.pi * x / self.domain_length)
-        return profile.reshape(1, 1, self.shape)
+        return profile.reshape(1, 1, self.state_dim)
 
 
 # def kuramoto_cosine_initial_state(
@@ -179,10 +179,11 @@ class RandomEnsemble(PriorEnsemble):
         self,
         rng_key: jax.Array,
         ensemble_size: int,
+        num_states: float,
+        state_dim: float,
         alpha: float,
         scale: float,
         periodic: bool,
-        shape_member: tuple,  # This is given by   state_dim
         X_bestguess: Optional[jax.ndarray] = None,
     ) -> None:
 
@@ -190,11 +191,12 @@ class RandomEnsemble(PriorEnsemble):
             rng_key=rng_key,
             ensemble_size=ensemble_size,
             periodic=periodic,
-            shape_member=shape_member,
             X_bestguess=X_bestguess,
         )
-        self.scale = scale
+        self.num_states = num_states
+        self.state_dim = state_dim
         self.alpha = alpha
+        self.scale = scale
 
     def sample(self) -> jnp.ndarray:
         seeds_member = jax.random.split(self.rng_key, self.ensemble_size)
@@ -202,7 +204,7 @@ class RandomEnsemble(PriorEnsemble):
         for seed in seeds_member:
             noise_generator = RandomNoiseGenerator(redness=self.alpha, seed=seed)
             X_member = noise_generator.generate_perturbation(
-                shape_like=self.shape_member, sigma=self.scale
+                shape_like=(self.num_states, self.state_dim), sigma=self.scale
             )
 
             if self.X_bestguess is not None:
@@ -243,7 +245,7 @@ class CosineEnsemble(PriorEnsemble):
         magnitude_min: float,
         magnitude_max: float,
         periodic: bool,
-        shape_member: tuple,  # This is given by   (state_dim,)
+        state_dim: float,
         X_bestguess: Optional[jax.ndarray] = None,
     ) -> None:
 
@@ -251,15 +253,15 @@ class CosineEnsemble(PriorEnsemble):
             rng_key=rng_key,
             ensemble_size=ensemble_size,
             periodic=periodic,
-            shape_member=shape_member,
             X_bestguess=X_bestguess,
         )
         self.domain_length = domain_length
         self.magnitude_min = magnitude_min
         self.magnitude_max = magnitude_max
+        self.state_dim = state_dim
 
     def sample(self) -> jnp.ndarray:
-        x = jnp.linspace(0.0, self.domain_length, self.shape_member)
+        x = jnp.linspace(0.0, self.domain_length, self.state_dim)
         magnitudes = jax.random.uniform(
             self.rng_key,
             (self.ensemble_size,),
@@ -273,7 +275,7 @@ class CosineEnsemble(PriorEnsemble):
             )
 
         profiles = jax.vmap(profile)(magnitudes)
-        return profiles.reshape(self.ensemble_size, 1, self.shape_member)
+        return profiles.reshape(self.ensemble_size, 1, self.state_dim)
 
 
 # OLD WAY:
@@ -299,3 +301,85 @@ class CosineEnsemble(PriorEnsemble):
 
 #     profiles = jax.vmap(profile)(magnitudes)
 #     return profiles.reshape(ensemble_size, 1, state_dim)
+
+
+# =========================================================
+# Wrapper functions for easy access from main.py
+# =========================================================
+
+
+def random_noise_initial_state(
+    rng_key: jax.Array,
+    num_states: float,
+    state_dim: float,
+    scale: float,
+    alpha: Optional[float] = None,
+    periodic: bool = False,
+) -> jnp.ndarray:
+    X_0 = RandomNoise(
+        rng_key=rng_key,
+        num_states=num_states,
+        state_dim=state_dim,
+        scale=scale,
+        alpha=alpha,
+    ).sample()
+
+    if periodic:
+        X_0 = X_0.at[..., -1].set(X_0[..., 0])
+
+    return X_0
+
+
+def random_noise_prior_ensemble(
+    rng_key: jax.Array,
+    ensemble_size: int,
+    num_states: float,
+    state_dim: float,
+    scale: float,
+    alpha: float = 0.0,
+    periodic: bool = False,
+    X_bestguess: Optional[jax.ndarray] = None,
+) -> jnp.ndarray:
+    return RandomEnsemble(
+        rng_key=rng_key,
+        ensemble_size=ensemble_size,
+        alpha=alpha,
+        scale=scale,
+        periodic=periodic,
+        num_states=num_states,
+        state_dim=state_dim,
+        X_bestguess=X_bestguess,
+    ).sample()
+
+
+def cosine_initial_state(
+    rng_key: jax.Array,
+    state_dim: int,
+    domain_length: float,
+    magnitude: float,
+) -> jnp.ndarray:
+    return CosineNoise(
+        rng_key=rng_key,
+        state_dim=state_dim,
+        domain_length=domain_length,
+        magnitude=magnitude,
+    ).sample()
+
+
+def cosine_prior_ensemble(
+    rng_key: jax.Array,
+    ensemble_size: int,
+    state_dim: int,
+    domain_length: float,
+    magnitude_min: float,
+    magnitude_max: float,
+) -> jnp.ndarray:
+    return CosineEnsemble(
+        rng_key=rng_key,
+        ensemble_size=ensemble_size,
+        domain_length=domain_length,
+        magnitude_min=magnitude_min,
+        magnitude_max=magnitude_max,
+        periodic=True,
+        state_dim=state_dim,
+    ).sample()
