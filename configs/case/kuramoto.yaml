@@ -32,7 +32,7 @@ case:
       step: 4
 
   initial_state:
-    _target_: non_gaussian_data_assim.initial_conditions.kuramoto_cosine_initial_state
+    _target_: non_gaussian_data_assim.initial_conditions.cosine_initial_state
     _partial_: true
     state_dim: ${case.state_dim}
     domain_length: ${case.domain_length}
@@ -41,33 +41,12 @@ case:
 
 
   prior_ensemble:
-    # _target_: non_gaussian_data_assim.initial_conditions.kuramoto_cosine_prior_ensemble
-    _target_: non_gaussian_data_assim.initial_conditions.prior_ensemble
+    _target_: non_gaussian_data_assim.initial_conditions.cosine_prior_ensemble
     _partial_: true
-    num_states: ${case.num_states}
     state_dim: ${case.state_dim}
-
-    # --- Kuramato cosine EnsGen parameters
     domain_length: ${case.domain_length}
     magnitude_min: 0.0
     magnitude_max: 1.5
-
-    # --- WhiteNoise, RedNoise, Breeding EnsGen parameters
-    periodic_boundary: true
-    add_perturbs_to_bg: false  # If true, ensgen creates perturbations that are added
-                              # If false, ensgen creates the ensemble member's states directly
-    scale: 10.0 # 10.0
-    ensgen_method: white_noise  # choices: white_noise, red_noise, breeding ,           kuramoto_cosine
-    # Only for red_noise
-    alpha: 1.5                # NOTE: For lorenz 63, red-noise (spatially correlated) does not make sense
-
-    # # Only for breeding --> Not-implememented-yet
-    # breeding_cycles: 10
-    # breeding_cycle_steps: 5
-    # breeding_initial_perturbation_scale: ${prior_ensemble.scale}
-    # breeding_rescale_amplitude: ${case.scale}
-
-
 
 
 

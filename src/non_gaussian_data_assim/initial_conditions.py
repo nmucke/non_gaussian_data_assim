@@ -117,18 +117,18 @@ class RandomNoise(BaseNoise):
             jax.random.normal(self.rng_key, (1, self.num_states, self.state_dim))
             * self.scale
         )
-        return x_dash
+        return jnp.asarray(x_dash).reshape(1, self.num_states, self.state_dim)
 
     def red_noise(self) -> jnp.ndarray:
         """Sample a red (in space) noise of shape [1, num_states, state_dim]."""
 
-        seed = self._seed_from_jax_key(self.rng_key)
-        noise_generator = RandomNoiseGenerator(redness=self.alpha, seed=seed)
+        seed_int = RandomNoise._seed_from_jax_key(self.rng_key)
+        noise_generator = RandomNoiseGenerator(redness=self.alpha, seed=seed_int)
         x_dash = noise_generator.generate_perturbation(
             shape_like=(self.num_states, self.state_dim),
             sigma=self.scale,  # (num_states, state_dim)
         )
-        return x_dash
+        return jnp.asarray(x_dash).reshape(1, self.num_states, self.state_dim)
 
     def sample(self) -> jnp.ndarray:
         return self._sampler()
@@ -202,7 +202,8 @@ class RandomEnsemble(PriorEnsemble):
         seeds_member = jax.random.split(self.rng_key, self.ensemble_size)
         ensemble_members = []
         for seed in seeds_member:
-            noise_generator = RandomNoiseGenerator(redness=self.alpha, seed=seed)
+            seed_int = RandomNoise._seed_from_jax_key(seed)
+            noise_generator = RandomNoiseGenerator(redness=self.alpha, seed=seed_int)
             X_member = noise_generator.generate_perturbation(
                 shape_like=(self.num_states, self.state_dim), sigma=self.scale
             )
