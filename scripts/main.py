@@ -209,15 +209,9 @@ def main(cfg: DictConfig) -> None:
         "z": innov_white(predicted_obs=predicted_obs, obs=observations, R=R),
     }
 
-    ref_metrics = dict(reference_metrics)
-    post_metrics = dict(posterior_metrics)
-
-    # Remove time-dependent metrics to plot
-    for popkey in ["rmse_time", "crps_time"]:
-        del ref_metrics[popkey]
-        del post_metrics[popkey]
-
-    print_metrics_table(ref_metrics, post_metrics, title=f"{cfg.case.title} Metrics")
+    print_metrics_table(
+        reference_metrics, posterior_metrics, title=f"{cfg.case.title} Metrics"
+    )
 
     # Plot.
     logger.info(f"Plotting...")

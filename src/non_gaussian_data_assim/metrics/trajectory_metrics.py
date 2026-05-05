@@ -117,9 +117,10 @@ def print_metrics_table(
     print(header)
     print(sep)
     for metric in reference_errors:
-        reference_val = float(reference_errors[metric])
-        posterior_val = float(posterior_errors[metric])
-        print(
-            f"{metric.upper():<10} | {reference_val:{col_w}.6f} | {posterior_val:{col_w}.6f}"
-        )
+        if isinstance(posterior_errors[metric], float):
+            reference_val = float(reference_errors[metric])
+            posterior_val = float(posterior_errors[metric])
+            print(
+                f"{metric.upper():<10} | {reference_val:{col_w}.6f} | {posterior_val:{col_w}.6f}"
+            )
     print(sep)

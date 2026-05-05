@@ -1,14 +1,17 @@
 import random
+from typing import Optional
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
 
-class RandomNoise:
+class RandomNoiseGenerator:
     """Class that handles the creation of random Noise (Red or White)"""
 
-    def __init__(self, redness: float, seed: int | None = None) -> None:
+    def __init__(
+        self, redness: Optional[float] = None, seed: Optional[int] = None
+    ) -> None:
         """
         Class that creates White or Red Noise.
 
@@ -33,7 +36,7 @@ class RandomNoise:
         self.rng = np.random.default_rng(seed)
 
         # --- Redness (whiteness) of noise
-        self.alpha = redness
+        self.alpha = redness if redness is not None else 0
 
     def generate_perturbation(
         self,
@@ -51,22 +54,24 @@ class RandomNoise:
             Perturbation field.
         """
 
-        # ---------------------------------------------
-        if len(shape_like) == 3:
-            nx, ny, nz = shape_like[0], shape_like[1], shape_like[2]
-            noise = self.create_rednoise(
-                nx, ny, nz, normalize_amplitude=True
-            )  # Perturbations are already scaled
-        elif len(shape_like) == 2:
-            nx, ny = shape_like[0], shape_like[1]
-            noise = self.create_rednoise(
-                nx, ny, normalize_amplitude=True
-            )  # Perturbations are already scaled
-        else:
-            nx = shape_like[0]
-            noise = self.create_rednoise(
-                nx, normalize_amplitude=True
-            )  # Perturbations are already scaled
+        # # ---------------------------------------------
+        # if len(shape_like) == 3:
+        #     nx, ny, nz = shape_like[0], shape_like[1], shape_like[2]
+        #     noise = self.create_rednoise(
+        #         nx, ny, nz, normalize_amplitude=True
+        #     )  # Perturbations are already scaled
+        # elif len(shape_like) == 2:
+        #     nx, ny = shape_like[0], shape_like[1]
+        #     noise = self.create_rednoise(
+        #         nx, ny, normalize_amplitude=True
+        #     )  # Perturbations are already scaled
+        # else:
+        #     nx = shape_like[0]
+        #     noise = self.create_rednoise(
+        #         nx, normalize_amplitude=True
+        #     )  # Perturbations are already scaled
+
+        noise = self.create_rednoise(*shape_like, normalize_amplitude=True)
 
         # --- Rescale field to unit variance ---
         noise_norm = noise / np.std(noise)
@@ -130,41 +135,42 @@ class RandomNoise:
         return field
 
 
-def _seed_from_jax_key(rng_key: jax.Array) -> int:
-    """Convert a jax PRNG key to a numpy int seed."""
-    seed = jax.random.randint(
-        rng_key, shape=(), minval=0, maxval=np.iinfo(np.int32).max
-    )
-    return int(jax.device_get(seed))
+# DEPRECATED
 
+# def _seed_from_jax_key(rng_key: jax.Array) -> int:
+#     """Convert a jax PRNG key to a numpy int seed."""
+#     seed = jax.random.randint(
+#         rng_key, shape=(), minval=0, maxval=np.iinfo(np.int32).max
+#     )
+#     return int(jax.device_get(seed))
 
-def red_noise_prior_ensemble(
-    rng_key: jax.Array,
-    ensemble_size: int,
-    num_states: int,
-    state_dim: int,
-    scale: float,
-    alpha: float,
-    periodic_boundary: bool,
-) -> jnp.ndarray:
-    """Create RedNoise (spectrally correlated) perturbatons."""
+# def red_noise_ensemble(
+#     rng_key: jax.Array,
+#     ensemble_size: int,
+#     num_states: int,
+#     state_dim: int,
+#     scale: float,
+#     alpha: float,
+#     periodic_boundary: bool,
+# ) -> jnp.ndarray:
+#     """Create RedNoise (spectrally correlated) perturbatons."""
 
-    ensemble_members = jax.random.split(rng_key, ensemble_size)
-    members = []
-    for key in ensemble_members:
-        seed = _seed_from_jax_key(key)
-        noise_generator = RandomNoise(redness=alpha, seed=seed)
+#     ensemble_members = jax.random.split(rng_key, ensemble_size)
+#     members = []
+#     for key in ensemble_members:
+#         seed = _seed_from_jax_key(key)
+#         noise_generator = RandomNoise(redness=alpha, seed=seed)
 
-        member = noise_generator.generate_perturbation(
-            shape_like=(num_states, state_dim),
-            sigma=scale,
-        )
+#         member = noise_generator.generate_perturbation(
+#             shape_like=(num_states, state_dim),
+#             sigma=scale,
+#         )
 
-        members.append(member)
+#         members.append(member)
 
-    ensemble = jnp.asarray(np.stack(members, axis=0))
+#     ensemble = jnp.asarray(np.stack(members, axis=0))
 
-    if periodic_boundary:
-        ensemble = ensemble.at[:, :, -1].set(ensemble[:, :, 0])
+#     if periodic_boundary:
+#         ensemble = ensemble.at[:, :, -1].set(ensemble[:, :, 0])
 
-    return ensemble
+#     return ensemble
