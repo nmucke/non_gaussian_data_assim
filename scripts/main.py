@@ -45,12 +45,10 @@ def main(cfg: DictConfig) -> None:
     da_method_cfg = OmegaConf.merge(
         cfg.da_method, cfg.case.da_method_overrides[cfg.da_method.name]
     )
+
     # Settings for Ensembel Generation (ensgen) --> add-perturbatiomns-to-best-guess
-    add_perturbs_to_bg: bool = cfg.case.prior_ensemble.add_perturbs_to_bg
     # rationale: Bool-flag, if true, ensemble is created by adding perts to best-guess reference state, else perturb fields are ensemble members directly
-    ensgen_method: str = (
-        cfg.case.prior_ensemble.ensgen_method
-    )  # rationale: Which ensemble generation method will be used to ceate perturbations
+    add_perturbs_to_bg: bool = cfg.case.ensemble_generation.add_perturbs_to_bg
 
     rng_key = jax.random.PRNGKey(cfg.seed)
 
