@@ -7,7 +7,7 @@ import jax.numpy as jnp
 
 from non_gaussian_data_assim.ensemble_generation import random_noise
 
-ensgen_method = Literal["white_noise", "red_noise", "breeding"]
+ensgen_method = Literal["white_noise", "red_noise", "breeding", "kuramoto_cosine"]
 
 
 def prior_ensemble(
@@ -19,7 +19,10 @@ def prior_ensemble(
     scale: float,
     periodic_boundary: bool,
     alpha: float,
-    add_perturbs_to_bg: bool,  # Non-sense argumetn: not-used in function, but otherwise HYDRA complains that an unexpected keyword is received!
+    add_perturbs_to_bg: bool,
+    domain_length: float,
+    magnitude_min: float,
+    magnitude_max: float,
 ) -> jnp.ndarray:
     """
     Wrapper func that selects the correct prior ensemble generation method
@@ -29,6 +32,19 @@ def prior_ensemble(
     - red_noise: correlated perts with P(k) ~ k^{-alpha}
     - breeding: flow-dependent perts
     """
+    # Delte Nonsense argumetn: not-used in function, but otherwise HYDRA complains that an unexpected keyword is received!
+    del add_perturbs_to_bg
+
+    # Check that necessary keywords are passed if ensgen method is not kuramto cosine
+    if ensgen_method != "kuramoto_cosine":
+        if scale is None:
+            raise ValueError("func parameter scale must not be node for this method!")
+        if periodic_boundary is None:
+            raise ValueError(
+                "func parameter periodic_boundary must not be node for this method!"
+            )
+        if alpha is None:
+            raise ValueError("func parameter alpha must not be node for this method!")
 
     if ensgen_method == "white_noise":
         return random_normal_prior_ensemble(
@@ -53,6 +69,23 @@ def prior_ensemble(
 
     if ensgen_method == "breeding":
         raise NotImplementedError()
+
+    if ensgen_method == "kuramoto_cosine":
+        # Check that correct keywords are passed if ensgen method is kuramato cosine
+        if domain_length is None:
+            raise ValueError(f"argument domain_length must not be NONE!")
+        if magnitude_min is None:
+            raise ValueError(f"argument magnitude_min must not be NONE!")
+        if magnitude_max is None:
+            raise ValueError(f"argument magnitude_max must not be NONE!")
+        return kuramoto_cosine_prior_ensemble(
+            rng_key,
+            ensemble_size,
+            state_dim,
+            domain_length,
+            magnitude_min,
+            magnitude_max,
+        )
 
     raise ValueError(ensgen_method)
 

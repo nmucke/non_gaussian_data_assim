@@ -176,7 +176,7 @@ def plot_da_diagnostics(
     crps_time: jnp.ndarray,
     rmse_time: jnp.ndarray,
     bins: int = 51,
-    hist_range: tuple[float, float] = (-6.0, 6.0),
+    hist_range: None | tuple[float, float] = None,
     show_fig: bool = False,
 ) -> tuple[plt.Figure, plt.Axes]:
     """Plot innovation and posterior diagnostics"""
@@ -184,6 +184,11 @@ def plot_da_diagnostics(
     # Flatten normalized innovation vector
     z = np.asarray(z)
     z_flat = z.ravel()
+
+    if hist_range is None:
+        vmin = jnp.quantile(z_flat, 0.01)
+        vmax = jnp.quantile(z_flat, 0.99)
+        hist_range = (vmin, vmax)
 
     fig, axs = plt.subplots(nrows=2, ncols=2, figsize=(12, 8), constrained_layout=True)
     ax_hist, ax_chi, ax_scores, ax_reserved = axs.ravel()

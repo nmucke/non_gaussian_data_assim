@@ -157,8 +157,9 @@ def main(cfg: DictConfig) -> None:
         #   prior_current.reshape(K, -1).T -> (state_dim_flat, EnsSize)
         #   H                              -> (N_obs, state_dim_flat)
         #   HXf                            -> (N_obs, EnsSize)
-        H = da_model.obs_operator.obs_matrix
-        HXf = H @ prior_current.reshape(cfg.ensemble_size, -1).T
+        # H = da_model.obs_operator.obs_matrix
+        # HXf = H @ prior_current.reshape(cfg.ensemble_size, -1).T
+        HXf = da_model.obs_operator(prior_current)
         predicted_obs.append(HXf.T)  # shape: (EnsSize, N_obs)
         # -----------------------------------------------------------------
 
@@ -242,7 +243,6 @@ def main(cfg: DictConfig) -> None:
         crps_time=posterior_metrics["crps_time"],
         rmse_time=posterior_metrics["rmse_time"],
         bins=51,
-        hist_range=(-6.0, 6.0),
         show_fig=True,
     )
 
