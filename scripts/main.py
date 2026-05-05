@@ -46,9 +46,10 @@ def main(cfg: DictConfig) -> None:
         cfg.da_method, cfg.case.da_method_overrides[cfg.da_method.name]
     )
 
+    # TODO
     # Settings for Ensembel Generation (ensgen) --> add-perturbatiomns-to-best-guess
     # rationale: Bool-flag, if true, ensemble is created by adding perts to best-guess reference state, else perturb fields are ensemble members directly
-    add_perturbs_to_bg: bool = cfg.case.ensemble_generation.add_perturbs_to_bg
+    # add_perturbs_to_bg: bool = cfg.case.ensemble_generation.add_perturbs_to_bg
 
     rng_key = jax.random.PRNGKey(cfg.seed)
 
@@ -68,8 +69,9 @@ def main(cfg: DictConfig) -> None:
     )  # Added random-seed for a best-guess I.C. field
     X_0 = initial_state_fn(rng_key=key)
 
-    # Create an inital best-guess field (different sample from same distri. as ground-truth)
-    X0_bg = initial_state_fn(rng_key=key_bg) if add_perturbs_to_bg else None
+    # TODO
+    # # Create an inital best-guess field (different sample from same distri. as ground-truth)
+    # X0_bg = initial_state_fn(rng_key=key_bg) if add_perturbs_to_bg else None
 
     # Rollout the truth.
     true_sol = forward_model.rollout(
@@ -107,9 +109,10 @@ def main(cfg: DictConfig) -> None:
     rng_key, key = jax.random.split(rng_key)
     reference_ensemble = prior_ensemble_fn(rng_key=key, ensemble_size=cfg.ensemble_size)
 
-    # If add_perturbs_to_bg: then reference_ensemble is ensemble of perturbations and must be added to reference best-guess field
-    if add_perturbs_to_bg:
-        reference_ensemble += X0_bg
+    # TODO
+    # # If add_perturbs_to_bg: then reference_ensemble is ensemble of perturbations and must be added to reference best-guess field
+    # if add_perturbs_to_bg:
+    #     reference_ensemble += X0_bg
 
     # Initialize the posterior ensemble from the reference.
     posterior_ensemble = reference_ensemble.copy().reshape(
@@ -154,11 +157,9 @@ def main(cfg: DictConfig) -> None:
         # Shape:
         #   prior_current.reshape(K, -1).T -> (state_dim_flat, EnsSize)
         #   H                              -> (N_obs, state_dim_flat)
-        #   HXf                            -> (N_obs, EnsSize)
-        # H = da_model.obs_operator.obs_matrix
-        # HXf = H @ prior_current.reshape(cfg.ensemble_size, -1).T
+        #   HXf                            -> (EnsSize, N_obs)
         HXf = da_model.obs_operator(prior_current)
-        predicted_obs.append(HXf.T)  # shape: (EnsSize, N_obs)
+        predicted_obs.append(HXf)  # shape: (EnsSize, N_obs)
         # -----------------------------------------------------------------
 
         # Concatenate prior (1time-step) and posterior (2 time-steps) and innovations
@@ -169,7 +170,9 @@ def main(cfg: DictConfig) -> None:
             [posterior_ensemble, posterior_next], axis=1
         )
 
-    predicted_obs = jnp.stack(predicted_obs, axis=1)  # shape: (EnsSize, N_obs)
+    predicted_obs = jnp.stack(
+        predicted_obs, axis=0
+    )  # shape: (Assim-Step, N_obs, EnsSize)
 
     logger.info(f"Finished DA loop")
 
