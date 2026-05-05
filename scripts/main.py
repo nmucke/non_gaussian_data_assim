@@ -64,10 +64,8 @@ def main(cfg: DictConfig) -> None:
     # Initial state for the truth.
     true_initial_state_profile = instantiate(true_initial_state_cfg)
     logger.info(f"Initial state: {true_initial_state_profile}")
-    rng_key, key = jax.random.split(
-        rng_key
-    )  # Added random-seed for a best-guess I.C. field
-    X_0 = true_initial_state_profile.sample(rng_key=key, ensemble_size=1)
+    rng_key, key = jax.random.split(rng_key)
+    true_sol = true_initial_state_profile.sample(rng_key=key, ensemble_size=1)
 
     # TODO
     # # Create an inital best-guess field (different sample from same distri. as ground-truth)
@@ -75,7 +73,7 @@ def main(cfg: DictConfig) -> None:
 
     # Rollout the truth.
     true_sol = forward_model.rollout(
-        X_0, cfg.data_assimilation_steps, return_model_integration_steps=True
+        true_sol, cfg.data_assimilation_steps, return_model_integration_steps=True
     )
 
     # Observation noise covariance.
@@ -110,7 +108,7 @@ def main(cfg: DictConfig) -> None:
     reference_ensemble = prior_ensemble_generator.sample(
         rng_key=key, ensemble_size=cfg.ensemble_size
     )
-    
+
     # TODO
     # # If add_perturbs_to_bg: then reference_ensemble is ensemble of perturbations and must be added to reference best-guess field
     # if add_perturbs_to_bg:
