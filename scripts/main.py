@@ -69,14 +69,6 @@ def main(cfg: DictConfig) -> None:
     )  # Added random-seed for a best-guess I.C. field
     X_0 = true_initial_state_profile.sample(rng_key=key, ensemble_size=1)
 
-    # Initial state for the truth.
-    # initial_state_fn = instantiate(initial_state_cfg)
-    # logger.info(f"Initial state: {initial_state_fn}")
-    # rng_key, key, key_bg = jax.random.split(
-    #     rng_key, 3
-    # )  # Added random-seed for a best-guess I.C. field
-    # X_0 = initial_state_fn(rng_key=key)
-
     # TODO
     # # Create an inital best-guess field (different sample from same distri. as ground-truth)
     # X0_bg = initial_state_fn(rng_key=key_bg) if add_perturbs_to_bg else None
@@ -118,13 +110,7 @@ def main(cfg: DictConfig) -> None:
     reference_ensemble = prior_ensemble_generator.sample(
         rng_key=key, ensemble_size=cfg.ensemble_size
     )
-
-    # Prior ensemble.
-    # prior_ensemble_fn = instantiate(prior_ensemble_cfg)
-    # logger.info(f"Prior ensemble: {prior_ensemble_fn}")
-    # rng_key, key = jax.random.split(rng_key)
-    # reference_ensemble = prior_ensemble_fn(rng_key=key, ensemble_size=cfg.ensemble_size)
-
+    
     # TODO
     # # If add_perturbs_to_bg: then reference_ensemble is ensemble of perturbations and must be added to reference best-guess field
     # if add_perturbs_to_bg:
