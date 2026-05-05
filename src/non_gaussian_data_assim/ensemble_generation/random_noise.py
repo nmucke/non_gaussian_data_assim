@@ -42,7 +42,7 @@ class RandomNoiseGenerator:
         self,
         shape_like: tuple,
         sigma: float,
-    ) -> np.ndarray:
+    ) -> jnp.ndarray:
         """
         Generates a perturbation field. Either white Noise or spatially correlated.
 
@@ -79,7 +79,7 @@ class RandomNoiseGenerator:
 
         # --- Scale standard deviation to desired level (sigma)
         perturbation = noise_norm * sigma  # Scale to desired standard-deviation
-        return perturbation
+        return jnp.asarray(perturbation)
 
     # =======================================================================================
     # -----------------------                RED NOISE                -----------------------

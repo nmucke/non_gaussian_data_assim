@@ -76,17 +76,17 @@ class InnovationMetric(ABC):
             raise ValueError(
                 f"obs must have shape (n_time, n_obs). Got shape {obs.shape}."
             )
-        if predicted_obs.shape[1] != obs.shape[0]:
+        if predicted_obs.shape[0] != obs.shape[0]:
             raise ValueError(
                 f"Time dimension mismatch between predicted_obs: {predicted_obs.shape[0]} and obs has: {obs.shape[0]}"
             )
         if predicted_obs.shape[2] != obs.shape[1]:
             raise ValueError(
-                f"Observation dimension mismatch betweem predicted_obs: {predicted_obs.shape[1]} and obs: {obs.shape[1]}"
+                f"Observation dimension mismatch betweem predicted_obs: {predicted_obs.shape[2]} and obs: {obs.shape[1]}"
             )
 
         # --- 2) Map compute function over axes in argument
-        compute_over_time = jax.vmap(self.compute, in_axes=(1, 0, None))
+        compute_over_time = jax.vmap(self.compute, in_axes=(0, 0, None))
 
         # --- 3) Compute over time
         # NOTE: Shape of metric depends on the metric's compute():

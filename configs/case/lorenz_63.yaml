@@ -50,7 +50,7 @@ case:
     periodic: true
 
     # Not yet properly implemented!
-    add_perturbs_to_bg: false  # If true, ensgen creates perturbations that are added
+    X_bestguess: false  # If true, ensgen creates perturbations that are added
                               # If false, ensgen creates the ensemble member's states directly
 
     # # Only for breeding --> Not-implememented-yet

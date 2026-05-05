@@ -36,7 +36,7 @@ class PriorEnsemble(ABC):
         rng_key: jax.Array,
         ensemble_size: int,
         periodic: bool,
-        X_bestguess: Optional[jax.ndarray] = None,
+        X_bestguess: Optional[jax.Array] = None,
     ) -> None:
 
         self.rng_key = rng_key
@@ -184,7 +184,7 @@ class RandomEnsemble(PriorEnsemble):
         alpha: float,
         scale: float,
         periodic: bool,
-        X_bestguess: Optional[jax.ndarray] = None,
+        X_bestguess: Optional[jax.Array] = None,
     ) -> None:
 
         super().__init__(
@@ -247,7 +247,7 @@ class CosineEnsemble(PriorEnsemble):
         magnitude_max: float,
         periodic: bool,
         state_dim: float,
-        X_bestguess: Optional[jax.ndarray] = None,
+        X_bestguess: Optional[jax.Array] = None,
     ) -> None:
 
         super().__init__(
@@ -306,6 +306,7 @@ class CosineEnsemble(PriorEnsemble):
 
 # =========================================================
 # Wrapper functions for easy access from main.py
+#   Max's comment: This might be avoidable, but didn't know how to call class method (sample()) from yaml
 # =========================================================
 
 
@@ -339,7 +340,7 @@ def random_noise_prior_ensemble(
     scale: float,
     alpha: float = 0.0,
     periodic: bool = False,
-    X_bestguess: Optional[jax.ndarray] = None,
+    X_bestguess: Optional[jax.Array] = None,
 ) -> jnp.ndarray:
     return RandomEnsemble(
         rng_key=rng_key,

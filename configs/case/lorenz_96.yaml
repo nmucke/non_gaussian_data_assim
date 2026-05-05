@@ -40,18 +40,17 @@ case:
     periodic: true
 
 
-
   prior_ensemble:
     _target_: non_gaussian_data_assim.initial_conditions.random_noise_prior_ensemble
     _partial_: true
     num_states: ${case.num_states}
     state_dim: ${case.state_dim}
     scale: 10.0
-    alpha: 0.0           # if >0 this will be red-noise
+    alpha: 1.0           # if >0 this will be red-noise
     periodic: true
 
     # Not yet properly implemented!
-    add_perturbs_to_bg: false  # If true, ensgen creates perturbations that are added
+    X_bestguess: false  # If true, ensgen creates perturbations that are added
                               # If false, ensgen creates the ensemble member's states directly
 
     # # Only for breeding --> Not-implememented-yet
