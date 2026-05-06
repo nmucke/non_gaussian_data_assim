@@ -43,20 +43,28 @@ case:
         stop: ${case.state_dim}
         step: 15
 
-  initial_state:
-    _target_: non_gaussian_data_assim.initial_conditions.coupled_kuramoto_pseudo1D_initial_state
-    _partial_: true
-    state_dim: ${case.state_dim}
-    domain_length: ${case.domain_length}
-    decorrelation_length: 10.0
+  true_initial_state:
+    _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
+    profile:
+      _target_: non_gaussian_data_assim.initial_profiles.CoupledKuramotoPseudo1DProfile
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      domain_length: ${case.domain_length}
+      decorrelation_length: 10.0
+    noise: null
+    periodic: false
 
   prior_ensemble:
-    _target_: non_gaussian_data_assim.initial_conditions.coupled_kuramoto_pseudo1D_prior_ensemble
-    _partial_: true
-    state_dim: ${case.state_dim}
-    domain_length: ${case.domain_length}
-    decorrelation_length: 10.0
-    scale: 1.0
+    _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
+    profile:
+      _target_: non_gaussian_data_assim.initial_profiles.CoupledKuramotoPseudo1DProfile
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      domain_length: ${case.domain_length}
+      decorrelation_length: 10.0
+      scale: 1.0
+    noise: null
+    periodic: false
 
   plotter:
     _target_: non_gaussian_data_assim.plotting.plot_multi_state_high_dim_field

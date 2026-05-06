@@ -10,8 +10,10 @@ import jax.numpy as jnp
 class BaseProfile(ABC):
     """Base class for deterministic initial-state profiles."""
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, num_states: int, state_dim: int) -> None:
         self.name = name
+        self.num_states = num_states
+        self.state_dim = state_dim
 
     @abstractmethod
     def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
@@ -28,9 +30,7 @@ class ConstantProfile(BaseProfile):
         state_dim: int,
         value: float = 0.0,
     ) -> None:
-        super().__init__(name="constant")
-        self.num_states = num_states
-        self.state_dim = state_dim
+        super().__init__(name="constant", num_states=num_states, state_dim=state_dim)
         self.value = value
 
     def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
@@ -47,12 +47,12 @@ class CosineProfile(BaseProfile):
 
     def __init__(
         self,
+        num_states: int,
         state_dim: int,
         domain_length: float,
         magnitude: Union[float, jnp.ndarray],
     ) -> None:
-        super().__init__(name="cosine")
-        self.state_dim = state_dim
+        super().__init__(name="cosine", num_states=num_states, state_dim=state_dim)
         self.domain_length = domain_length
         self.magnitude = magnitude
 
@@ -71,7 +71,6 @@ class CosineProfile(BaseProfile):
 
         profiles = jax.vmap(profile)(magnitudes)
         return profiles.reshape(ensemble_size, 1, self.state_dim)
-
 
 
 def _smooth_gaussian_periodic_1d(
@@ -99,40 +98,36 @@ def _smooth_gaussian_periodic_1d(
     return (field - field.mean()) / field.std()
 
 
-def coupled_kuramoto_pseudo1D_initial_state(
-    rng_key: jax.Array,
-    state_dim: int,
-    domain_length: float,
-    decorrelation_length: float,
-) -> jnp.ndarray:
-    """Smooth Gaussian random field IC for Coupled KS, matching Evensen's pseudo1D.
+class CoupledKuramotoPseudo1DProfile(BaseProfile):
+    """Smooth Gaussian random field profile, matching Evensen's `pseudo1D`.
 
-    Each of the two state fields (Atmos, Ocean) is an independent zero-mean
-    unit-variance Gaussian random field on the periodic domain, smoothed to the
-    given decorrelation length.
+    Each state field of each ensemble member is an independent zero-mean
+    unit-variance Gaussian random field on the periodic domain, smoothed to
+    the given decorrelation length and scaled by `scale`.
     """
-    keys = jax.random.split(rng_key, 2)
-    fields = jax.vmap(
-        lambda key: _smooth_gaussian_periodic_1d(
-            key, state_dim, domain_length, decorrelation_length
-        )
-    )(keys)
-    return fields.reshape(1, 2, state_dim)
 
-
-def coupled_kuramoto_pseudo1D_prior_ensemble(
-    rng_key: jax.Array,
-    ensemble_size: int,
-    state_dim: int,
-    domain_length: float,
-    decorrelation_length: float,
-    scale: float = 1.0,
-) -> jnp.ndarray:
-    """Prior ensemble of independent smooth Gaussian random fields for Coupled KS."""
-    keys = jax.random.split(rng_key, ensemble_size * 2)
-    fields = jax.vmap(
-        lambda key: _smooth_gaussian_periodic_1d(
-            key, state_dim, domain_length, decorrelation_length
+    def __init__(
+        self,
+        num_states: int,
+        state_dim: int,
+        domain_length: float,
+        decorrelation_length: float,
+        scale: float = 1.0,
+    ) -> None:
+        super().__init__(
+            name="coupled_kuramoto_pseudo1D", num_states=num_states, state_dim=state_dim
         )
-    )(keys)
-    return scale * fields.reshape(ensemble_size, 2, state_dim)
+        self.domain_length = domain_length
+        self.decorrelation_length = decorrelation_length
+        self.scale = scale
+
+    def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
+        keys = jax.random.split(rng_key, ensemble_size * self.num_states)
+        fields = jax.vmap(
+            lambda key: _smooth_gaussian_periodic_1d(
+                key, self.state_dim, self.domain_length, self.decorrelation_length
+            )
+        )(keys)
+        return self.scale * fields.reshape(
+            ensemble_size, self.num_states, self.state_dim
+        )

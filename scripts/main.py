@@ -29,6 +29,7 @@ from non_gaussian_data_assim.metrics.trajectory_metrics import (
 )
 from non_gaussian_data_assim.observations.observation_utils import generate_observations
 from non_gaussian_data_assim.plotting import plot_da_diagnostics
+from non_gaussian_data_assim.utils.spinup import spinup_ensemble
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,13 @@ def main(cfg: DictConfig) -> None:
     # # Create an inital best-guess field (different sample from same distri. as ground-truth)
     # X0_bg = initial_state_fn(rng_key=key_bg) if add_perturbs_to_bg else None
 
+    if cfg.spinup_steps:
+        true_sol = spinup_ensemble(
+            ensemble=true_sol,
+            forward_model=forward_model,
+            spinup_steps=cfg.spinup_steps,
+        )
+
     # Rollout the truth.
     true_sol = forward_model.rollout(
         true_sol, cfg.data_assimilation_steps, return_model_integration_steps=True
@@ -110,20 +118,11 @@ def main(cfg: DictConfig) -> None:
     )
 
     if cfg.spinup_steps:
-        spinup_integration_steps = (
-            cfg.spinup_steps * forward_model_cfg.model_integration_steps
+        reference_ensemble = spinup_ensemble(
+            ensemble=reference_ensemble,
+            forward_model=forward_model,
+            spinup_steps=cfg.spinup_steps,
         )
-        spinup_seconds = spinup_integration_steps * forward_model_cfg.dt
-        logger.info(
-            f"Model spinup for {spinup_integration_steps} model integration steps "
-            f"({spinup_seconds} s)"
-        )
-        reference_ensemble = forward_model.rollout(
-            reference_ensemble,
-            cfg.spinup_steps,
-            return_model_integration_steps=False,
-        )
-        reference_ensemble = reference_ensemble[:, -1]
 
     # Initialize the posterior ensemble from the prior.
     posterior_ensemble = reference_ensemble.copy().reshape(
@@ -255,9 +254,3 @@ def main(cfg: DictConfig) -> None:
 
 if __name__ == "__main__":
     main()
-
-    # innov_met = results["innovation_metrics"]
-    # chi_sq = np.asarray(innov_met["chi_sq_time"])
-    # posterior_met = results["posterior_metrics"]
-    # crps_time = np.asarray(posterior_met["crps_time"])
-    # rmse_time = np.asarray(posterior_met["rmse_time"])

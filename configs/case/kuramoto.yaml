@@ -32,15 +32,19 @@ case:
       step: 4
 
   true_initial_state:
-    _target_: non_gaussian_data_assim.initial_profiles.CosineProfile
-    state_dim: ${case.state_dim}
-    domain_length: ${case.domain_length}
-    magnitude: 0.1
+    _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
+    profile:
+      _target_: non_gaussian_data_assim.initial_profiles.CosineProfile
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      domain_length: ${case.domain_length}
+      magnitude: 0.1
 
   prior_ensemble:
     _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
     profile:
       _target_: non_gaussian_data_assim.initial_profiles.CosineProfile
+      num_states: ${case.num_states}
       state_dim: ${case.state_dim}
       domain_length: ${case.domain_length}
       magnitude:
