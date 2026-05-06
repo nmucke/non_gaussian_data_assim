@@ -3,6 +3,7 @@ from typing import Optional
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 AGGREGATION_METHODS = {
     "none": lambda x, axis: x,
@@ -90,3 +91,52 @@ class CRPS(EnsembleMetric):
         ensemble_flat = ensemble.reshape(ensemble.shape[0], -1)
         pointwise = jax.vmap(_crps_pointwise, in_axes=(1, 0))(ensemble_flat, truth_flat)
         return jnp.mean(pointwise)
+
+
+## Max: My method of computing crps,
+def crps_ensemble_1d(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """
+    Compute CRPS for an ensemble forecast at many points (scalar variable).
+
+    Ensemble CRPS formula:
+      CRPS = (1/K) sum_i |x_i - y| - 1/(2 K^2) * sum_{k}sum{k'} |x_k - x_k'|
+
+    Parameters
+    ----------
+    x : (N, K) array ---> Ensemble
+        N predictions wiht ensemble of isze K
+    y : (N,) array ---> Truth
+        N verifying observatios points.
+
+    Returns
+    -------
+    crps : (N,) array
+        CRPS per observation point.
+
+    """
+
+    x = np.asarray(x)
+    y = np.asarray(y)
+
+    if x.ndim != 2:
+        raise ValueError(f"x must be 2D (N,K). Got shape {x.shape}")
+    if y.ndim != 1 or y.shape[0] != x.shape[0]:
+        raise ValueError(
+            f"y must be 1D (N,) with same number of obs for x. Got y {y.shape}, x {x.shape}"
+        )
+
+    N, K = x.shape
+
+    # --- 1) MAE part of CRPS: (1/K) * sum_k |x_k - y|
+    mae = (1 / K) * np.sum(np.abs(x - y[:, None]), axis=1)  # (N,)
+
+    # --- 2) MeanAbsDiff part of CRPS:  1/(2 K^2) * sum_{k} sum{k'} |x_k - x_k'|
+    mad = np.zeros(N)
+    for n in range(N):
+        s = 0.0
+        for k in range(K):
+            for kp in range(K):
+                s += abs(x[n, k] - x[n, kp])
+        mad[n] = s / (2.0 * K * K)
+
+    return mae - mad

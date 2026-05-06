@@ -167,3 +167,94 @@ def plot_high_dim_field(
         )
         plt.grid(True)
     plt.show()
+
+
+def plot_da_diagnostics(
+    z: jnp.ndarray,
+    chi_sq: jnp.ndarray,
+    chi_sq_mean: float,
+    crps_time: jnp.ndarray,
+    rmse_time: jnp.ndarray,
+    bins: int = 51,
+    hist_range: None | tuple[float, float] = None,
+    show_fig: bool = False,
+) -> tuple[plt.Figure, plt.Axes]:
+    """Plot innovation and posterior diagnostics"""
+
+    # Flatten normalized innovation vector
+    z = np.asarray(z)
+    z_flat = z.ravel()
+
+    if hist_range is None:
+        vmin = jnp.quantile(z_flat, 0.01)
+        vmax = jnp.quantile(z_flat, 0.99)
+        hist_range = (vmin, vmax)
+
+    fig, axs = plt.subplots(nrows=2, ncols=2, figsize=(12, 8), constrained_layout=True)
+    ax_hist, ax_chi, ax_scores, ax_reserved = axs.ravel()
+
+    # --- Panel A: normalized innovation histogram
+    ax_hist.hist(
+        z_flat,
+        bins=bins,
+        range=hist_range,
+        density=True,
+        alpha=0.5,
+        edgecolor="white",
+        linewidth=0.6,
+        color="k",
+    )
+    x = np.linspace(hist_range[0], hist_range[1], 500)
+    normal_pdf = (1 / np.sqrt(2 * np.pi)) * np.exp(-0.5 * x**2)
+    ax_hist.plot(x, normal_pdf, c="k", linewidth=2, label=r"$\mathcal{N}(0,1)$")
+    ax_hist.axvline(0, c="k", linewidth=1, alpha=0.6)
+    ax_hist.set_xlim(hist_range)
+    ax_hist.set_xlabel("Normalized innovation")
+    ax_hist.set_ylabel("Relative frequncey")
+    ax_hist.legend(frameon=False)
+
+    stats = (
+        f"N    = {z.size}\n"
+        f"avg  = {np.nanmean(z_flat):.3f}\n"
+        f"std  = {np.nanstd(z_flat):.3f}\n"
+        f"chi2 = {chi_sq_mean:.1f}"
+    )
+
+    ax_hist.text(
+        0.03,
+        0.95,
+        stats,
+        transform=ax_hist.transAxes,
+        va="top",
+        ha="left",
+        fontsize=10,
+        bbox={"boxstyle": "round,pad=0.3", "alpha": 0.5, "facecolor": "white"},
+    )
+
+    # --- Panel B: chi-square
+    steps_chi = np.arange(len(chi_sq))
+    ax_chi.plot(steps_chi, chi_sq, linewidth=1, c="k")
+    ax_chi.axhline(
+        1, color="k", linestyle="--", linewidth=1.5, alpha=0.5, label="Optimum"
+    )
+    ax_chi.set_xlabel("Assimilation step")
+    ax_chi.set_ylabel(r"$\chi^2$")
+    ax_chi.grid(alpha=0.25)
+    ax_chi.legend()
+
+    # --- Panel C: posterior skill metrics
+    steps_post = np.arange(len(crps_time))
+    ax_scores.plot(steps_post, crps_time, linewidth=2, label="CRPS")
+    ax_scores.plot(steps_post, rmse_time, linewidth=2, label="RMSE")
+    ax_scores.set_xlabel("Model time-step")
+    ax_scores.set_ylabel("Score")
+    ax_scores.legend(frameon=False)
+    ax_scores.grid(alpha=0.25)
+
+    # --- Panel D
+    ax_reserved.axis("off")
+
+    if show_fig:
+        plt.show()
+
+    return fig, axs

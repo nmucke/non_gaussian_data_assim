@@ -1,8 +1,8 @@
 # @package _global_
 data_assimilation_steps: 50
-model_integration_steps: 1
+model_integration_steps: 2
 ensemble_size: 100
-inflation_factor: 1.0
+inflation_factor: 1.2
 localization_distance: 10
 
 case:
@@ -29,21 +29,67 @@ case:
       stop: ${case.state_dim}
       step: 2
 
-  initial_state:
-    _target_: non_gaussian_data_assim.initial_conditions.random_normal_initial_state
-    _partial_: true
-    num_states: ${case.num_states}
-    state_dim: ${case.state_dim}
-    scale: 10.0
-    periodic_boundary: true
+
+  true_initial_state:
+    _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
+    noise:
+      _target_: non_gaussian_data_assim.ensemble_generation.random_noise.RedNoise
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      scale: 10.0
+      alpha: 1.0
+    periodic: true
 
   prior_ensemble:
-    _target_: non_gaussian_data_assim.initial_conditions.random_normal_prior_ensemble
-    _partial_: true
-    num_states: ${case.num_states}
-    state_dim: ${case.state_dim}
-    scale: 10.0
-    periodic_boundary: true
+    _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
+    profile:
+      _target_: non_gaussian_data_assim.initial_profiles.ConstantProfile
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      value: 0.0
+    noise:
+      _target_: non_gaussian_data_assim.ensemble_generation.random_noise.RedNoise
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      scale: 10.0
+      alpha: 1.0
+    periodic: true
+
+
+  # initial_state:
+  #   _target_: non_gaussian_data_assim.initial_conditions.random_noise_initial_state
+  #   _partial_: true
+  #   num_states: ${case.num_states}
+  #   state_dim: ${case.state_dim}
+  #   scale: 10.0
+  #   alpha: 0.0        # if >0 this will be red-noise
+  #   periodic: true
+
+
+  # prior_ensemble:
+  #   _target_: non_gaussian_data_assim.initial_conditions.random_noise_prior_ensemble
+  #   _partial_: true
+  #   num_states: ${case.num_states}
+  #   state_dim: ${case.state_dim}
+  #   scale: 10.0
+  #   alpha: 1.0           # if >0 this will be red-noise
+  #   periodic: true
+
+  #   # Not yet properly implemented!
+  #   X_bestguess: false  # If true, ensgen creates perturbations that are added
+  #                             # If false, ensgen creates the ensemble member's states directly
+
+    # # Only for breeding --> Not-implememented-yet
+    # breeding_cycles: 10
+    # breeding_cycle_steps: 5
+    # breeding_initial_perturbation_scale: ${prior_ensemble.scale}
+    # breeding_rescale_amplitude: ${case.scale}
+
+
+
+
+
+
 
   plotter:
     _target_: non_gaussian_data_assim.plotting.plot_high_dim_field
