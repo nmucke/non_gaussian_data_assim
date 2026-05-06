@@ -1,12 +1,39 @@
 import pdb
 from abc import abstractmethod
-from typing import Callable
+from typing import Callable, Sequence, Union
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 from jax.experimental import sparse
 from numpy.typing import NDArray
+
+ObsIndicesLike = Union[
+    Sequence[int], np.ndarray, Sequence[Sequence[int]], Sequence[np.ndarray]
+]
+
+
+def _normalize_obs_indices(
+    obs_indices: ObsIndicesLike,
+    num_obs_states: int,
+) -> list[np.ndarray]:
+    """Return one index array per observed state.
+
+    Accepts either a flat 1D index array (broadcast to every observed state) or
+    a sequence of per-state index arrays (one entry per element in obs_states).
+    Works with plain Python sequences, numpy arrays, and OmegaConf ListConfig.
+    """
+    items = list(obs_indices)
+    if len(items) > 0 and np.ndim(items[0]) >= 1:
+        per_state = [np.asarray(idx) for idx in items]
+        if len(per_state) != num_obs_states:
+            raise ValueError(
+                f"obs_indices has {len(per_state)} per-state arrays but "
+                f"obs_states has {num_obs_states} entries"
+            )
+        return per_state
+    flat = np.asarray(items)
+    return [flat for _ in range(num_obs_states)]
 
 
 class ObservationOperator:
@@ -47,28 +74,38 @@ class LinearObservationOperator(ObservationOperator):
     def __init__(
         self,
         obs_states: np.ndarray,
-        obs_indices: np.ndarray,
+        obs_indices: ObsIndicesLike,
         state_dim: int,
+        num_states: int = 1,
     ):
         """
         Initialize the observation operator.
 
         Args:
-            obs_states: Tuple of state indices to observe (from num_states dimension).
-                       Example: (0, 1) to observe states at indices 0 and 1.
-            obs_indices: Array of indices to observe (from state_dim dimension).
-                        Example: np.arange(0, 50, 5) to observe indices 0, 5, 10, ..., 45.
+            obs_states: Sequence of state indices to observe (from num_states dimension).
+                       Example: [0, 1] to observe states at indices 0 and 1.
+            obs_indices: Either a single 1D index array applied to every observed
+                       state, or a sequence of per-state index arrays — one per
+                       entry of obs_states — when each state has its own spatial
+                       sampling pattern.
+                       Example (uniform):  np.arange(0, 50, 5)
+                       Example (per-state): [np.arange(0, 50, 45),
+                                             np.arange(0, 50, 15)]
         """
         self.obs_states = obs_states
         self.obs_indices = obs_indices
         self.state_dim = state_dim
-        self.num_states = len(obs_states)
-        self.num_obs = len(obs_indices) * len(obs_states)
+        self.num_states = num_states
+
+        self.obs_indices_per_state = _normalize_obs_indices(
+            obs_indices, len(obs_states)
+        )
+        self.num_obs = sum(len(idx) for idx in self.obs_indices_per_state)
 
         self.is_linear = True
 
         self.obs_matrix = get_obs_matrix(
-            obs_states, obs_indices, self.num_states, self.state_dim
+            obs_states, self.obs_indices_per_state, self.num_states, self.state_dim
         )
         self.obs_matrix = sparse.BCOO.fromdense(self.obs_matrix)
 
@@ -83,46 +120,38 @@ class LinearObservationOperator(ObservationOperator):
 
 def get_obs_matrix(
     obs_states: np.ndarray,
-    obs_indices: np.ndarray,
+    obs_indices_per_state: Sequence[np.ndarray],
     num_states: int,
     state_dim: int,
 ) -> np.ndarray:
-    """
-    Create an observation operator matrix H that maps flattened state to observations.
+    """Create an observation matrix H mapping flattened state to observations.
 
-    The matrix H has shape [num_states * state_dim, len(obs_states) * len(obs_indices)].
-    When multiplied with a flattened state array of shape [..., num_states * state_dim],
-    it produces the same output as the ObservationOperator applied to the unflattened state.
-
-    Args:
-        obs_states: Array of state indices to observe (from num_states dimension).
-                   Example: np.array([0, 1]) to observe states at indices 0 and 1.
-        obs_indices: Array of indices to observe (from state_dim dimension).
-                    Example: np.arange(0, 50, 5) to observe indices 0, 5, 10, ..., 45.
-        num_states: Total number of states in the state array.
-        state_dim: Dimension of each state.
+    Each entry of `obs_states` is paired with the corresponding entry of
+    `obs_indices_per_state`, allowing different spatial sampling per observed
+    state. The flattening order of the input state is
+    state0_dim0, state0_dim1, ..., state1_dim0, ... and observations are
+    emitted in (obs_state, dim_index) row-major order.
 
     Returns:
-        Observation matrix of shape [num_states * state_dim, len(obs_states) * len(obs_indices)].
-        The output observations are ordered as: all obs_indices for state0, then all obs_indices for state1, etc.
+        H of shape [num_obs, num_states * state_dim] where
+        num_obs = sum(len(idx) for idx in obs_indices_per_state).
     """
     obs_states = np.asarray(obs_states)
-    obs_indices = np.asarray(obs_indices)
 
-    num_obs_states = len(obs_states)
-    num_obs_indices = len(obs_indices)
-    total_obs = num_obs_states * num_obs_indices
+    if len(obs_states) != len(obs_indices_per_state):
+        raise ValueError(
+            f"obs_states has length {len(obs_states)} but obs_indices_per_state "
+            f"has length {len(obs_indices_per_state)}"
+        )
+
+    total_obs = sum(len(idx) for idx in obs_indices_per_state)
     total_state_size = num_states * state_dim
 
-    # Initialize the observation matrix
     H = np.zeros((total_state_size, total_obs))
 
-    # For each observed state and each observed index, set the corresponding entry to 1
     obs_col = 0
-    for state_idx in obs_states:
-        for dim_idx in obs_indices:
-            # Calculate the flattened index in the state array
-            # Flattening order: state0_dim0, state0_dim1, ..., state0_dimN, state1_dim0, ...
+    for state_idx, dim_indices in zip(obs_states, obs_indices_per_state):
+        for dim_idx in np.asarray(dim_indices):
             flattened_idx = state_idx * state_dim + dim_idx
             H[flattened_idx, obs_col] = 1
             obs_col += 1

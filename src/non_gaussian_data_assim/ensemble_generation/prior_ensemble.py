@@ -32,7 +32,7 @@ class PriorEnsemble:
                 spatial index matches the first.
         """
 
-        if (noise is None) and (noise is None):
+        if (profile is None) and (noise is None):
             raise ValueError(
                 "PriorEnsemble requires either `profile` or `noise` to be set."
             )
@@ -53,8 +53,8 @@ class PriorEnsemble:
         rng_key, key = jax.random.split(rng_key)
         if self.profile is None:
             self.profile = ConstantProfile(
-                num_states=self.noise.num_states,
-                state_dim=self.noise.state_dim,
+                num_states=self.noise.num_states,  # type: ignore[union-attr]
+                state_dim=self.noise.state_dim,  # type: ignore[union-attr]
                 value=0.0,
             )
         prior_ensemble = self.profile.sample(rng_key=key, ensemble_size=ensemble_size)

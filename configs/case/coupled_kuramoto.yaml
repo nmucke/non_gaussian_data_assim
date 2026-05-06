@@ -1,82 +1,73 @@
 # @package _global_
-data_assimilation_steps: 150
-model_integration_steps: 10
-ensemble_size: 50
+data_assimilation_steps: 175
+model_integration_steps: 32
+ensemble_size: 100
 inflation_factor: 1.0
-localization_distance: 100
+localization_distance: 10
+spinup_steps: 25 # spinup run for spinup_steps * model_integration_steps
 
 
 case:
-  name: kuramoto
-  title: "Kuramoto-Sivashinsky"
-  num_states: 1
-  state_dim: 512
-  obs_noise_variance: 0.1
-  domain_length: 100
+  name: coupled_kuramoto
+  title: "Coupled Kuramoto-Sivashinsky"
+  num_states: 2
+  state_dim: 1024
+  obs_noise_variance: 0.09
+  domain_length: 1024
 
   forward_model:
-    _target_: non_gaussian_data_assim.forward_models.kuramoto_sivashinsky.KuramotoSivashinsky
-    dt: 0.05
+    _target_: non_gaussian_data_assim.forward_models.coupled_kuramoto_sivashinsky.CoupledKuramotoSivashinsky
+    dt: 0.0625
     model_integration_steps: ${model_integration_steps}
     state_dim: ${case.state_dim}
     domain_length: ${case.domain_length}
+    alpha_oa: 0.003
+    omega_ao: 0.003
+    lambda_a: 32.0
+    lambda_o: 4.0
+    tau_a: 1.0
+    tau_o: 4.0
 
   obs_operator:
     _target_: non_gaussian_data_assim.observations.observation_operator.LinearObservationOperator
     state_dim: ${case.state_dim}
-    obs_states: [0]
+    num_states: ${case.num_states}
+    obs_states: [0, 1]
     obs_indices:
-      _target_: numpy.arange
-      start: 0
-      stop: ${case.state_dim}
-      step: 4
+      - _target_: numpy.arange
+        start: 0
+        stop: ${case.state_dim}
+        step: 45
+      - _target_: numpy.arange
+        start: 0
+        stop: ${case.state_dim}
+        step: 15
 
   true_initial_state:
     _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
     profile:
-      _target_: non_gaussian_data_assim.initial_profiles.CosineProfile
+      _target_: non_gaussian_data_assim.initial_profiles.CoupledKuramotoPseudo1DProfile
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
       domain_length: ${case.domain_length}
-      magnitude: 0.1
+      decorrelation_length: 10.0
+    noise: null
+    periodic: false
 
   prior_ensemble:
     _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
     profile:
-      _target_: non_gaussian_data_assim.initial_profiles.CosineProfile
+      _target_: non_gaussian_data_assim.initial_profiles.CoupledKuramotoPseudo1DProfile
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
       domain_length: ${case.domain_length}
-      magnitude:
-        _target_: numpy.random.uniform
-        low: 0.0
-        high: 1.5
-        size: ${ensemble_size}
+      decorrelation_length: 10.0
+      scale: 1.0
     noise: null
     periodic: false
 
-
-  # initial_state:
-  #   _target_: non_gaussian_data_assim.initial_conditions.cosine_initial_state
-  #   _partial_: true
-  #   state_dim: ${case.state_dim}
-  #   domain_length: ${case.domain_length}
-  #   magnitude: 0.1
-
-
-
-  # prior_ensemble:
-  #   _target_: non_gaussian_data_assim.initial_conditions.cosine_prior_ensemble
-  #   _partial_: true
-  #   state_dim: ${case.state_dim}
-  #   domain_length: ${case.domain_length}
-  #   magnitude_min: 0.0
-  #   magnitude_max: 1.5
-
-
-
   plotter:
-    _target_: non_gaussian_data_assim.plotting.plot_high_dim_field
+    _target_: non_gaussian_data_assim.plotting.plot_multi_state_high_dim_field
     _partial_: true
 
   da_method_overrides:
@@ -88,8 +79,8 @@ case:
       nc_threshold: 0.5
       localization_distance: ${localization_distance}
     pff:
-      num_pseudo_time_steps: 10
-      step_size: 0.1
+      num_pseudo_time_steps: 100
+      step_size: 1.0
       stepper: forward_euler
       localization_distance: ${localization_distance}
       inflation_factor: ${inflation_factor}

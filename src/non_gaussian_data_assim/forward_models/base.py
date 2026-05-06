@@ -57,6 +57,7 @@ class BaseForwardModel:
             return_model_integration_steps=return_model_integration_steps,
             include_initial_state=not return_model_integration_steps,
         )
+
         if is_ensemble:
             rollout_fn = jax.vmap(rollout_fn)
         rollout_fn = jax.jit(rollout_fn)
