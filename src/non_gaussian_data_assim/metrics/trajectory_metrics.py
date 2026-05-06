@@ -3,6 +3,7 @@ from typing import Optional
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 AGGREGATION_METHODS = {
     "none": lambda x, axis: x,
@@ -108,6 +109,11 @@ def print_metrics_table(
     posterior_errors: dict[str, float],
     title: str = "",
 ) -> None:
+
+    def _is_scalar_metric(x: float) -> bool:
+        arr = np.asarray(x)
+        return bool(arr.ndim == 0)
+
     col_w = 14
     header = f"{'Metric':<10} | {'Reference':>{col_w}} | {'Posterior':>{col_w}}"
     sep = "-" * len(header)
@@ -117,9 +123,13 @@ def print_metrics_table(
     print(header)
     print(sep)
     for metric in reference_errors:
-        reference_val = float(reference_errors[metric])
-        posterior_val = float(posterior_errors[metric])
-        print(
-            f"{metric.upper():<10} | {reference_val:{col_w}.6f} | {posterior_val:{col_w}.6f}"
-        )
+        # Only print scalar metrics, skip time series
+        ref = reference_errors[metric]
+        post = posterior_errors[metric]
+        if _is_scalar_metric(ref) and _is_scalar_metric(post):
+            reference_val = float(np.asarray(ref))
+            posterior_val = float(np.asarray(post))
+            print(
+                f"{metric.upper():<10} | {reference_val:{col_w}.6f} | {posterior_val:{col_w}.6f}"
+            )
     print(sep)
