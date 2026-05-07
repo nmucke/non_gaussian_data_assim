@@ -20,24 +20,34 @@ class BasePerturbation(ABC):
         self.state_dim = state_dim
 
     @abstractmethod
-    def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
-        """Return perturbations of shape [ensemble_size, num_states, state_dim]."""
+    def sample(
+        self, rng_key: jax.Array, ensemble_size: int, x0: jnp.ndarray
+    ) -> jnp.ndarray:
+        """Return perturbations of shape [ensemble_size, num_states, state_dim].
+
+        Args:
+            rng_key: JAX PRNG key.
+            ensemble_size: Number of ensemble perturbations.
+            x0: Best-guess/base state with shape [num_states, state_dim]
+                or [1, num_states, state_dim].
+
+        Returns:
+            Perturbations with shape
+            [ensemble_size, num_states, state_dim].
+        """
         raise NotImplementedError
 
 
 class WhiteNoise(BasePerturbation):
     """Spatially white Gaussian noise with standard deviation `scale`."""
 
-    def __init__(
-        self,
-        num_states: int,
-        state_dim: int,
-        scale: float,
-    ) -> None:
+    def __init__(self, num_states: int, state_dim: int, scale: float) -> None:
         super().__init__(name="white_noise", num_states=num_states, state_dim=state_dim)
         self.scale = scale
 
-    def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
+    def sample(
+        self, rng_key: jax.Array, ensemble_size: int, x0: jnp.ndarray
+    ) -> jnp.ndarray:
         shape = (ensemble_size, self.num_states, self.state_dim)
         return jax.random.normal(rng_key, shape) * self.scale
 
@@ -49,19 +59,18 @@ class RedNoise(BasePerturbation):
     """
 
     def __init__(
-        self,
-        num_states: int,
-        state_dim: int,
-        scale: float,
-        alpha: float,
+        self, num_states: int, state_dim: int, scale: float, alpha: float
     ) -> None:
+
         super().__init__(name="red_noise", num_states=num_states, state_dim=state_dim)
         self.scale = scale
         self.alpha = alpha
 
-    def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
+    def sample(
+        self, rng_key: jax.Array, ensemble_size: int, x0: jnp.ndarray
+    ) -> jnp.ndarray:
+        """Create RedNoise"""
         shape = (self.num_states, self.state_dim)
-
         k_arrays = [jnp.fft.fftfreq(n) for n in shape]
         k_grids = jnp.meshgrid(*k_arrays, indexing="ij")
         k = jnp.sqrt(sum(kg**2 for kg in k_grids))
@@ -84,7 +93,7 @@ class RedNoise(BasePerturbation):
         elif self.alpha == 0:
             whitenoise = WhiteNoise(self.num_states, self.state_dim, self.scale)
             wn_ensemble = whitenoise.sample(
-                rng_key=rng_key, ensemble_size=ensemble_size
+                rng_key=rng_key, ensemble_size=ensemble_size, x0=x0
             )
             return wn_ensemble
 
@@ -104,9 +113,7 @@ class BreedingPerturbation(BasePerturbation):
         norm: NormLike | None = None,
     ) -> None:
         super().__init__(
-            name="breeding_vector",
-            num_states=num_states,
-            state_dim=state_dim,
+            name="breeding_vector", num_states=num_states, state_dim=state_dim
         )
         self.breeder = BreedingVector(
             forward_operator=forward_operator,
@@ -118,27 +125,9 @@ class BreedingPerturbation(BasePerturbation):
         )
 
     def sample(
-        self,
-        rng_key: jax.Array,
-        ensemble_size: int,
-        x0: jnp.ndarray | None = None,
+        self, rng_key: jax.Array, ensemble_size: int, x0: jnp.ndarray
     ) -> jnp.ndarray:
-        """Return bred perturbations.
-
-        Args:
-            rng_key: JAX PRNG key.
-            ensemble_size: Number of ensemble perturbations.
-            x0: Best-guess/base state with shape [num_states, state_dim]
-                or [1, num_states, state_dim].
-
-        Returns:
-            Bred perturbations with shape
-            [ensemble_size, num_states, state_dim].
-        """
-        if x0 is None:
-            raise ValueError(
-                "BreedingPerturbation.sample requires x0, the best-guess state."
-            )
+        """Return bred perturbations"""
 
         return self.breeder(
             x0=x0,
