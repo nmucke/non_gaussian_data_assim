@@ -21,14 +21,14 @@ class BasePerturbation(ABC):
 
     @abstractmethod
     def sample(
-        self, rng_key: jax.Array, ensemble_size: int, x0: jnp.ndarray
+        self, rng_key: jax.Array, ensemble_size: int, x0_bg: np.ndarray
     ) -> jnp.ndarray:
         """Return perturbations of shape [ensemble_size, num_states, state_dim].
 
         Args:
             rng_key: JAX PRNG key.
             ensemble_size: Number of ensemble perturbations.
-            x0: Best-guess/base state with shape [num_states, state_dim]
+            x0: Starting Conditions for Breeding with shape [num_states, state_dim]
                 or [1, num_states, state_dim].
 
         Returns:
@@ -46,8 +46,9 @@ class WhiteNoise(BasePerturbation):
         self.scale = scale
 
     def sample(
-        self, rng_key: jax.Array, ensemble_size: int, x0: jnp.ndarray
+        self, rng_key: jax.Array, ensemble_size: int, x0_bg: None = None
     ) -> jnp.ndarray:
+        del x0_bg
         shape = (ensemble_size, self.num_states, self.state_dim)
         return jax.random.normal(rng_key, shape) * self.scale
 
@@ -67,9 +68,12 @@ class RedNoise(BasePerturbation):
         self.alpha = alpha
 
     def sample(
-        self, rng_key: jax.Array, ensemble_size: int, x0: jnp.ndarray
+        self, rng_key: jax.Array, ensemble_size: int, x0_bg: np.ndarray
     ) -> jnp.ndarray:
         """Create RedNoise"""
+
+        del x0_bg
+
         shape = (self.num_states, self.state_dim)
         k_arrays = [jnp.fft.fftfreq(n) for n in shape]
         k_grids = jnp.meshgrid(*k_arrays, indexing="ij")
@@ -93,7 +97,7 @@ class RedNoise(BasePerturbation):
         elif self.alpha == 0:
             whitenoise = WhiteNoise(self.num_states, self.state_dim, self.scale)
             wn_ensemble = whitenoise.sample(
-                rng_key=rng_key, ensemble_size=ensemble_size, x0=x0
+                rng_key=rng_key, ensemble_size=ensemble_size
             )
             return wn_ensemble
 
@@ -125,12 +129,7 @@ class BreedingPerturbation(BasePerturbation):
         )
 
     def sample(
-        self, rng_key: jax.Array, ensemble_size: int, x0: jnp.ndarray
+        self, rng_key: jax.Array, ensemble_size: int, x0_bg: np.ndarray
     ) -> jnp.ndarray:
         """Return bred perturbations"""
-
-        return self.breeder(
-            x0=x0,
-            rng_key=rng_key,
-            ensemble_size=ensemble_size,
-        )
+        return self.breeder(x0_bg=x0_bg, rng_key=rng_key, ensemble_size=ensemble_size)

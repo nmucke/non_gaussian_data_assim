@@ -48,7 +48,9 @@ class PriorEnsemble:
         ensemble_size: int,
         profile_bg: Optional[jax.Array] = None,
     ) -> jax.Array:
-        """Draw an ensemble of shape [ensemble_size, num_states, state_dim].
+        """
+
+        Sample an ensemble of shape [ensemble_size, num_states, state_dim].
 
         Args:
             rng_key: JAX PRNG key, split internally between profile and noise.
@@ -62,23 +64,31 @@ class PriorEnsemble:
 
         ## BUG? In case no profile is passed, make a constant one
         if self.profile is None:
+            print(
+                "\n\n\nWARNING: No Best-guess Profile was passed. This behaviour might not be desirable\n\n\n"
+            )
             self.profile = ConstantProfile(
                 num_states=self.noise.num_states,  # type: ignore[union-attr]
                 state_dim=self.noise.state_dim,  # type: ignore[union-attr]
                 value=0.0,
             )
 
-        prior_ensemble = self.profile.sample(rng_key=key, ensemble_size=ensemble_size)
         if profile_bg is None:
-            profile_bg = jnp.empty(prior_ensemble.shape)
+            example_profile = self.profile.sample(
+                rng_key=key, ensemble_size=ensemble_size
+            )
+            x0_bg = jnp.empty(example_profile.shape)
+        else:
+            x0_bg = profile_bg
 
         if self.noise is not None:
             rng_key, key = jax.random.split(rng_key)
-            # --- Create Ensemble Perturbations!
-            ensemble_perturbations = self.noise.sample(
-                rng_key=key, ensemble_size=ensemble_size
-            )
 
+            # --- Sample Ensemble Perturbations!
+            ensemble_perturbations = self.noise.sample(
+                rng_key=key, ensemble_size=ensemble_size, x0_bg=x0_bg
+            )
+            # --- Finial Ensemble = Prior + Perturbations
             prior_ensemble = profile_bg + ensemble_perturbations
 
         if self.periodic:

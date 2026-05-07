@@ -138,7 +138,7 @@ class BreedingVector:
 
     def __call__(
         self,
-        x0: jnp.ndarray,
+        x0_bg: jnp.ndarray,
         ensemble_size: int,
         rng_key: Optional[jax.random.PRNGKey] = None,
     ) -> jnp.ndarray:
@@ -147,7 +147,7 @@ class BreedingVector:
 
         Inputs:
         -------
-            x0: jnp.ndarray     Base state with shape [num_states, state_dim] or [1, num_states, state_dim]
+            x0_bg: jnp.ndarray     Base state with shape [num_states, state_dim] or [1, num_states, state_dim]
             ensemble_size: int  Number of bred perturbation vectors to generate.
         Returns:
         --------
@@ -155,9 +155,9 @@ class BreedingVector:
         """
 
         # --- 1) Define control and initial-pertrubation for all ensemble members
-        control = x0
+        control = x0_bg
         perturbations = self.initial_perturbations(
-            rng_key=rng_key, ensemble_size=ensemble_size, state_shape=x0.shape
+            rng_key=rng_key, ensemble_size=ensemble_size, state_shape=x0_bg.shape
         )
 
         if self.compute_metrics:
