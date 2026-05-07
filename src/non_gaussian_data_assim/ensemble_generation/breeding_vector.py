@@ -107,14 +107,14 @@ class BreedingVector:
         )
         self._integrate_ensemble = jax.vmap(self._integrate_member, in_axes=0)
 
-    def _rescale_member(self, perturbation: jax.ndarray) -> jax.ndarray:
+    def _rescale_member(self, perturbation: jnp.ndarray) -> jnp.ndarray:
         """Rescale one perturbation field to the configured amplitude"""
         # --- 1) Calc. norm
         norm = self.norm(perturbation)
         # --- 2) Return rescaled perturbation
         return self.perturbation_amplitude * perturbation / norm
 
-    def _rescale_ensemble(self, perturbations: jax.ndarray) -> jax.ndarray:
+    def _rescale_ensemble(self, perturbations: jnp.ndarray) -> jnp.ndarray:
         """Rescale perturbations member by member.
         Input:
             perturbations: shape [ensemble_size, num_states, state_dim]
@@ -130,17 +130,17 @@ class BreedingVector:
         ensemble_size: int,
         state_shape: tuple[int, ...],
         rng_key: Optional[jax.random.PRNGKey] = None,
-    ) -> jax.ndarray:
+    ) -> jnp.ndarray:
         """Create normalized initial perturbation directions."""
         raw = jax.random.normal(rng_key, (ensemble_size, *state_shape))
         return self._rescale_ensemble(raw)
 
     def __call__(
         self,
-        x0: jax.ndarray,
+        x0: jnp.ndarray,
         ensemble_size: int,
         rng_key: Optional[jax.random.PRNGKey] = None,
-    ) -> jax.ndarray:
+    ) -> jnp.ndarray:
         """
         Breed perturbations around one base state.
 

@@ -32,13 +32,13 @@ case:
 
   true_initial_state:
     _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
-    noise:
-      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise
+    profile:
+      _target_: non_gaussian_data_assim.initial_profiles.WhiteNoiseProfile
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
-      scale: 10.0
-      alpha: 1.0
+      scale: 10
     periodic: true
+
 
   prior_ensemble:
     _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble

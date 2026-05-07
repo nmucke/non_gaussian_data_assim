@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from non_gaussian_data_assim.ensemble_generation.breeding import (
+from non_gaussian_data_assim.ensemble_generation.breeding_vector import (
     BreedingVector,
     NormLike,
 )

@@ -46,8 +46,8 @@ class PriorEnsemble:
         self,
         rng_key: jax.Array,
         ensemble_size: int,
-        profile_bg: Optional[jnp.ndarray] = None,
-    ) -> jnp.ndarray:
+        profile_bg: Optional[jax.Array] = None,
+    ) -> jax.Array:
         """Draw an ensemble of shape [ensemble_size, num_states, state_dim].
 
         Args:
@@ -59,19 +59,26 @@ class PriorEnsemble:
             Array of shape [ensemble_size, num_states, state_dim].
         """
         rng_key, key = jax.random.split(rng_key)
+
+        ## BUG? In case no profile is passed, make a constant one
         if self.profile is None:
             self.profile = ConstantProfile(
                 num_states=self.noise.num_states,  # type: ignore[union-attr]
                 state_dim=self.noise.state_dim,  # type: ignore[union-attr]
                 value=0.0,
             )
+
         prior_ensemble = self.profile.sample(rng_key=key, ensemble_size=ensemble_size)
+        if profile_bg is None:
+            profile_bg = jnp.empty(prior_ensemble.shape)
+
         if self.noise is not None:
             rng_key, key = jax.random.split(rng_key)
-
+            # --- Create Ensemble Perturbations!
             ensemble_perturbations = self.noise.sample(
                 rng_key=key, ensemble_size=ensemble_size
             )
+
             prior_ensemble = profile_bg + ensemble_perturbations
 
         if self.periodic:
