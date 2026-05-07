@@ -68,16 +68,22 @@ def main(cfg: DictConfig) -> None:
     rng_key, key = jax.random.split(rng_key)
     true_sol = true_initial_state_profile.sample(rng_key=key, ensemble_size=1)
 
-    # TODO
-    # # Create an inital best-guess field (different sample from same distri. as ground-truth)
-    # X0_bg = initial_state_fn(rng_key=key_bg) if add_perturbs_to_bg else None
-
+    # Spin-Up truth Run (optional)
     if cfg.spinup_steps:
         true_sol = spinup_ensemble(
             ensemble=true_sol,
             forward_model=forward_model,
             spinup_steps=cfg.spinup_steps,
         )
+
+    # --- Best-Guess Profile by perturbing (spun-up) truth
+    rng_key, bg_key = jax.random.split(rng_key)
+    perturbs_best_guess = true_initial_state_profile.sample(
+        rng_key=bg_key, ensemble_size=1
+    )
+    best_guess = true_sol + perturbs_best_guess / 10
+    # NOTE: Just a design choice to add noise of with 10% scale compared to sclae of I.C. of truth
+    # NOTE: Maybe 'better' way is to take some 'climatological' scale --> E.g. Bulk variance of spin-up
 
     # Rollout the truth.
     true_sol = forward_model.rollout(
@@ -114,15 +120,17 @@ def main(cfg: DictConfig) -> None:
     logger.info(f"Prior ensemble: {prior_ensemble_generator}")
     rng_key, key = jax.random.split(rng_key)
     reference_ensemble = prior_ensemble_generator.sample(
-        rng_key=key, ensemble_size=cfg.ensemble_size
+        rng_key=key, ensemble_size=cfg.ensemble_size, profile_bg=best_guess
     )
 
-    if cfg.spinup_steps:
-        reference_ensemble = spinup_ensemble(
-            ensemble=reference_ensemble,
-            forward_model=forward_model,
-            spinup_steps=cfg.spinup_steps,
-        )
+    # !!!!!!!!
+    # # NOTE: Not necessary?? --> Since we use spun-up version of truth as best-guess
+    # if cfg.spinup_steps:
+    #     reference_ensemble = spinup_ensemble(
+    #         ensemble=reference_ensemble,
+    #         forward_model=forward_model,
+    #         spinup_steps=cfg.spinup_steps,
+    #     )
 
     # Initialize the posterior ensemble from the prior.
     posterior_ensemble = reference_ensemble.copy().reshape(
@@ -163,13 +171,9 @@ def main(cfg: DictConfig) -> None:
             print(f"NaN in posterior_next at time {i}")
             break
 
-        # ------------- Store Prior ensemble in observation space -----------
-        # Shape:
-        #   prior_current.reshape(K, -1).T -> (state_dim_flat, EnsSize)
-        #   H                              -> (N_obs, state_dim_flat)
-        #   HXf                            -> (EnsSize, N_obs)
-        HXf = da_model.obs_operator(prior_current)
-        predicted_obs.append(HXf)  # shape: (EnsSize, N_obs)
+        # ------------Track:  Prior ensemble (in obs space)    -----------
+        HXf = da_model.obs_operator(prior_current)  # shape: (EnsSize, N_obs)
+        predicted_obs.append(HXf)
         # -----------------------------------------------------------------
 
         # Concatenate prior (1time-step) and posterior (2 time-steps) and innovations

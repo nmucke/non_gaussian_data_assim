@@ -42,12 +42,18 @@ class PriorEnsemble:
         self.noise = noise
         self.periodic = periodic
 
-    def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
+    def sample(
+        self,
+        rng_key: jax.Array,
+        ensemble_size: int,
+        profile_bg: Optional[jnp.ndarray] = None,
+    ) -> jnp.ndarray:
         """Draw an ensemble of shape [ensemble_size, num_states, state_dim].
 
         Args:
             rng_key: JAX PRNG key, split internally between profile and noise.
             ensemble_size: Number of ensemble members to draw.
+            profile_bg: Best-Guess reference profile
 
         Returns:
             Array of shape [ensemble_size, num_states, state_dim].
@@ -62,9 +68,11 @@ class PriorEnsemble:
         prior_ensemble = self.profile.sample(rng_key=key, ensemble_size=ensemble_size)
         if self.noise is not None:
             rng_key, key = jax.random.split(rng_key)
-            prior_ensemble = prior_ensemble + self.noise.sample(
+
+            ensemble_perturbations = self.noise.sample(
                 rng_key=key, ensemble_size=ensemble_size
             )
+            prior_ensemble = profile_bg + ensemble_perturbations
 
         if self.periodic:
             prior_ensemble = prior_ensemble.at[..., -1].set(prior_ensemble[..., 0])
