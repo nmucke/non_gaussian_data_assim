@@ -100,6 +100,7 @@ class BreedingPerturbation(BasePerturbation):
         perturbation_amplitude: float,
         number_of_intervals: int,
         rescaling_interval: int,
+        compute_metrics: bool,
         norm: NormLike | None = None,
     ) -> None:
         super().__init__(
@@ -113,6 +114,7 @@ class BreedingPerturbation(BasePerturbation):
             rescaling_interval=rescaling_interval,
             perturbation_amplitude=perturbation_amplitude,
             norm=norm,
+            compute_metrics=compute_metrics,
         )
 
     def sample(

@@ -60,7 +60,8 @@ class BreedingVector:
         rescaling_interval: int,
         perturbation_amplitude: float,
         norm: Optional[NormLike] = None,
-        min_norm: float = 1.0e-12,
+        compute_metrics: Optional[bool] = True,
+        min_norm: float = 1e-10,
     ) -> None:
         """
         Initialise the breeding-vector
@@ -91,7 +92,7 @@ class BreedingVector:
         self.norm = norm if norm is not None else L2Norm()
         self.min_norm = min_norm
 
-        self.compute_metrics = True
+        self.compute_metrics: bool = True
         # --- Define method-maps that compute the norm per member and then for the entire ensemble
         self._norm_ensemble = jax.vmap(self.norm, in_axes=0)
         self._norm_member_trajectory = jax.vmap(self.norm, in_axes=0)
