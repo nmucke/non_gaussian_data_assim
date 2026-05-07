@@ -3,7 +3,9 @@ from typing import Optional
 import jax
 import jax.numpy as jnp
 
-from non_gaussian_data_assim.ensemble_generation.random_noise import BaseNoise
+from non_gaussian_data_assim.ensemble_generation.ensemble_perturbations import (
+    BasePerturbation,
+)
 from non_gaussian_data_assim.initial_profiles import BaseProfile, ConstantProfile
 
 
@@ -18,7 +20,7 @@ class PriorEnsemble:
     def __init__(
         self,
         profile: Optional[BaseProfile] = None,
-        noise: Optional[BaseNoise] = None,
+        noise: Optional[BasePerturbation] = None,
         periodic: bool = False,
     ) -> None:
         """Configure the ensemble generator.

@@ -37,7 +37,7 @@ case:
       state_dim: ${case.state_dim}
       value: 2.0
     noise:
-      _target_: non_gaussian_data_assim.ensemble_generation.random_noise.WhiteNoise
+      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.WhiteNoise
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
       scale: 10.0
@@ -51,7 +51,7 @@ case:
       state_dim: ${case.state_dim}
       value: 0.0
     noise:
-      _target_: non_gaussian_data_assim.ensemble_generation.random_noise.WhiteNoise
+      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.WhiteNoise
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
       scale: 10.0

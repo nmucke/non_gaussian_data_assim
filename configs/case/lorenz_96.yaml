@@ -33,7 +33,7 @@ case:
   true_initial_state:
     _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
     noise:
-      _target_: non_gaussian_data_assim.ensemble_generation.random_noise.RedNoise
+      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
       scale: 10.0
@@ -48,7 +48,7 @@ case:
       state_dim: ${case.state_dim}
       value: 0.0
     noise:
-      _target_: non_gaussian_data_assim.ensemble_generation.random_noise.RedNoise
+      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
       scale: 10.0
