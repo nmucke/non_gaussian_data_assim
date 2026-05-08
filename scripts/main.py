@@ -148,11 +148,15 @@ def main(cfg: DictConfig) -> None:
     predicted_obs = []
 
     # Rollout the prior ensemble for comparison.
+
+    print(f"TETS shape ref {reference_ensemble.shape}")
+
     reference_ensemble = forward_model.rollout(
         reference_ensemble,
         cfg.data_assimilation_steps,
         return_model_integration_steps=True,
     )
+    print("TETS2")
 
     # Run the DA loop.
     logger.info(f"Running DA loop for {cfg.data_assimilation_steps} steps")
