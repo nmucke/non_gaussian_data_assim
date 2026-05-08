@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from typing import Optional, Protocol
 
 import jax
@@ -6,32 +5,17 @@ import jax.numpy as jnp
 from tqdm import tqdm
 
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
-from non_gaussian_data_assim.time_integrators import rollout
-
-
-@dataclass
-class BreedingDiagnostics:
-    norm_during_window: jnp.ndarray
-    growth_rate_during_window: jnp.ndarray
-    norm_before_rescale: jnp.ndarray
-    growth_rate_before_rescale: jnp.ndarray
-    norm_after_rescale: jnp.ndarray
-    growth_rate_after_rescale: jnp.ndarray
-    perturbations: jnp.ndarray
 
 
 class NormLike(Protocol):
-    """Interface for norm implementations"""
-
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray: ...
 
 
 class L2Norm:
-    """L2 norm"""
+    """L2 norm over the full perturbation field."""
 
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        x = x.squeeze()
-        return jnp.linalg.norm(x, ord=2)
+        return jnp.linalg.norm(x.ravel(), ord=2)
 
 
 class L1Norm:
@@ -48,20 +32,19 @@ class BreedingVector:
     """Generate bred perturbation vectors around one base state.
 
     Important:
-        'rescaling_interval' is interpreted as the number of raw model
+        'outer_steps_per_cycle' is interpreted as the number of raw model
         integration steps, not as the number of 'data_assimilation_steps'.
-            Thus I use 'forward_operator.one_step', instead of 'forward_operator(...)'
+            Thus I use 'forward_model.one_step', instead of 'forward_model(...)'
             (because that advances the state by 'model_integration_steps'
     """
 
     def __init__(
         self,
-        forward_operator: BaseForwardModel,
-        number_of_intervals: int,
-        rescaling_interval: int,
-        perturbation_amplitude: float,
-        norm: Optional[NormLike] = None,
-        compute_metrics: Optional[bool] = True,
+        forward_model: BaseForwardModel,
+        breeding_cycles: int,
+        outer_steps_per_cycle: int,
+        delta0: float,
+        norm_fct: Optional[NormLike] = None,
         min_norm: float = 1e-10,
     ) -> None:
         """
@@ -69,180 +52,222 @@ class BreedingVector:
 
         Inputs:
         -------
-        forward_operator: BaseForwardModel
+        forward_model: BaseForwardModel
             Model that is used to propagate the states forward
 
-        number_of_intervals: int
+        breeding_cycles: int
             Number of breeding-cycles
 
-        rescaling_interval: int
+        outer_steps_per_cycle: int
             Number of integration steps per interval (breeding-cycle).
-        --> Total Model Steps = number_of_intervals * rescaling_interval
+        --> Total Model Steps = breeding_cycles * outer_steps_per_cycle
 
-        perturbation_amplitude: float
+        delta0: float
             Determines scale of initally random noise as well as scale at every rescaling steps
 
         norm: NormLike
             Choose Norm of perturbation vector (default: L2-norm)
         """
         self.name = "breeding_vector"
-        self.forward_operator = forward_operator
-        self.number_of_intervals = number_of_intervals
-        self.rescaling_interval = rescaling_interval
-        self.perturbation_amplitude = perturbation_amplitude
-        self.norm = norm if norm is not None else L2Norm()
+        self.forward_model = forward_model
+        self.breeding_cycles = breeding_cycles
+        self.outer_steps_per_cycle = outer_steps_per_cycle
+        self.delta0 = delta0
+        self.norm_fct = norm_fct if norm_fct is not None else L2Norm()
         self.min_norm = min_norm
 
-        self.compute_metrics: bool = True
-        # --- Define method-maps that compute the norm per member and then for the entire ensemble
-        self._norm_ensemble = jax.vmap(self.norm, in_axes=0)
-        self._norm_member_trajectory = jax.vmap(self.norm, in_axes=0)
-        self._norm_ensemble_trajectory = jax.vmap(
-            self._norm_member_trajectory, in_axes=0
+        self.integration_steps = (
+            self.outer_steps_per_cycle * self.forward_model.model_integration_steps
         )
 
-        self._integrate_member = rollout(
-            self.forward_operator.one_step,
-            self.rescaling_interval,
-            return_model_integration_steps=self.compute_metrics,
-            include_initial_state=False,
-        )
-        self._integrate_ensemble = jax.vmap(self._integrate_member, in_axes=0)
+    def _singelton_ensemble_axis(self, x0_bg: jnp.ndarray) -> jnp.ndarray:
+        """Return base state that makes sure ensemble_member axis is leading!!"""
+        if x0_bg.ndim == 2:
+            return x0_bg[None, ...]  # [1, num_states, state_dim]
 
-    def _rescale_member(self, perturbation: jnp.ndarray) -> jnp.ndarray:
-        """Rescale one perturbation field to the configured amplitude"""
-        # --- 1) Calc. norm
-        norm = self.norm(perturbation.squeeze())
-        # --- 2) Return rescaled perturbation
-        return self.perturbation_amplitude * perturbation / norm
+        if x0_bg.ndim == 3 and x0_bg.shape[0] == 1:
+            return x0_bg
 
-    def _rescale_ensemble(self, perturbations: jnp.ndarray) -> jnp.ndarray:
-        """Rescale perturbations member by member.
-        Input:
-            perturbations: shape [ensemble_size, num_states, state_dim]
-        """
-        return jax.vmap(self._rescale_member, in_axes=0)(perturbations)
+        err_msg = f"x0_bg should of shape [num_states, state_dim] or [1, num_states, state_dim]. Got {x0_bg.shape}."
+        raise ValueError(err_msg)
 
-    def _growth_rate(self, norm_value: jnp.ndarray, elapsed_steps: int) -> jnp.ndarray:
-        elapsed_time = elapsed_steps * self.forward_operator.dt
-        return jnp.log(norm_value / self.perturbation_amplitude) / elapsed_time
+    def rescale_bv_perturbation(self, perturbation: jnp.ndarray) -> jnp.ndarray:
+        """Rescale one perturbation field to specified norm delta0."""
+        pert_norm = self.norm_fct(perturbation)
+        pert_norm = jnp.maximum(pert_norm, self.min_norm)
+        return self.delta0 * perturbation / pert_norm
 
-    def initial_perturbations(
+    def rescale_bv_ensemble(self, perturbations: jnp.ndarray) -> jnp.ndarray:
+        """Rescale every ensemble member independently"""
+        return jax.vmap(self.rescale_bv_perturbation, in_axes=0, out_axes=0)(
+            perturbations
+        )  # assumes shape: (ens_size, ....)
+
+    def initial_perturbation_ensemble(
         self,
+        rng_key: jax.Array,
         ensemble_size: int,
         state_shape: tuple[int, ...],
-        rng_key: Optional[jax.random.PRNGKey] = None,
     ) -> jnp.ndarray:
-        """Create normalized initial perturbation directions."""
-        raw = jax.random.normal(rng_key, (ensemble_size, *state_shape))
-        return self._rescale_ensemble(raw)
+        """Create member-wise independent initial perturbations."""
+        member_keys = jax.random.split(rng_key, ensemble_size)
 
-    def __call__(
-        self,
-        x0_bg: jnp.ndarray,
-        ensemble_size: int,
-        rng_key: Optional[jax.random.PRNGKey] = None,
-    ) -> jnp.ndarray:
-        """
-        Breed perturbations around one base state.
+        def sample_one_initial_perturbation(key: jax.Array) -> jnp.ndarray:
+            return jax.random.normal(key, state_shape)
 
-        Inputs:
-        -------
-            x0_bg: jnp.ndarray     Base state with shape [num_states, state_dim] or [1, num_states, state_dim]
-            ensemble_size: int  Number of bred perturbation vectors to generate.
-        Returns:
-        --------
-            Breeded perturbations (not full state!) with shape [ensemble_size, num_states, state_dim].
-        """
-
-        # --- 1) Define control and initial-pertrubation for all ensemble members
-        control = x0_bg
-        perturbations = self.initial_perturbations(
-            rng_key=rng_key, ensemble_size=ensemble_size, state_shape=x0_bg.shape
+        raw = jax.vmap(sample_one_initial_perturbation, in_axes=0, out_axes=0)(
+            member_keys
         )
 
-        if self.compute_metrics:
-            norm_during_window = []
-            growth_rate_during_window = []
-            norm_before_rescale = []
-            growth_rate_before_rescale = []
-            norm_after_rescale = []
-            growth_rate_after_rescale = []
-            perturbation_history = []
+        return self.rescale_bv_ensemble(raw)
 
-        # --- 2) Run Breeding Loop
-        for _ in tqdm(range(self.number_of_intervals), desc="Run Breeding"):
+    def forward_control_and_ensemble(
+        self,
+        x_ctrl0: jnp.ndarray,
+        bvp_t0: jnp.ndarray,
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
+        """
+        Run 1 control and ALL perturbed states
+        --> Fct changes shape of arrays !!!
+        Input:
+            x_ctrl0: (1, num_states, state_dim)
+            bvp_t0:  (ensemble_size, num_states, state_dim)
 
-            # -- 2.1) Concatenate Control + Ensemble-Members to a State-Array of shape: [1 + ensemble_size, num_states, state_dim]
-            states = jnp.concatenate(
-                [control[None, ...], control[None, ...] + perturbations], axis=0
+        Returns:
+            x_ctrl_traj: [1, time, num_states, state_dim]
+            x_pert_traj: [ensemble_size, time, num_states, state_dim]
+        """
+        x_pert0 = x_ctrl0 + bvp_t0
+
+        # One batched model integration. First member is control, remaining are ens-nembers!
+        x_all0 = jnp.concatenate([x_ctrl0, x_pert0], axis=0)
+
+        x_all_traj = self.forward_model.rollout(
+            x_all0, self.outer_steps_per_cycle, return_model_integration_steps=True
+        )
+
+        x_ctrl_traj = x_all_traj[:1]
+        x_pert_traj = x_all_traj[1:]
+
+        return x_ctrl_traj, x_pert_traj
+
+    def _growth_rate(self, perturb_norm: jnp.ndarray) -> jnp.ndarray:
+        """
+        Calcualte growth rate:
+             ∂ = ∂_0 * exp[Lambda * time]   ;  time=dt*steps
+        """
+        dt_bv = self.forward_model.dt
+        cycle_time = self.integration_steps * dt_bv
+        return (1 / cycle_time) * jnp.log(perturb_norm / self.delta0)
+
+    def compute_metrics(self, bvp_traj: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+        """Compute Metrics based on the BreedingVector evolution over the breeding-cycle"""
+
+        # -- Calculate Norm of perturbations for all steps
+        calc_bv_norm = jax.vmap(self.norm_fct, in_axes=1)
+        bvp_norm_traj = calc_bv_norm(bvp_traj)  # shape (number_steps,)
+
+        # -- Calculate Growth rate of perturbations over breeding-cycle
+        growth_rate_cycle = self._growth_rate(bvp_norm_traj[-1])
+
+        return bvp_norm_traj, growth_rate_cycle
+
+    def compute_ensemble_metrics(
+        self, bvp_traj: jnp.ndarray
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
+        """
+        Compute norms and growth rates for all ensemble members.
+
+        Input:
+            bvp_traj: [ensemble_size, time, num_states, state_dim]
+
+        Returns:
+            bvp_norm_traj:     [ensemble_size, time]
+            growth_rate_cycle: [ensemble_size]
+        """
+
+        # --- 1) Create map for one member trajectory: [time, num_states, state_dim] -> [time]
+        norm_one_member_traj = jax.vmap(self.norm_fct, in_axes=0, out_axes=0)
+        # --- For all members: [ensemble_size, time, num_states, state_dim] ->  [ensemble_size, time]
+        norm_all_members_traj = jax.vmap(norm_one_member_traj, in_axes=0, out_axes=0)(
+            bvp_traj
+        )
+
+        # --- 2) Compute growth-rate
+        growth_rate_cycle = self._growth_rate(norm_all_members_traj[:, -1])
+
+        return norm_all_members_traj, growth_rate_cycle
+
+    def sample_ensemble(
+        self,
+        x0_bg: jnp.ndarray,
+        rng_key: jax.Array,
+        ensemble_size: int,
+        return_metrics: bool = True,
+    ) -> jnp.ndarray | tuple[jnp.ndarray, dict[str, jnp.ndarray]]:
+        """
+        Create bred perturbations for full ensemble.
+
+        Returns:
+            bv_pert: [ensemble_size, num_states, state_dim] + Fields + Metric-dictionary
+        """
+
+        x_ctrl0 = self._singelton_ensemble_axis(x0_bg)
+        state_shape = tuple(x_ctrl0.shape[1:])
+
+        bvp_t0 = self.initial_perturbation_ensemble(
+            rng_key=rng_key,
+            ensemble_size=ensemble_size,
+            state_shape=state_shape,
+        )
+
+        # Store per-cycle arrays
+        bvp_norm_list = []
+        growth_rate_list = []
+        bv0_states_list = []
+        bv1_states_list = []
+
+        for _ in tqdm(range(self.breeding_cycles), desc="Run Breeding"):
+
+            # --- 1) Integrate Control- and Perturbed- State to over breeding cycle
+            x_ctrl_traj, x_pert_traj = self.forward_control_and_ensemble(
+                x_ctrl0=x_ctrl0, bvp_t0=bvp_t0
             )
 
-            # -- 2.2) Integrate State-Array over breeding interval (n-model)
-            advanced = self._integrate_ensemble(states)
+            # --- 2) Compute BV-perturbations over entire cycle
+            bvp_traj = x_pert_traj - x_ctrl_traj
+            ## BV-perturbation at last step of this breeding interval
+            bvp_t1 = bvp_traj[:, -1, ...]
 
-            # --- 2.3) Get perturbations and calculate the gorwth rate if desired?
-            if self.compute_metrics:
-                control_traj = advanced[0]
-                perturbed_traj = advanced[1:]
+            # --- 3) Optional: Store fields and metrics
+            if return_metrics:
+                bvp_norm, gr_cycle = self.compute_ensemble_metrics(bvp_traj)
+                bvp_norm_list.append(bvp_norm)
+                growth_rate_list.append(gr_cycle)
+                bv0_states_list.append(bvp_t0)
+                bv1_states_list.append(bvp_t1)
 
-                grown_traj = perturbed_traj - control_traj[None, ...]
-                grown_perturbations = grown_traj[
-                    :, -1, ...
-                ]  # [ensemble_size, num_states, state_dim]
+            # --- 4) Rescale perturbations and set them as new starting perturbations Also for control
+            bvp_t0 = self.rescale_bv_ensemble(bvp_t1)
+            x_ctrl0 = x_ctrl_traj[:, -1, ...]
 
-                norm_traj = self._norm_ensemble_trajectory(grown_traj)
+        ### --- Last rescaled BV-perturabtion -> This will be used for ensemble-generation
+        bv_pert = bvp_t0
 
-                # --- Calcualte growth rate: \delta = \delta_0 * exp[\Lambda * time]   ;  time=dt*steps
-                delta0 = self.perturbation_amplitude
-                dt_bv = self.forward_operator.dt
-                elapsed_steps = jnp.arange(1, self.rescaling_interval + 1)
-                growth_rate_traj = (
-                    1 / (elapsed_steps[None, :] * dt_bv) * jnp.log(norm_traj / delta0)
-                )
+        if not return_metrics:
+            return bv_pert
 
-                control = control_traj[-1]
+        fields_metrics = {
+            "bv0_states": jnp.stack(
+                bv0_states_list, axis=0
+            ),  # [breeding_cycles, ensemble_size, num_states, state_dim]
+            "bv1_states": jnp.stack(
+                bv1_states_list, axis=0
+            ),  # [breeding_cycles, ensemble_size, num_states, state_dim]
+            "bvp_norm": jnp.concatenate(bvp_norm_list, axis=1),  # [ensemble_size, time]
+            "growth_rate": jnp.stack(
+                growth_rate_list, axis=0
+            ),  # [breeding_cycles, ensemble_size]
+        }
 
-                # --- Rescale perturbations
-                perturbations = self._rescale_ensemble(grown_perturbations)
-
-                norm_after = self._norm_ensemble(perturbations)
-                growth_rate_after = (
-                    1 / (self.rescaling_interval * dt_bv) * jnp.log(norm_after / delta0)
-                )
-
-                # --- Store metrics
-                norm_during_window.append(norm_traj.T)
-                growth_rate_during_window.append(growth_rate_traj.T)
-                norm_before_rescale.append(norm_traj[:, -1])
-                growth_rate_before_rescale.append(growth_rate_traj[:, -1])
-                norm_after_rescale.append(norm_after)
-                growth_rate_after_rescale.append(growth_rate_after)
-                perturbation_history.append(perturbations)
-
-            else:
-                control_next = advanced[0]
-                perturbed_next = advanced[1:]
-
-                grown_perturbations = perturbed_next - control_next[None, ...]
-                control = control_next
-
-                # --- Rescale perturbations
-                perturbations = self._rescale_ensemble(grown_perturbations)
-
-        if self.compute_metrics:
-            diagnostics = BreedingDiagnostics(
-                norm_during_window=jnp.stack(norm_during_window, axis=0),
-                growth_rate_during_window=jnp.stack(growth_rate_during_window, axis=0),
-                norm_before_rescale=jnp.stack(norm_before_rescale, axis=0),
-                growth_rate_before_rescale=jnp.stack(
-                    growth_rate_before_rescale, axis=0
-                ),
-                norm_after_rescale=jnp.stack(norm_after_rescale, axis=0),
-                growth_rate_after_rescale=jnp.stack(growth_rate_after_rescale, axis=0),
-                perturbations=jnp.stack(perturbation_history, axis=0),
-            )
-
-            return perturbations, diagnostics
-        else:
-            return perturbations
+        return bv_pert, fields_metrics

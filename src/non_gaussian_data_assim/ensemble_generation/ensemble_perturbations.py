@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 
 from non_gaussian_data_assim.ensemble_generation.breeding_vector import (
     BreedingVector,
@@ -21,7 +20,7 @@ class BasePerturbation(ABC):
 
     @abstractmethod
     def sample(
-        self, rng_key: jax.Array, ensemble_size: int, x0_bg: np.ndarray
+        self, rng_key: jax.Array, ensemble_size: int, x0_bg: jnp.ndarray
     ) -> jnp.ndarray:
         """Return perturbations of shape [ensemble_size, num_states, state_dim].
 
@@ -68,7 +67,7 @@ class RedNoise(BasePerturbation):
         self.alpha = alpha
 
     def sample(
-        self, rng_key: jax.Array, ensemble_size: int, x0_bg: np.ndarray
+        self, rng_key: jax.Array, ensemble_size: int, x0_bg: jnp.ndarray
     ) -> jnp.ndarray:
         """Create RedNoise"""
 
@@ -107,29 +106,40 @@ class BreedingPerturbation(BasePerturbation):
 
     def __init__(
         self,
-        forward_operator: BaseForwardModel,
+        forward_model: BaseForwardModel,
         num_states: int,
         state_dim: int,
-        perturbation_amplitude: float,
-        number_of_intervals: int,
-        rescaling_interval: int,
-        compute_metrics: bool,
-        norm: NormLike | None = None,
+        delta0: float,
+        breeding_cycles: int,
+        outer_steps_per_cycle: int,
+        norm_fct: NormLike | None = None,
+        min_norm: float = 1e-10,
     ) -> None:
         super().__init__(
-            name="breeding_vector", num_states=num_states, state_dim=state_dim
+            name="breeding_vector",
+            num_states=num_states,
+            state_dim=state_dim,
         )
+
         self.breeder = BreedingVector(
-            forward_operator=forward_operator,
-            number_of_intervals=number_of_intervals,
-            rescaling_interval=rescaling_interval,
-            perturbation_amplitude=perturbation_amplitude,
-            norm=norm,
-            compute_metrics=compute_metrics,
+            forward_model=forward_model,
+            breeding_cycles=breeding_cycles,
+            outer_steps_per_cycle=outer_steps_per_cycle,
+            delta0=delta0,
+            norm_fct=norm_fct,
+            min_norm=min_norm,
         )
 
     def sample(
-        self, rng_key: jax.Array, ensemble_size: int, x0_bg: np.ndarray
+        self,
+        rng_key: jax.Array,
+        ensemble_size: int,
+        x0_bg: jnp.ndarray,
     ) -> jnp.ndarray:
-        """Return bred perturbations"""
-        return self.breeder(x0_bg=x0_bg, rng_key=rng_key, ensemble_size=ensemble_size)
+        """Return bred perturbations with shape [ensemble_size, num_states, state_dim]."""
+        return self.breeder.sample_ensemble(
+            x0_bg=x0_bg,
+            rng_key=rng_key,
+            ensemble_size=ensemble_size,
+            return_metrics=True,
+        )

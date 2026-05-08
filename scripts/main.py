@@ -47,11 +47,6 @@ def main(cfg: DictConfig) -> None:
         cfg.da_method, cfg.case.da_method_overrides[cfg.da_method.name]
     )
 
-    # TODO
-    # Settings for Ensembel Generation (ensgen) --> add-perturbatiomns-to-best-guess
-    # rationale: Bool-flag, if true, ensemble is created by adding perts to best-guess reference state, else perturb fields are ensemble members directly
-    # add_perturbs_to_bg: bool = cfg.case.ensemble_generation.add_perturbs_to_bg
-
     rng_key = jax.random.PRNGKey(cfg.seed)
 
     # Forward model and observation operator.
@@ -148,15 +143,11 @@ def main(cfg: DictConfig) -> None:
     predicted_obs = []
 
     # Rollout the prior ensemble for comparison.
-
-    print(f"TETS shape ref {reference_ensemble.shape}")
-
     reference_ensemble = forward_model.rollout(
         reference_ensemble,
         cfg.data_assimilation_steps,
         return_model_integration_steps=True,
     )
-    print("TETS2")
 
     # Run the DA loop.
     logger.info(f"Running DA loop for {cfg.data_assimilation_steps} steps")
