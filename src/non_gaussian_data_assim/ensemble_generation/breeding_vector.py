@@ -3,7 +3,7 @@ from typing import Optional, Protocol
 
 import jax
 import jax.numpy as jnp
-import tqdm
+from tqdm import tqdm
 
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 from non_gaussian_data_assim.time_integrators import rollout
@@ -30,6 +30,7 @@ class L2Norm:
     """L2 norm"""
 
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+        x = x.squeeze()
         return jnp.linalg.norm(x, ord=2)
 
 
@@ -111,7 +112,7 @@ class BreedingVector:
     def _rescale_member(self, perturbation: jnp.ndarray) -> jnp.ndarray:
         """Rescale one perturbation field to the configured amplitude"""
         # --- 1) Calc. norm
-        norm = self.norm(perturbation)
+        norm = self.norm(perturbation.squeeze())
         # --- 2) Return rescaled perturbation
         return self.perturbation_amplitude * perturbation / norm
 
@@ -170,12 +171,13 @@ class BreedingVector:
             perturbation_history = []
 
         # --- 2) Run Breeding Loop
-        for _ in tqdm(range(self.number_of_intervals), desc="b"):
+        for _ in tqdm(range(self.number_of_intervals), desc="Run Breeding"):
 
             # -- 2.1) Concatenate Control + Ensemble-Members to a State-Array of shape: [1 + ensemble_size, num_states, state_dim]
             states = jnp.concatenate(
                 [control[None, ...], control[None, ...] + perturbations], axis=0
             )
+
             # -- 2.2) Integrate State-Array over breeding interval (n-model)
             advanced = self._integrate_ensemble(states)
 

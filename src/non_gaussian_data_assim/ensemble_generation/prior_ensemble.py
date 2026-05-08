@@ -90,6 +90,13 @@ class PriorEnsemble:
             ensemble_perturbations = self.noise.sample(
                 rng_key=key, ensemble_size=ensemble_size, x0_bg=x0_bg
             )
+
+            if isinstance(ensemble_perturbations, tuple):
+                ensemble_perturbations, diagnostics = (
+                    ensemble_perturbations[0],
+                    ensemble_perturbations[1],
+                )
+
             # --- Finial Ensemble = Prior + Perturbations
             prior_ensemble = profile_bg + ensemble_perturbations
 
