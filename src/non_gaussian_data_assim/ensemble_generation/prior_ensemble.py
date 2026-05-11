@@ -83,7 +83,11 @@ class PriorEnsemble:
 
         if self.noise is None:
             # raise ValueError("Missing a noise perturbation method")
-            prior_ensemble = example_ensemble
+            # prior_ensemble = example_ensemble
+            prior_ensemble = self.profile.sample(
+                rng_key=key, ensemble_size=ensemble_size
+            )
+
         else:
             rng_key, key = jax.random.split(rng_key)
             # --- Sample Ensemble Perturbations!

@@ -63,7 +63,9 @@ case:
       domain_length: ${case.domain_length}
       decorrelation_length: 10.0
       scale: 1.0
+
     noise: null
+
     periodic: false
 
   plotter:

@@ -4,6 +4,7 @@ model_integration_steps: 5
 ensemble_size: 60
 inflation_factor: 1.1
 localization_distance: 10
+spinup_steps: 25 # spinup run for spinup_steps * model_integration_steps
 
 case:
   name: lorenz_96
@@ -42,6 +43,7 @@ case:
 
   prior_ensemble:
     _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
+
     profile:
       _target_: non_gaussian_data_assim.initial_profiles.ConstantProfile
       num_states: ${case.num_states}
