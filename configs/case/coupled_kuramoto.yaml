@@ -1,7 +1,7 @@
 # @package _global_
-data_assimilation_steps: 175
+data_assimilation_steps: 100
 model_integration_steps: 32
-ensemble_size: 100
+ensemble_size: 50
 inflation_factor: 1.0
 localization_distance: 10
 spinup_steps: 25 # spinup run for spinup_steps * model_integration_steps
@@ -54,8 +54,13 @@ case:
     noise: null
     periodic: false
 
+
+
+
   prior_ensemble:
     _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
+
+
     profile:
       _target_: non_gaussian_data_assim.initial_profiles.CoupledKuramotoPseudo1DProfile
       num_states: ${case.num_states}
@@ -66,7 +71,34 @@ case:
 
     noise: null
 
+
+    # profile:
+    #   _target_: non_gaussian_data_assim.initial_profiles.ConstantProfile
+    #   num_states: ${case.num_states}
+    #   state_dim: ${case.state_dim}
+    #   value: 0.0
+
+    # noise:
+    #   # --- Breeding
+    #   _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation
+    #   num_states: ${case.num_states}
+    #   state_dim: ${case.state_dim}
+    #   forward_model: ${case.forward_model}
+    #   delta0: 5.0
+    #   breeding_cycles: 10
+    #   outer_steps_per_cycle: 4
+
+
+
+
     periodic: false
+
+
+
+
+
+
+
 
   plotter:
     _target_: non_gaussian_data_assim.plotting.plot_multi_state_high_dim_field
