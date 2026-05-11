@@ -71,13 +71,13 @@ def main(cfg: DictConfig) -> None:
             spinup_steps=cfg.spinup_steps,
         )
 
-    # --- Best-Guess Profile by perturbing (spun-up) truth
+    # ----------- BEST-GUESS: Reference state for ensemble members --> determines how difficulat assimilation task will be
     rng_key, bg_key = jax.random.split(rng_key)
     perturbs_best_guess = true_initial_state_profile.sample(
         rng_key=bg_key, ensemble_size=1
     )
-    best_guess = true_sol + perturbs_best_guess / 10
     # NOTE: Just a design choice to add noise of with 10% scale compared to sclae of I.C. of truth
+    best_guess = true_sol + perturbs_best_guess / 10
     # NOTE: Maybe 'better' way is to take some 'climatological' scale --> E.g. Bulk variance of spin-up
 
     # Rollout the truth.

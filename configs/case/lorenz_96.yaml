@@ -1,8 +1,8 @@
 # @package _global_
-data_assimilation_steps: 50
-model_integration_steps: 2
-ensemble_size: 10
-inflation_factor: 1.2
+data_assimilation_steps: 25
+model_integration_steps: 5
+ensemble_size: 60
+inflation_factor: 1.1
 localization_distance: 10
 
 case:
@@ -48,30 +48,29 @@ case:
       state_dim: ${case.state_dim}
       value: 0.0
 
-    # # --- Breeding
-    # noise:
-    #   _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation
-    #   num_states: ${case.num_states}
-    #   state_dim: ${case.state_dim}
-    #   forward_model: ${case.forward_model}
-    #   delta0: 1.0
-    #   breeding_cycles: 10
-    #   outer_steps_per_cycle: 4
 
-    # # --- RedNoise ---
-    # noise:
-    #   _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise
-    #   num_states: ${case.num_states}
-    #   state_dim: ${case.state_dim}
-    #   scale: 1.0
-    #   alpha: 1.0
-
-    # --- WhiteNoise ---
     noise:
-      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.WhiteNoise
+      # --- Breeding
+      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
-      scale: 10.0
+      forward_model: ${case.forward_model}
+      delta0: 5.0
+      breeding_cycles: 10
+      outer_steps_per_cycle: 4
+
+      # # --- RedNoise ---
+      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise
+      # num_states: ${case.num_states}
+      # state_dim: ${case.state_dim}
+      # scale: 1.0
+      # alpha: 1.0
+
+      # # --- WhiteNoise ---
+      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.WhiteNoise
+      # num_states: ${case.num_states}
+      # state_dim: ${case.state_dim}
+      # scale: 10.0
 
 
     periodic: true
