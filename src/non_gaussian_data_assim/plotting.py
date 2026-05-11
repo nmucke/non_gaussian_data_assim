@@ -301,3 +301,14 @@ def plot_multi_state_high_dim_field(
             data_assimilation_steps=data_assimilation_steps,
             model_integration_steps=model_integration_steps,
         )
+
+
+# def plot_starting_conditions(
+#     *,
+#     true_sol: jnp.ndarray,
+#     ic: jnp.ndarray,
+#     prior_ensemble: jnp.ndarray,
+#     best_guess: Optional[jnp.ndarray] = None,
+#     ic_spinup: Optional[jnp.ndarray] = None,
+# ) -> tuple[plt.Figure, plt.Axes]:
+#     pass

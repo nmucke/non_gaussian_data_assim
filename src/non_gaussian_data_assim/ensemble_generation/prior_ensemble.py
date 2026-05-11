@@ -62,6 +62,9 @@ class PriorEnsemble:
         """
         rng_key, key = jax.random.split(rng_key)
 
+        # --- Set flag to output diagnostics to false ---> will be set true in case of breeding diagnostics are requested
+        ensgen_diagnostics = False
+
         ## BUG? In case no profile is passed, make a constant one
         if self.profile is None:
             print(
@@ -95,7 +98,9 @@ class PriorEnsemble:
                 rng_key=key, ensemble_size=ensemble_size, x0_bg=x0_bg
             )
 
+            # --- Catch case: Breeding might return additional metrics
             if isinstance(ensemble_perturbations, tuple):
+                ensgen_diagnostics = True
                 ensemble_perturbations, diagnostics = (
                     ensemble_perturbations[0],
                     ensemble_perturbations[1],
@@ -107,4 +112,7 @@ class PriorEnsemble:
         if self.periodic:
             prior_ensemble = prior_ensemble.at[..., -1].set(prior_ensemble[..., 0])
 
-        return prior_ensemble
+        if ensgen_diagnostics:
+            return prior_ensemble, diagnostics
+        else:
+            return prior_ensemble

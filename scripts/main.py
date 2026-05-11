@@ -61,15 +61,18 @@ def main(cfg: DictConfig) -> None:
     true_initial_state_profile = instantiate(true_initial_state_cfg)
     logger.info(f"Initial state: {true_initial_state_profile}")
     rng_key, key = jax.random.split(rng_key)
-    true_sol = true_initial_state_profile.sample(rng_key=key, ensemble_size=1)
 
+    ic_ref = true_initial_state_profile.sample(rng_key=key, ensemble_size=1)
     # Spin-Up truth Run (optional)
     if cfg.spinup_steps:
+        print("SPINUO")
         true_sol = spinup_ensemble(
-            ensemble=true_sol,
+            ensemble=ic_ref,
             forward_model=forward_model,
             spinup_steps=cfg.spinup_steps,
         )
+    else:
+        true_sol = ic_ref
 
     # ----------- BEST-GUESS: Reference state for ensemble members --> determines how difficulat assimilation task will be
     rng_key, bg_key = jax.random.split(rng_key)
@@ -114,9 +117,14 @@ def main(cfg: DictConfig) -> None:
     prior_ensemble_generator = instantiate(prior_ensemble_cfg)
     logger.info(f"Prior ensemble: {prior_ensemble_generator}")
     rng_key, key = jax.random.split(rng_key)
-    reference_ensemble = prior_ensemble_generator.sample(
+    output = prior_ensemble_generator.sample(
         rng_key=key, ensemble_size=cfg.ensemble_size, profile_bg=best_guess
     )
+    # --- Breeding might return additional diagnostics --> catch that case
+    if isinstance(output, tuple):
+        reference_ensemble, ensgen_diagnostics = output
+    else:
+        reference_ensemble = output
 
     # !!!!!!!!
     # # NOTE: Not necessary?? --> Since we use spun-up version of truth as best-guess
@@ -240,6 +248,7 @@ def main(cfg: DictConfig) -> None:
         model_integration_steps=cfg.model_integration_steps,
     )
 
+    # --- Plot Innovations Diagnostics and Skill-Scores
     fig, axs = plot_da_diagnostics(
         z=innovation_metrics["z"],
         chi_sq=innovation_metrics["chi_sq_time"],
@@ -249,6 +258,8 @@ def main(cfg: DictConfig) -> None:
         bins=51,
         show_fig=True,
     )
+
+    # --- Plot Initial-Conditions (I.C, best-guess, Initial-Ensemble) + Breeding statitcs if available
 
 
 if __name__ == "__main__":

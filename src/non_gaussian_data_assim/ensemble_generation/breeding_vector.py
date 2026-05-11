@@ -259,15 +259,15 @@ class BreedingVector:
 
         fields_metrics = {
             "bv0_states": jnp.stack(
-                bv0_states_list, axis=0
-            ),  # [breeding_cycles, ensemble_size, num_states, state_dim]
+                bv0_states_list, axis=1
+            ),  # [ensemble_size, breeding_cycles, num_states, state_dim]
             "bv1_states": jnp.stack(
-                bv1_states_list, axis=0
-            ),  # [breeding_cycles, ensemble_size, num_states, state_dim]
+                bv1_states_list, axis=1
+            ),  # [ensemble_size, breeding_cycles, num_states, state_dim]
             "bvp_norm": jnp.concatenate(bvp_norm_list, axis=1),  # [ensemble_size, time]
             "growth_rate": jnp.stack(
-                growth_rate_list, axis=0
-            ),  # [breeding_cycles, ensemble_size]
+                growth_rate_list, axis=1
+            ),  # [ensemble_size, breeding_cycles]
         }
 
         return bv_pert, fields_metrics
