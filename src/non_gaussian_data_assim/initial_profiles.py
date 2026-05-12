@@ -38,6 +38,28 @@ class ConstantProfile(BaseProfile):
         return jnp.full((ensemble_size, self.num_states, self.state_dim), self.value)
 
 
+class WhiteNoiseProfile(BaseProfile):
+    """Profile that returns a random, uncorellated initial state."""
+
+    def __init__(
+        self,
+        num_states: int,
+        state_dim: int,
+        scale: float,
+        periodic: bool,
+    ) -> None:
+        super().__init__(name="white_noise", num_states=num_states, state_dim=state_dim)
+        self.scale = scale
+        self.periodic = periodic
+
+    def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
+        shape = (ensemble_size, self.num_states, self.state_dim)
+        ic = jax.random.normal(rng_key, shape) * self.scale
+        if self.periodic:
+            ic = ic.at[..., -1].set(ic[..., 0])
+        return ic
+
+
 class CosineProfile(BaseProfile):
     """Two-mode cosine profile.
 

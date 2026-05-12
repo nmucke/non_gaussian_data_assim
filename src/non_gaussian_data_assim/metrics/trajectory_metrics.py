@@ -133,3 +133,11 @@ def print_metrics_table(
                 f"{metric.upper():<10} | {reference_val:{col_w}.6f} | {posterior_val:{col_w}.6f}"
             )
     print(sep)
+
+
+def ensemble_spread(posterior_ensemble: jnp.ndarray, state_dim: int = 0) -> jnp.ndarray:
+    """Compute spatially averaged ensemble spread over time"""
+    posterior_ensemble = posterior_ensemble[:, :, state_dim, :]
+    spatial_mean_var = jnp.mean(jnp.var(posterior_ensemble, axis=0, ddof=1), axis=1)
+    spread_time_series = jnp.sqrt(spatial_mean_var)
+    return spread_time_series

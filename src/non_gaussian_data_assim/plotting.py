@@ -175,6 +175,7 @@ def plot_da_diagnostics(
     chi_sq_mean: float,
     crps_time: jnp.ndarray,
     rmse_time: jnp.ndarray,
+    spread_time: jnp.ndarray,
     bins: int = 51,
     hist_range: None | tuple[float, float] = None,
     show_fig: bool = False,
@@ -244,12 +245,21 @@ def plot_da_diagnostics(
 
     # --- Panel C: posterior skill metrics
     steps_post = np.arange(len(crps_time))
-    ax_scores.plot(steps_post, crps_time, linewidth=2, label="CRPS")
-    ax_scores.plot(steps_post, rmse_time, linewidth=2, label="RMSE")
+    ax_scores.plot(steps_post, crps_time, linewidth=2, label="CRPS", color="tab:blue")
+    ax_scores.plot(steps_post, rmse_time, linewidth=2, label="RMSE", color="tab:orange")
+    ax_scores.plot(
+        steps_post,
+        spread_time,
+        linewidth=5,
+        label="Ens.Spread",
+        color="tab:orange",
+        alpha=0.3,
+    )
     ax_scores.set_xlabel("Model time-step")
     ax_scores.set_ylabel("Score")
     ax_scores.legend(frameon=False)
     ax_scores.grid(alpha=0.25)
+    ax_scores.set_ylim(0, None)
 
     # --- Panel D
     ax_reserved.axis("off")
@@ -301,3 +311,14 @@ def plot_multi_state_high_dim_field(
             data_assimilation_steps=data_assimilation_steps,
             model_integration_steps=model_integration_steps,
         )
+
+
+# def plot_starting_conditions(
+#     *,
+#     true_sol: jnp.ndarray,
+#     ic: jnp.ndarray,
+#     prior_ensemble: jnp.ndarray,
+#     best_guess: Optional[jnp.ndarray] = None,
+#     ic_spinup: Optional[jnp.ndarray] = None,
+# ) -> tuple[plt.Figure, plt.Axes]:
+#     pass

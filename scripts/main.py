@@ -25,6 +25,7 @@ from non_gaussian_data_assim.metrics.trajectory_metrics import (
     MAE,
     MAPE,
     RMSE,
+    ensemble_spread,
     print_metrics_table,
 )
 from non_gaussian_data_assim.observations.observation_utils import generate_observations
@@ -47,11 +48,6 @@ def main(cfg: DictConfig) -> None:
         cfg.da_method, cfg.case.da_method_overrides[cfg.da_method.name]
     )
 
-    # TODO
-    # Settings for Ensembel Generation (ensgen) --> add-perturbatiomns-to-best-guess
-    # rationale: Bool-flag, if true, ensemble is created by adding perts to best-guess reference state, else perturb fields are ensemble members directly
-    # add_perturbs_to_bg: bool = cfg.case.ensemble_generation.add_perturbs_to_bg
-
     rng_key = jax.random.PRNGKey(cfg.seed)
 
     # Forward model and observation operator.
@@ -66,18 +62,27 @@ def main(cfg: DictConfig) -> None:
     true_initial_state_profile = instantiate(true_initial_state_cfg)
     logger.info(f"Initial state: {true_initial_state_profile}")
     rng_key, key = jax.random.split(rng_key)
-    true_sol = true_initial_state_profile.sample(rng_key=key, ensemble_size=1)
 
-    # TODO
-    # # Create an inital best-guess field (different sample from same distri. as ground-truth)
-    # X0_bg = initial_state_fn(rng_key=key_bg) if add_perturbs_to_bg else None
-
+    ic_ref = true_initial_state_profile.sample(rng_key=key, ensemble_size=1)
+    # Spin-Up truth Run (optional)
     if cfg.spinup_steps:
+        print("SPINUO")
         true_sol = spinup_ensemble(
-            ensemble=true_sol,
+            ensemble=ic_ref,
             forward_model=forward_model,
             spinup_steps=cfg.spinup_steps,
         )
+    else:
+        true_sol = ic_ref
+
+    # ----------- BEST-GUESS: Reference state for ensemble members --> determines how difficulat assimilation task will be
+    rng_key, bg_key = jax.random.split(rng_key)
+    perturbs_best_guess = true_initial_state_profile.sample(
+        rng_key=bg_key, ensemble_size=1
+    )
+    # NOTE: Just a design choice to add noise of with 10% scale compared to sclae of I.C. of truth
+    best_guess = true_sol + perturbs_best_guess / 10
+    # NOTE: Maybe 'better' way is to take some 'climatological' scale --> E.g. Bulk variance of spin-up
 
     # Rollout the truth.
     true_sol = forward_model.rollout(
@@ -113,11 +118,18 @@ def main(cfg: DictConfig) -> None:
     prior_ensemble_generator = instantiate(prior_ensemble_cfg)
     logger.info(f"Prior ensemble: {prior_ensemble_generator}")
     rng_key, key = jax.random.split(rng_key)
-    reference_ensemble = prior_ensemble_generator.sample(
-        rng_key=key, ensemble_size=cfg.ensemble_size
+    output = prior_ensemble_generator.sample(
+        rng_key=key, ensemble_size=cfg.ensemble_size, profile_bg=best_guess
     )
+    # --- Breeding might return additional diagnostics --> catch that case
+    if isinstance(output, tuple):
+        reference_ensemble, ensgen_diagnostics = output
+    else:
+        reference_ensemble = output
 
-    if cfg.spinup_steps:
+    # !!!!!!!!
+    use_best_guess = True  # TODO this has to be a setting in the yml files!
+    if cfg.spinup_steps and not use_best_guess:
         reference_ensemble = spinup_ensemble(
             ensemble=reference_ensemble,
             forward_model=forward_model,
@@ -163,13 +175,10 @@ def main(cfg: DictConfig) -> None:
             print(f"NaN in posterior_next at time {i}")
             break
 
-        # ------------- Store Prior ensemble in observation space -----------
-        # Shape:
-        #   prior_current.reshape(K, -1).T -> (state_dim_flat, EnsSize)
-        #   H                              -> (N_obs, state_dim_flat)
-        #   HXf                            -> (EnsSize, N_obs)
-        HXf = da_model.obs_operator(prior_current)
-        predicted_obs.append(HXf)  # shape: (EnsSize, N_obs)
+        # ------------Track:  Prior ensemble (in obs space)    -----------
+        if cfg.da_method["name"] == "enkf":
+            HXf = da_model.obs_operator(prior_current)  # shape: (EnsSize, N_obs)
+            predicted_obs.append(HXf)
         # -----------------------------------------------------------------
 
         # Concatenate prior (1time-step) and posterior (2 time-steps) and innovations
@@ -179,10 +188,6 @@ def main(cfg: DictConfig) -> None:
         posterior_ensemble = jnp.concatenate(
             [posterior_ensemble, posterior_next], axis=1
         )
-
-    predicted_obs = jnp.stack(
-        predicted_obs, axis=0
-    )  # shape: (Assim-Step, N_obs, EnsSize)
 
     logger.info(f"Finished DA loop")
 
@@ -203,6 +208,7 @@ def main(cfg: DictConfig) -> None:
         "mape": mape(reference_ensemble, true_sol[0]),
         "crps": crps(reference_ensemble, true_sol[0]),
         "rmse_time": rmse_time(reference_ensemble, true_sol[0]),
+        "spread_time": ensemble_spread(reference_ensemble),
         "crps_time": crps_time(reference_ensemble, true_sol[0]),
     }
     posterior_metrics = {
@@ -211,14 +217,27 @@ def main(cfg: DictConfig) -> None:
         "mape": mape(posterior_ensemble, true_sol[0]),
         "crps": crps(posterior_ensemble, true_sol[0]),
         "rmse_time": rmse_time(posterior_ensemble, true_sol[0]),
+        "spread_time": ensemble_spread(posterior_ensemble),
         "crps_time": crps_time(posterior_ensemble, true_sol[0]),
     }
 
-    innovation_metrics = {
-        "chi_sq_mean": chi2_mean(predicted_obs=predicted_obs, obs=observations, R=R),
-        "chi_sq_time": chi2_time(predicted_obs=predicted_obs, obs=observations, R=R),
-        "z": innov_white(predicted_obs=predicted_obs, obs=observations, R=R),
-    }
+    if cfg.da_method["name"] == "enkf":
+
+        predicted_obs = jnp.stack(
+            predicted_obs, axis=0
+        )  # shape: (Assim-Step, N_obs, EnsSize)
+
+        innovation_metrics = {
+            "chi_sq_mean": chi2_mean(
+                predicted_obs=predicted_obs, obs=observations, R=R
+            ),
+            "chi_sq_time": chi2_time(
+                predicted_obs=predicted_obs, obs=observations, R=R
+            ),
+            "z": innov_white(predicted_obs=predicted_obs, obs=observations, R=R),
+        }
+    else:
+        innovation_metrics = {}
 
     print_metrics_table(
         reference_metrics, posterior_metrics, title=f"{cfg.case.title} Metrics"
@@ -241,15 +260,20 @@ def main(cfg: DictConfig) -> None:
         model_integration_steps=cfg.model_integration_steps,
     )
 
-    fig, axs = plot_da_diagnostics(
-        z=innovation_metrics["z"],
-        chi_sq=innovation_metrics["chi_sq_time"],
-        chi_sq_mean=innovation_metrics["chi_sq_mean"],
-        crps_time=posterior_metrics["crps_time"],
-        rmse_time=posterior_metrics["rmse_time"],
-        bins=51,
-        show_fig=True,
-    )
+    # --- Plot Innovations Diagnostics and Skill-Scores
+    if cfg.da_method["name"] == "enkf":
+        fig, axs = plot_da_diagnostics(
+            z=innovation_metrics.get("z", None),
+            chi_sq=innovation_metrics.get("chi_sq_time", None),
+            chi_sq_mean=innovation_metrics.get("chi_sq_mean", None),
+            crps_time=posterior_metrics["crps_time"],
+            rmse_time=posterior_metrics["rmse_time"],
+            spread_time=posterior_metrics["spread_time"],
+            bins=51,
+            show_fig=True,
+        )
+
+    # --- Plot Initial-Conditions (I.C, best-guess, Initial-Ensemble) + Breeding statitcs if available
 
 
 if __name__ == "__main__":

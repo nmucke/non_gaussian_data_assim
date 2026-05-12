@@ -1,8 +1,9 @@
 # @package _global_
-data_assimilation_steps: 100
-model_integration_steps: 50
+data_assimilation_steps: 50
+model_integration_steps: 5
 ensemble_size: 100
 inflation_factor: 1.0
+spinup_steps: 100
 
 case:
   name: lorenz_63
@@ -32,61 +33,51 @@ case:
   true_initial_state:
     _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
     profile:
-      _target_: non_gaussian_data_assim.initial_profiles.ConstantProfile
+      _target_: non_gaussian_data_assim.initial_profiles.WhiteNoiseProfile
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
-      value: 2.0
-    noise:
-      _target_: non_gaussian_data_assim.ensemble_generation.random_noise.WhiteNoise
-      num_states: ${case.num_states}
-      state_dim: ${case.state_dim}
-      scale: 10.0
-    periodic: false
+      scale: 10
+      periodic: true
+
 
   prior_ensemble:
     _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
+
     profile:
       _target_: non_gaussian_data_assim.initial_profiles.ConstantProfile
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
       value: 0.0
+
+
     noise:
-      _target_: non_gaussian_data_assim.ensemble_generation.random_noise.WhiteNoise
+      # # --- Breeding
+      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation
+      # num_states: ${case.num_states}
+      # state_dim: ${case.state_dim}
+      # forward_model: ${case.forward_model}
+      # delta0: 1
+      # breeding_cycles: 10
+      # outer_steps_per_cycle: 4
+
+      # # --- RedNoise ---
+      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise
+      # num_states: ${case.num_states}
+      # state_dim: ${case.state_dim}
+      # scale: 1.0
+      # alpha: 1.0
+
+      # --- WhiteNoise ---
+      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.WhiteNoise
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
       scale: 10.0
+
+
     periodic: false
 
 
-  # initial_state:
-  #   _target_: non_gaussian_data_assim.initial_conditions.random_noise_initial_state
-  #   _partial_: true
-  #   num_states: ${case.num_states}
-  #   state_dim: ${case.state_dim}
-  #   scale: 10.0
-  #   alpha: 0.0        # Does not matter for lorenz63, as there are no spatial-scales ---> Leave at 0
-  #   periodic: true
 
-
-
-  # prior_ensemble:
-  #   _target_: non_gaussian_data_assim.initial_conditions.random_noise_prior_ensemble
-  #   _partial_: true
-  #   num_states: ${case.num_states}
-  #   state_dim: ${case.state_dim}
-  #   scale: 10.0
-  #   alpha: 0.0          # Does not matter for lorenz63, as there are no spatial-scales ---> Leave at 0
-  #   periodic: true
-
-  #   # Not yet properly implemented!
-  #   X_bestguess: false  # If true, ensgen creates perturbations that are added
-                              # If false, ensgen creates the ensemble member's states directly
-
-    # # Only for breeding --> Not-implememented-yet
-    # breeding_cycles: 10
-    # breeding_cycle_steps: 5
-    # breeding_initial_perturbation_scale: ${prior_ensemble.scale}
-    # breeding_rescale_amplitude: ${case.scale}
 
 
 
