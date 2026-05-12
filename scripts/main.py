@@ -25,6 +25,7 @@ from non_gaussian_data_assim.metrics.trajectory_metrics import (
     MAE,
     MAPE,
     RMSE,
+    ensemble_spread,
     print_metrics_table,
 )
 from non_gaussian_data_assim.observations.observation_utils import generate_observations
@@ -175,8 +176,9 @@ def main(cfg: DictConfig) -> None:
             break
 
         # ------------Track:  Prior ensemble (in obs space)    -----------
-        HXf = da_model.obs_operator(prior_current)  # shape: (EnsSize, N_obs)
-        predicted_obs.append(HXf)
+        if cfg.da_method["name"] == "enkf":
+            HXf = da_model.obs_operator(prior_current)  # shape: (EnsSize, N_obs)
+            predicted_obs.append(HXf)
         # -----------------------------------------------------------------
 
         # Concatenate prior (1time-step) and posterior (2 time-steps) and innovations
@@ -187,9 +189,10 @@ def main(cfg: DictConfig) -> None:
             [posterior_ensemble, posterior_next], axis=1
         )
 
-    predicted_obs = jnp.stack(
-        predicted_obs, axis=0
-    )  # shape: (Assim-Step, N_obs, EnsSize)
+    if cfg.da_method["name"] == "enkf":
+        predicted_obs = jnp.stack(
+            predicted_obs, axis=0
+        )  # shape: (Assim-Step, N_obs, EnsSize)
 
     logger.info(f"Finished DA loop")
 
@@ -210,6 +213,7 @@ def main(cfg: DictConfig) -> None:
         "mape": mape(reference_ensemble, true_sol[0]),
         "crps": crps(reference_ensemble, true_sol[0]),
         "rmse_time": rmse_time(reference_ensemble, true_sol[0]),
+        "spread_time": ensemble_spread(reference_ensemble),
         "crps_time": crps_time(reference_ensemble, true_sol[0]),
     }
     posterior_metrics = {
@@ -218,14 +222,22 @@ def main(cfg: DictConfig) -> None:
         "mape": mape(posterior_ensemble, true_sol[0]),
         "crps": crps(posterior_ensemble, true_sol[0]),
         "rmse_time": rmse_time(posterior_ensemble, true_sol[0]),
+        "spread_time": ensemble_spread(posterior_ensemble),
         "crps_time": crps_time(posterior_ensemble, true_sol[0]),
     }
 
-    innovation_metrics = {
-        "chi_sq_mean": chi2_mean(predicted_obs=predicted_obs, obs=observations, R=R),
-        "chi_sq_time": chi2_time(predicted_obs=predicted_obs, obs=observations, R=R),
-        "z": innov_white(predicted_obs=predicted_obs, obs=observations, R=R),
-    }
+    if cfg.da_method["name"] == "enkf":
+        innovation_metrics = {
+            "chi_sq_mean": chi2_mean(
+                predicted_obs=predicted_obs, obs=observations, R=R
+            ),
+            "chi_sq_time": chi2_time(
+                predicted_obs=predicted_obs, obs=observations, R=R
+            ),
+            "z": innov_white(predicted_obs=predicted_obs, obs=observations, R=R),
+        }
+    else:
+        innovation_metrics = {}
 
     print_metrics_table(
         reference_metrics, posterior_metrics, title=f"{cfg.case.title} Metrics"
@@ -249,15 +261,17 @@ def main(cfg: DictConfig) -> None:
     )
 
     # --- Plot Innovations Diagnostics and Skill-Scores
-    fig, axs = plot_da_diagnostics(
-        z=innovation_metrics["z"],
-        chi_sq=innovation_metrics["chi_sq_time"],
-        chi_sq_mean=innovation_metrics["chi_sq_mean"],
-        crps_time=posterior_metrics["crps_time"],
-        rmse_time=posterior_metrics["rmse_time"],
-        bins=51,
-        show_fig=True,
-    )
+    if cfg.da_method["name"] == "enkf":
+        fig, axs = plot_da_diagnostics(
+            z=innovation_metrics.get("z", None),
+            chi_sq=innovation_metrics.get("chi_sq_time", None),
+            chi_sq_mean=innovation_metrics.get("chi_sq_mean", None),
+            crps_time=posterior_metrics["crps_time"],
+            rmse_time=posterior_metrics["rmse_time"],
+            spread_time=posterior_metrics["spread_time"],
+            bins=51,
+            show_fig=True,
+        )
 
     # --- Plot Initial-Conditions (I.C, best-guess, Initial-Ensemble) + Breeding statitcs if available
 
