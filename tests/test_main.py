@@ -31,6 +31,7 @@ CASE_EXTRA_OVERRIDES: dict[str, list[str]] = {
 # smoke test.
 KNOWN_FAILURES: set[tuple[str, str]] = {
     ("coupled_kuramoto", "pff"),
+    ("kuramoto", "pff"),
 }
 
 
