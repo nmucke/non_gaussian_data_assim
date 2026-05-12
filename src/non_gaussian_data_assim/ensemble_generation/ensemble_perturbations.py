@@ -5,7 +5,7 @@ import jax.numpy as jnp
 
 from non_gaussian_data_assim.ensemble_generation.breeding_vector import (
     BreedingVector,
-    NormLike,
+    EnsembleNorm,
 )
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 
@@ -112,7 +112,7 @@ class BreedingPerturbation(BasePerturbation):
         delta0: float,
         breeding_cycles: int,
         outer_steps_per_cycle: int,
-        norm_fct: NormLike | None = None,
+        norm_fct: EnsembleNorm | None = None,
         min_norm: float = 1e-10,
     ) -> None:
         super().__init__(

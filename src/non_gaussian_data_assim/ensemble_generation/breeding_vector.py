@@ -1,4 +1,5 @@
-from typing import Optional, Protocol
+from abc import ABC, abstractmethod
+from typing import Optional
 
 import jax
 import jax.numpy as jnp
@@ -7,25 +8,47 @@ from tqdm import tqdm
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 
 
-class NormLike(Protocol):
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray: ...
+class EnsembleNorm(ABC):
+    """
+    Base class for norms applied member-wise over an ensemble.
+    Expected input shape:    x.shape == (n_members, ...)
 
+    Returns:
+        One norm value per ensemble member, shape (n_members,).
+    """
 
-class L2Norm:
-    """L2 norm over the full perturbation field."""
+    def __init__(self) -> None:
+        ensemble_norm = jax.vmap(self._compute_member_norm, in_axes=0, out_axes=0)
+        self._ensemble_norm = jax.jit(ensemble_norm)
+
+    @abstractmethod
+    def _compute_member_norm(self, x: jnp.ndarray) -> jnp.ndarray:
+        """Compute the norm for a single ensemble member."""
+        ...
 
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        return jnp.linalg.norm(x.ravel(), ord=2)
+        return self._ensemble_norm(x)
 
 
-class L1Norm:
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        return jnp.linalg.norm(x, ord=1)
+class L2Norm(EnsembleNorm):
+    """L2 norm over one perturbation field."""
+
+    def _compute_member_norm(self, x: jnp.ndarray) -> jnp.ndarray:
+        return jnp.linalg.norm(jnp.ravel(x), ord=2)
 
 
-class ChebyshevNorm:
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        return jnp.linalg.norm(x, ord=jnp.inf)
+class L1Norm(EnsembleNorm):
+    """L1 norm over one perturbation field."""
+
+    def _compute_member_norm(self, x: jnp.ndarray) -> jnp.ndarray:
+        return jnp.sum(jnp.abs(x))
+
+
+class ChebyshevNorm(EnsembleNorm):
+    """L-infinity norm over one perturbation field."""
+
+    def _compute_member_norm(self, x: jnp.ndarray) -> jnp.ndarray:
+        return jnp.max(jnp.abs(x))
 
 
 class BreedingVector:
@@ -44,7 +67,7 @@ class BreedingVector:
         breeding_cycles: int,
         outer_steps_per_cycle: int,
         delta0: float,
-        norm_fct: Optional[NormLike] = None,
+        norm_fct: Optional[EnsembleNorm] = None,
         min_norm: float = 1e-10,
     ) -> None:
         """
@@ -65,7 +88,7 @@ class BreedingVector:
         delta0: float
             Determines scale of initally random noise as well as scale at every rescaling steps
 
-        norm: NormLike
+        norm: EnsembleNorm
             Choose Norm of perturbation vector (default: L2-norm)
         """
         self.name = "breeding_vector"
@@ -109,7 +132,7 @@ class BreedingVector:
         ensemble_size: int,
         state_shape: tuple[int, ...],
     ) -> jnp.ndarray:
-        """Create member-wise independent initial perturbations."""
+        """Create member-wise independent initial perturbations. Using WhiteNoise"""
         member_keys = jax.random.split(rng_key, ensemble_size)
 
         def sample_one_initial_perturbation(key: jax.Array) -> jnp.ndarray:

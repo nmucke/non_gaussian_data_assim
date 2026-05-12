@@ -128,13 +128,13 @@ def main(cfg: DictConfig) -> None:
         reference_ensemble = output
 
     # !!!!!!!!
-    # # NOTE: Not necessary?? --> Since we use spun-up version of truth as best-guess
-    # if cfg.spinup_steps:
-    #     reference_ensemble = spinup_ensemble(
-    #         ensemble=reference_ensemble,
-    #         forward_model=forward_model,
-    #         spinup_steps=cfg.spinup_steps,
-    #     )
+    use_best_guess = True  # TODO this has to be a setting in the yml files!
+    if cfg.spinup_steps and not use_best_guess:
+        reference_ensemble = spinup_ensemble(
+            ensemble=reference_ensemble,
+            forward_model=forward_model,
+            spinup_steps=cfg.spinup_steps,
+        )
 
     # Initialize the posterior ensemble from the prior.
     posterior_ensemble = reference_ensemble.copy().reshape(
@@ -189,11 +189,6 @@ def main(cfg: DictConfig) -> None:
             [posterior_ensemble, posterior_next], axis=1
         )
 
-    if cfg.da_method["name"] == "enkf":
-        predicted_obs = jnp.stack(
-            predicted_obs, axis=0
-        )  # shape: (Assim-Step, N_obs, EnsSize)
-
     logger.info(f"Finished DA loop")
 
     # Metrics.
@@ -227,6 +222,11 @@ def main(cfg: DictConfig) -> None:
     }
 
     if cfg.da_method["name"] == "enkf":
+
+        predicted_obs = jnp.stack(
+            predicted_obs, axis=0
+        )  # shape: (Assim-Step, N_obs, EnsSize)
+
         innovation_metrics = {
             "chi_sq_mean": chi2_mean(
                 predicted_obs=predicted_obs, obs=observations, R=R
