@@ -280,6 +280,7 @@ class CoupledKuramotoPseudo1DPerturbation(BasePerturbation):
         state_dim: int,
         domain_length: float,
         decorrelation_length: float,
+        periodic: bool = False,
         scale: float = 1.0,
     ) -> None:
         super().__init__(
@@ -288,6 +289,7 @@ class CoupledKuramotoPseudo1DPerturbation(BasePerturbation):
         self.domain_length = domain_length
         self.decorrelation_length = decorrelation_length
         self.scale = scale
+        self.periodic = periodic
 
     def sample(
         self,

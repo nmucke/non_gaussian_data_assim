@@ -58,27 +58,27 @@ case:
 
   initial_ensemble:
     _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsemble
-    centered_around_bestguess: false
+    centered_around_bestguess: true
     periodic: false
 
     ens_perturbation:
 
-      # --- SmoothGaussianNoise
-      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.CoupledKuramotoPseudo1DPerturbation
-      num_states: ${case.num_states}
-      state_dim: ${case.state_dim}
-      domain_length: ${case.domain_length}
-      decorrelation_length: 10.0
-      scale: 1.0
-
-      # # --- Breeding
-      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation
+      # # --- SmoothGaussianNoise
+      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.CoupledKuramotoPseudo1DPerturbation
       # num_states: ${case.num_states}
       # state_dim: ${case.state_dim}
-      # forward_model: ${case.forward_model}
-      # delta0: 10.0
-      # breeding_cycles: 10
-      # outer_steps_per_cycle: 4
+      # domain_length: ${case.domain_length}
+      # decorrelation_length: 10.0
+      # scale: 1.0
+
+      # --- Breeding
+      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      forward_model: ${case.forward_model}
+      delta0: 10.0
+      breeding_cycles: 10
+      outer_steps_per_cycle: 4
 
       # # --- RedNoise ---
       # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise

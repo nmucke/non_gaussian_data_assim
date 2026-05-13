@@ -12,6 +12,7 @@ case:
   num_states: 1
   state_dim: 50
   obs_noise_variance: 0.25
+  domain_length: ${case.state_dim}
 
   forward_model:
     _target_: non_gaussian_data_assim.forward_models.lorenz_96.Lorenz96Model
@@ -33,31 +34,40 @@ case:
 
   true_initial_state:
     _target_: non_gaussian_data_assim.initial_profiles.WhiteNoiseProfile
+    # _target_: non_gaussian_data_assim.initial_profiles.CoupledKuramotoPseudo1DProfile
     num_states: ${case.num_states}
     state_dim: ${case.state_dim}
     periodic: true
     scale: 10.0
 
     # # CoupledKuramotoPseudo1DProfile --> Additionaly required
-    # domain_length: ${case.domain_length}
-    # decorrelation_length: 10.0
+    domain_length: ${case.domain_length}
+    decorrelation_length: 10.0
 
 
   initial_ensemble:
     _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsemble
-    centered_around_bestguess: true
-    periodic: true
+    centered_around_bestguess: false
+    periodic: false
 
     ens_perturbation:
 
-      # --- Breeding
-      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation
+      # --- SmoothGaussianNoise
+      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.CoupledKuramotoPseudo1DPerturbation
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
-      forward_model: ${case.forward_model}
-      delta0: 10.0
-      breeding_cycles: 10
-      outer_steps_per_cycle: 4
+      domain_length: ${case.domain_length}
+      decorrelation_length: 10.0
+      scale: 1.0
+
+      # # --- Breeding
+      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation
+      # num_states: ${case.num_states}
+      # state_dim: ${case.state_dim}
+      # forward_model: ${case.forward_model}
+      # delta0: 10.0
+      # breeding_cycles: 10
+      # outer_steps_per_cycle: 4
 
       # # --- RedNoise ---
       # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise

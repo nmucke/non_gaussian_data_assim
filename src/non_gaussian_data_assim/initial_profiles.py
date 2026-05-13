@@ -43,6 +43,7 @@ class ConstantProfile(BaseProfile):
         state_dim: int,
         periodic: bool,
         value: float = 0.0,
+        **kwargs: int,
     ) -> None:
         super().__init__(
             name="constant",
@@ -68,6 +69,7 @@ class WhiteNoiseProfile(BaseProfile):
         state_dim: int,
         scale: float,
         periodic: bool,
+        **kwargs: int,
     ) -> None:
         super().__init__(
             name="white_noise",
@@ -101,6 +103,7 @@ class CosineProfile(BaseProfile):
         domain_length: float,
         periodic: bool,
         magnitude: Union[float, jnp.ndarray],
+        **kwargs: int,
     ) -> None:
         super().__init__(
             name="cosine", num_states=num_states, state_dim=state_dim, periodic=periodic
