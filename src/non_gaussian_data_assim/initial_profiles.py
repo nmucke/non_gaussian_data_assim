@@ -175,39 +175,3 @@ class CoupledKuramotoPseudo1DProfile(BaseProfile):
             profile = self._enforce_periodicity(profile)
 
         return profile
-
-    # def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
-    #     keys = jax.random.split(rng_key, ensemble_size * self.num_states)
-    #     fields = jax.vmap(
-    #         lambda key: _smooth_gaussian_periodic_1d(
-    #             key, self.state_dim, self.domain_length, self.decorrelation_length
-    #         )
-    #     )(keys)
-    #     return self.scale * fields.reshape(
-    #         ensemble_size, self.num_states, self.state_dim
-    #     )
-
-
-# def _smooth_gaussian_periodic_1d(
-#     rng_key: jax.Array,
-#     state_dim: int,
-#     domain_length: float,
-#     decorrelation_length: float,
-# ) -> jnp.ndarray:
-#     """Sample one periodic, mean-zero, unit-variance smooth Gaussian random field.
-
-#     Equivalent to Evensen's `pseudo1D`: white noise filtered in Fourier space by a
-#     Gaussian power spectrum exp(-(k * L)^2 / 2), then renormalized so the realized
-#     field has empirical mean 0 and std 1.
-#     """
-#     dx = domain_length / state_dim
-#     k = 2.0 * jnp.pi * jnp.fft.rfftfreq(state_dim, d=dx)
-#     spectrum = jnp.exp(-((k * decorrelation_length) ** 2) / 2.0)
-
-#     key_re, key_im = jax.random.split(rng_key)
-#     n_freq = k.shape[0]
-#     coefs = (
-#         jax.random.normal(key_re, (n_freq,)) + 1j * jax.random.normal(key_im, (n_freq,))
-#     ) * spectrum
-#     field = jnp.fft.irfft(coefs, n=state_dim)
-#     return (field - field.mean()) / field.std()
