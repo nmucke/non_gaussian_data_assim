@@ -94,17 +94,29 @@ class BreedingPerturbation(BasePerturbation):
         bg_profile: Optional[jnp.ndarray] = None,
     ) -> jnp.ndarray:
         """Return bred perturbations with shape [ensemble_size, num_states, state_dim]."""
-
         if bg_profile is None:
             raise ValueError(
                 f"Breeding reuires that a best-guess profile is supplied, but it was None"
             )
-        return self.breeder.sample_ensemble(
+
+        return_metrics = True
+        output = self.breeder.sample_ensemble(
             x0_bg=bg_profile,
             rng_key=rng_key,
             ensemble_size=ensemble_size,
-            return_metrics=True,
+            return_metrics=return_metrics,
         )
+
+        if return_metrics:
+            ensemble, bv_metrics = output
+        else:
+            ensemble = output
+
+        if bg_profile is not None:
+            ensemble = self._add_ensemble_to_bestguess_profile(
+                bg_profile=bg_profile, ensemble=ensemble
+            )
+        return ensemble, bv_metrics
 
 
 class WhiteNoise(BasePerturbation):

@@ -118,9 +118,7 @@ def main(cfg: DictConfig) -> None:
         BG_SCALE = 0.5  # Noise compared to truth
 
         rng_key, bg_key = jax.random.split(rng_key)
-        perturbs_best_guess = true_initial_state_profile.sample(
-            rng_key=bg_key, ensemble_size=1
-        )
+        perturbs_best_guess = true_initial_state_profile.sample(rng_key=bg_key)
         best_guess_profile = x0_truth + perturbs_best_guess * BG_SCALE
 
     else:
@@ -152,7 +150,6 @@ def main(cfg: DictConfig) -> None:
         )
 
     # TODO: Here it would be enough to only rollout best-guess (if present)
-
     # ---------------- Initialisation of data-containers that will be filled in DA-loop ------------------------------
     # Initialize the posterior ensemble from the Initial ensemble.
     posterior_ensemble = reference_ensemble.copy().reshape(

@@ -46,7 +46,7 @@ class InitialEnsemble:
             err_msga = "If centered_around_bestguess is true, a best-guess profile (bg_profile) must be specified"
             err_msgb = f" and must be a jnp.ndarrray. \nCurrently passed as bg_profile: {bg_profile} \n of type: {type(bg_profile)}.\n"
             raise ValueError(err_msga + err_msgb)
-        else:
+        if not self.centered_around_bestguess:
             # If centered_around_bestguess is passed as false, ensure that bg_profiule is None
             bg_profile = None
 
