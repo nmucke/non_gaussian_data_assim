@@ -25,18 +25,23 @@ class BasePerturbation(ABC):
         name: str,
         num_states: int,
         state_dim: int,
-        bg_profile: Optional[jnp.ndarray] = None,
     ) -> None:
         self.name = name
         self.num_states = num_states
         self.state_dim = state_dim
-        self.bg_profile = bg_profile
 
-    def _add_ensemble_to_bestguess_profile(self, ensemble: jnp.ndarray) -> jnp.ndarray:
-        return self.bg_profile + ensemble
+    def _add_ensemble_to_bestguess_profile(
+        self, bg_profile: jnp.ndarray, ensemble: jnp.ndarray
+    ) -> jnp.ndarray:
+        return bg_profile + ensemble
 
     @abstractmethod
-    def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
+    def sample(
+        self,
+        rng_key: jax.Array,
+        ensemble_size: int,
+        bg_profile: Optional[jnp.ndarray] = None,
+    ) -> jnp.ndarray:
         """Return perturbations of shape [ensemble_size, num_states, state_dim].
 
         Args:
@@ -86,15 +91,16 @@ class BreedingPerturbation(BasePerturbation):
         self,
         rng_key: jax.Array,
         ensemble_size: int,
+        bg_profile: Optional[jnp.ndarray] = None,
     ) -> jnp.ndarray:
         """Return bred perturbations with shape [ensemble_size, num_states, state_dim]."""
 
-        if self.bg_profile is None:
+        if bg_profile is None:
             raise ValueError(
                 f"Breeding reuires that a best-guess profile is supplied, but it was None"
             )
         return self.breeder.sample_ensemble(
-            x0_bg=self.bg_profile,
+            x0_bg=bg_profile,
             rng_key=rng_key,
             ensemble_size=ensemble_size,
             return_metrics=True,
@@ -108,13 +114,20 @@ class WhiteNoise(BasePerturbation):
         super().__init__(name="white_noise", num_states=num_states, state_dim=state_dim)
         self.scale = scale
 
-    def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
+    def sample(
+        self,
+        rng_key: jax.Array,
+        ensemble_size: int,
+        bg_profile: Optional[jnp.ndarray] = None,
+    ) -> jnp.ndarray:
         # --- Since fields are uncorrelated, we can create for all members, all states and entire state-dim at once
         shape = (ensemble_size, self.num_states, self.state_dim)
         ensemble = jax.random.normal(rng_key, shape) * self.scale
 
-        if self.bg_profile is not None:
-            ensemble = self._add_ensemble_to_bestguess_profile(ensemble)
+        if bg_profile is not None:
+            ensemble = self._add_ensemble_to_bestguess_profile(
+                bg_profile=bg_profile, ensemble=ensemble
+            )
 
         return ensemble
 
@@ -208,7 +221,12 @@ class RedNoise(BasePerturbation):
         self.domain_length = domain_length
         self.alpha = alpha
 
-    def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
+    def sample(
+        self,
+        rng_key: jax.Array,
+        ensemble_size: int,
+        bg_profile: Optional[jnp.ndarray] = None,
+    ) -> jnp.ndarray:
         """Create RedNoise Ensemble by calling function for each member"""
 
         if self.alpha > 0:
@@ -222,14 +240,16 @@ class RedNoise(BasePerturbation):
                 ensemble_size, self.num_states, self.state_dim
             )
 
-            if self.bg_profile is not None:
-                ensemble = self._add_ensemble_to_bestguess_profile(ensemble)
+            if bg_profile is not None:
+                ensemble = self._add_ensemble_to_bestguess_profile(
+                    bg_profile=bg_profile, ensemble=ensemble
+                )
             return ensemble
 
         elif self.alpha == 0:
             whitenoise = WhiteNoise(self.num_states, self.state_dim, self.scale)
             wn_ensemble = whitenoise.sample(
-                rng_key=rng_key, ensemble_size=ensemble_size
+                rng_key=rng_key, ensemble_size=ensemble_size, bg_profile=bg_profile
             )
             return wn_ensemble
 
@@ -257,7 +277,12 @@ class CoupledKuramotoPseudo1DPerturbation(BasePerturbation):
         self.decorrelation_length = decorrelation_length
         self.scale = scale
 
-    def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
+    def sample(
+        self,
+        rng_key: jax.Array,
+        ensemble_size: int,
+        bg_profile: Optional[jnp.ndarray] = None,
+    ) -> jnp.ndarray:
         keys = jax.random.split(rng_key, ensemble_size * self.num_states)
         fields = jax.vmap(
             lambda key: _smooth_gaussian_periodic_1d(
@@ -268,6 +293,8 @@ class CoupledKuramotoPseudo1DPerturbation(BasePerturbation):
             ensemble_size, self.num_states, self.state_dim
         )
 
-        if self.bg_profile is not None:
-            ensemble = self._add_ensemble_to_bestguess_profile(ensemble)
+        if bg_profile is not None:
+            ensemble = self._add_ensemble_to_bestguess_profile(
+                bg_profile=bg_profile, ensemble=ensemble
+            )
         return ensemble

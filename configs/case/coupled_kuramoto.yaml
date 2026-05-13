@@ -43,41 +43,34 @@ case:
         stop: ${case.state_dim}
         step: 15
 
+
   true_initial_state:
-    _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.PriorEnsemble
-    profile:
-      _target_: non_gaussian_data_assim.initial_profiles.CoupledKuramotoPseudo1DProfile
-      num_states: ${case.num_states}
-      state_dim: ${case.state_dim}
-      domain_length: ${case.domain_length}
-      decorrelation_length: 10.0
-    noise: null
+    _target_: non_gaussian_data_assim.initial_profiles.CoupledKuramotoPseudo1DProfile
+    num_states: ${case.num_states}
+    state_dim: ${case.state_dim}
     periodic: false
+    scale: 1.0
 
-
+    # CoupledKuramotoPseudo1DProfile --> Additionaly required
+    domain_length: ${case.domain_length}
+    decorrelation_length: 10.0
 
 
   initial_ensemble:
     _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsemble
-    num_states: ${case.num_states}
-    state_dim: ${case.state_dim}
     centered_around_bestguess: false
     periodic: false
 
-    # # -------------------- OLD way --------------------------------------------------------------------
-    # profile:
-    #   _target_: non_gaussian_data_assim.initial_profiles.CoupledKuramotoPseudo1DProfile
-    #   num_states: ${case.num_states}
-    #   state_dim: ${case.state_dim}
-    #   domain_length: ${case.domain_length}
-    #   decorrelation_length: 10.0
-    #   scale: 1.0
+    ens_perturbation:
 
-    # periodic: false
-    # noise: null
-    # # ----------------------------------------------------------------------------------------------
+      # --- SmoothGaussianNoise
+      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.CoupledKuramotoPseudo1DPerturbation
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      domain_length: ${case.domain_length}
+      decorrelation_length: 10.0
+      scale: 1.0
 
-    perturbation:
       # # --- Breeding
       # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation
       # num_states: ${case.num_states}
@@ -86,14 +79,6 @@ case:
       # delta0: 10.0
       # breeding_cycles: 10
       # outer_steps_per_cycle: 4
-
-      # --- SmoothGaussianNoise
-      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.CoupledKuramotoPseudo1DProfile
-      num_states: ${case.num_states}
-      state_dim: ${case.state_dim}
-      domain_length: ${case.domain_length}
-      decorrelation_length: 10.0
-      scale: 1.0
 
       # # --- RedNoise ---
       # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise
@@ -107,6 +92,10 @@ case:
       # num_states: ${case.num_states}
       # state_dim: ${case.state_dim}
       # scale: 10.0
+
+
+
+
 
 
 
