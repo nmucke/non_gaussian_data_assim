@@ -7,27 +7,6 @@ from tqdm import tqdm
 
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 
-# class EnsembleNorm(ABC):
-#     """
-#     Base class for norms applied member-wise over an ensemble.
-#     Expected input shape:    x.shape == (n_members, ...)
-
-#     Returns:
-#         One norm value per ensemble member, shape (n_members,).
-#     """
-
-#     def __init__(self) -> None:
-#         ensemble_norm = jax.vmap(self._compute_member_norm, in_axes=0, out_axes=0)
-#         self._ensemble_norm = jax.jit(ensemble_norm)
-
-#     @abstractmethod
-#     def _compute_member_norm(self, x: jnp.ndarray) -> jnp.ndarray:
-#         """Compute the norm for a single ensemble member."""
-#         ...
-
-#     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-#         return self._ensemble_norm(x)
-
 
 class EnsembleNorm(ABC):
     """
