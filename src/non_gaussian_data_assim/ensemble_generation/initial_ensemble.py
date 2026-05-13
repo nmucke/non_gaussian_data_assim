@@ -39,14 +39,13 @@ class InitialEnsemble:
         self,
         rng_key: jax.Array,
         ensemble_size: int,
-        bg_profile: Optional[BaseProfile] = None,
+        bg_profile: Optional[jnp.ndarray] = None,
     ) -> jax.Array | tuple[jax.Array, dict[str, jax.Array]]:
 
-        if self.centered_around_bestguess:
-            if bg_profile is None or isinstance(bg_profile, jnp.ndarray):
-                err_msga = "If centered_around_bestguess is true, a best-guess profile (bg_profile) must be specified"
-                err_msgb = f" and must be a jnp.ndarrray. \nCurrently passed as bg_profile: {bg_profile} \n of type: {type(bg_profile)}.\n"
-                raise ValueError(err_msga + err_msgb)
+        if self.centered_around_bestguess and bg_profile is None:
+            err_msga = "If centered_around_bestguess is true, a best-guess profile (bg_profile) must be specified"
+            err_msgb = f" and must be a jnp.ndarrray. \nCurrently passed as bg_profile: {bg_profile} \n of type: {type(bg_profile)}.\n"
+            raise ValueError(err_msga + err_msgb)
         else:
             # If centered_around_bestguess is passed as false, ensure that bg_profiule is None
             bg_profile = None
@@ -55,7 +54,11 @@ class InitialEnsemble:
 
         # --- Sample Ensemble Perturbations!
         rng_key, key = jax.random.split(rng_key)
-        output = self.ens_perturbation.sample(rng_key=key, ensemble_size=ensemble_size)
+        output = self.ens_perturbation.sample(
+            rng_key=key,
+            ensemble_size=ensemble_size,
+            bg_profile=bg_profile,
+        )
 
         # --- Catch case: Breeding might return additional metrics
         if isinstance(output, tuple):

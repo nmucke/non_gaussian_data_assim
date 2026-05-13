@@ -63,7 +63,7 @@ def main(cfg: DictConfig) -> None:
     logger.info(f"Initial state: {true_initial_state_profile}")
     rng_key, key = jax.random.split(rng_key)
 
-    ic_ref = true_initial_state_profile.sample(rng_key=key, ensemble_size=1)
+    ic_ref = true_initial_state_profile.sample(rng_key=key)
 
     # --- Spin-Up truth Run (optional)
     if cfg.spinup_steps:
@@ -80,8 +80,9 @@ def main(cfg: DictConfig) -> None:
         true_sol = ic_ref
 
     # --- Rollout the truth.
+    x0_truth = true_sol
     true_sol = forward_model.rollout(
-        true_sol, cfg.data_assimilation_steps, return_model_integration_steps=True
+        x0_truth, cfg.data_assimilation_steps, return_model_integration_steps=True
     )
 
     # --- Create synthetic observations
@@ -120,7 +121,7 @@ def main(cfg: DictConfig) -> None:
         perturbs_best_guess = true_initial_state_profile.sample(
             rng_key=bg_key, ensemble_size=1
         )
-        best_guess_profile = true_sol + perturbs_best_guess * BG_SCALE
+        best_guess_profile = x0_truth + perturbs_best_guess * BG_SCALE
 
     else:
         best_guess_profile = None
@@ -131,7 +132,7 @@ def main(cfg: DictConfig) -> None:
     rng_key, key = jax.random.split(rng_key)
 
     output = initial_ensemble_generator.sample(
-        rng_key=key, ensemble_size=cfg.ensemble_size, profile_bg=best_guess_profile
+        rng_key=key, ensemble_size=cfg.ensemble_size, bg_profile=best_guess_profile
     )
     # Flexibel handling of Ens.Gen. output (Breeding might return additional diagnostics)
     if isinstance(output, tuple):
@@ -151,12 +152,6 @@ def main(cfg: DictConfig) -> None:
         )
 
     # TODO: Here it would be enough to only rollout best-guess (if present)
-    # --- Rollout the initial ensemble for comparison.
-    reference_ensemble = forward_model.rollout(
-        reference_ensemble,
-        cfg.data_assimilation_steps,
-        return_model_integration_steps=True,
-    )
 
     # ---------------- Initialisation of data-containers that will be filled in DA-loop ------------------------------
     # Initialize the posterior ensemble from the Initial ensemble.
@@ -171,6 +166,13 @@ def main(cfg: DictConfig) -> None:
         cfg.case.state_dim,
     )
     # ----------------------------------------------------------------------------------------------------------------
+
+    # --- Rollout the initial ensemble for comparison.
+    reference_ensemble = forward_model.rollout(
+        reference_ensemble,
+        cfg.data_assimilation_steps,
+        return_model_integration_steps=True,
+    )
 
     # -------------------- Run the DA loop. ---------------------------------------------------------
     # Initialize empty lists to track chi-square and normalized nnovations (z)
