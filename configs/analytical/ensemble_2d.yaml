@@ -1,0 +1,65 @@
+# 2D linear-Gaussian DA experiment that sweeps a single DA method across a list
+# of ensemble sizes. See scripts/analytical/main_analytical_ensemble_size.py.
+#
+# Scalar shortcut for covariances: a single number = that scalar * I.
+
+defaults:
+  - _self_
+
+seed: 42
+state_dim: 2
+
+# Linear forward model: x_{k+1} = M x_k (per inner step).
+transition_matrix: [[0.95, 0.10], [-0.10, 0.95]]
+model_integration_steps: 1
+
+process_noise_cov: 0.05
+obs_noise_cov: 0.5
+prior_mean: [2.0, -1.0]
+prior_cov: 1.0
+
+# Ensemble sizes to compare. Each entry runs the whole DA loop with that N.
+ensemble_sizes: [25, 50, 100, 250, 1000]
+data_assimilation_steps: 30
+
+forward_model:
+  _target_: non_gaussian_data_assim.forward_models.linear.LinearModel
+  transition_matrix: ${transition_matrix}
+  model_integration_steps: ${model_integration_steps}
+
+obs_operator:
+  _target_: non_gaussian_data_assim.observations.observation_operator.LinearObservationOperator
+  obs_states: [0]
+  obs_indices:
+    _target_: numpy.arange
+    start: 0
+    stop: ${state_dim}
+  state_dim: ${state_dim}
+  num_states: 1
+
+# Single DA method to sweep. ${ensemble_size} resolves locally (the script
+# merges it in per-N at instantiate time).
+da_method:
+  _target_: non_gaussian_data_assim.da_methods.enkf.EnsembleKalmanFilter
+  ensemble_size: ${ensemble_size}
+  inflation_factor: 1.0
+
+# Examples of other methods (swap into `da_method` above):
+#   ParticleFilter:
+#     _target_: non_gaussian_data_assim.da_methods.particle_filter.ParticleFilter
+#     ensemble_size: ${ensemble_size}
+#     resample_threshold: 0.5
+#     jitter_scale: 0.0
+#   AGMF:
+#     _target_: non_gaussian_data_assim.da_methods.agmf.AdaptiveGaussianMixtureFilter
+#     ensemble_size: ${ensemble_size}
+#     w_prev:
+#       _target_: non_gaussian_data_assim.da_methods.agmf.uniform_weights
+#       ensemble_size: ${ensemble_size}
+#     nc_threshold: 0.5
+#     inflation_factor: 1.0
+
+hydra:
+  output_subdir: null
+  run:
+    dir: .
