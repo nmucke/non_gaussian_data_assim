@@ -7,26 +7,55 @@ from tqdm import tqdm
 
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 
+# class EnsembleNorm(ABC):
+#     """
+#     Base class for norms applied member-wise over an ensemble.
+#     Expected input shape:    x.shape == (n_members, ...)
+
+#     Returns:
+#         One norm value per ensemble member, shape (n_members,).
+#     """
+
+#     def __init__(self) -> None:
+#         ensemble_norm = jax.vmap(self._compute_member_norm, in_axes=0, out_axes=0)
+#         self._ensemble_norm = jax.jit(ensemble_norm)
+
+#     @abstractmethod
+#     def _compute_member_norm(self, x: jnp.ndarray) -> jnp.ndarray:
+#         """Compute the norm for a single ensemble member."""
+#         ...
+
+#     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+#         return self._ensemble_norm(x)
+
 
 class EnsembleNorm(ABC):
     """
-    Base class for norms applied member-wise over an ensemble.
-    Expected input shape:    x.shape == (n_members, ...)
+    Base class for norms.
 
-    Returns:
-        One norm value per ensemble member, shape (n_members,).
+    Single-member input:
+        x.shape == [num_states, state_dim]
+        returns scalar
+
+    Ensemble input:
+        x.shape == [ensemble_size, num_states, state_dim]
+        returns [ensemble_size]
     """
 
     def __init__(self) -> None:
-        ensemble_norm = jax.vmap(self._compute_member_norm, in_axes=0, out_axes=0)
-        self._ensemble_norm = jax.jit(ensemble_norm)
+        self._member_norm = jax.jit(self._compute_member_norm)
+        self._ensemble_norm = jax.jit(
+            jax.vmap(self._compute_member_norm, in_axes=0, out_axes=0)
+        )
 
     @abstractmethod
-    def _compute_member_norm(self, x: jnp.ndarray) -> jnp.ndarray:
-        """Compute the norm for a single ensemble member."""
-        ...
+    def _compute_member_norm(self, x: jnp.ndarray) -> jnp.ndarray: ...
 
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+        return self._member_norm(x)
+
+    def ensemble(self, x: jnp.ndarray) -> jnp.ndarray:
+        # Optional: full ensemble [ensemble_size, num_states, state_dim] -> [ensemble_size]
         return self._ensemble_norm(x)
 
 
@@ -35,6 +64,20 @@ class L2Norm(EnsembleNorm):
 
     def _compute_member_norm(self, x: jnp.ndarray) -> jnp.ndarray:
         return jnp.linalg.norm(jnp.ravel(x), ord=2)
+
+
+class SelectedStateL2Norm(EnsembleNorm):
+    """
+    Scalar L2 norm computed from one state only, but the resulting
+    rescaling factor is applied to the full coupled perturbation.
+    """
+
+    def __init__(self, state_index: int) -> None:
+        self.state_index = state_index
+        super().__init__()
+
+    def _compute_member_norm(self, x: jnp.ndarray) -> jnp.ndarray:
+        return jnp.linalg.norm(jnp.ravel(x[self.state_index]), ord=2)
 
 
 class L1Norm(EnsembleNorm):
@@ -52,14 +95,7 @@ class ChebyshevNorm(EnsembleNorm):
 
 
 class BreedingVector:
-    """Generate bred perturbation vectors around one base state.
-
-    Important:
-        'outer_steps_per_cycle' is interpreted as the number of raw model
-        integration steps, not as the number of 'data_assimilation_steps'.
-            Thus I use 'forward_model.one_step', instead of 'forward_model(...)'
-            (because that advances the state by 'model_integration_steps'
-    """
+    """Generate bred perturbation vectors around one base state."""
 
     def __init__(
         self,
@@ -115,8 +151,15 @@ class BreedingVector:
         raise ValueError(err_msg)
 
     def rescale_bv_perturbation(self, perturbation: jnp.ndarray) -> jnp.ndarray:
-        """Rescale one perturbation field to specified norm delta0."""
+        """Rescale one coupled perturbation field to norm delta0."""
         pert_norm = self.norm_fct(perturbation)
+
+        if pert_norm.ndim != 0:
+            raise ValueError(
+                "Breeding norm must return one scalar per ensemble member. "
+                f"Got norm shape {pert_norm.shape} for perturbation shape {perturbation.shape}."
+            )
+
         pert_norm = jnp.maximum(pert_norm, self.min_norm)
         return self.delta0 * perturbation / pert_norm
 

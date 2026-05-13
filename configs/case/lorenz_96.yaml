@@ -73,6 +73,7 @@ case:
       # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise
       # num_states: ${case.num_states}
       # state_dim: ${case.state_dim}
+      # domain_length: ${case.domain_length}
       # scale: 1.0
       # alpha: 1.0
 
