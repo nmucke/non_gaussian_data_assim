@@ -7,6 +7,7 @@ Examples:
 """
 
 import logging
+from typing import Optional
 
 import jax
 import jax.numpy as jnp
@@ -29,7 +30,9 @@ from non_gaussian_data_assim.metrics.trajectory_metrics import (
     print_metrics_table,
 )
 from non_gaussian_data_assim.observations.observation_utils import generate_observations
-from non_gaussian_data_assim.plotting import plot_da_diagnostics
+from non_gaussian_data_assim.plotting.plot_initial_ensemble import plot_initial_fields
+from non_gaussian_data_assim.plotting.plot_innov_stats import plot_innov
+from non_gaussian_data_assim.plotting.plot_metrics import plot_metric_timeseries
 from non_gaussian_data_assim.utils.spinup import spinup_ensemble
 
 logger = logging.getLogger(__name__)
@@ -191,9 +194,9 @@ def main(cfg: DictConfig) -> None:
             break
 
         # ------------Track:  Prior ensemble (in obs space)    -----------
-        if cfg.da_method["name"] == "enkf":
-            HXf = da_model.obs_operator(prior_current)  # shape: (EnsSize, N_obs)
-            predicted_obs.append(HXf)
+        # Get model-state in obs-space
+        HXf = da_model.obs_operator(prior_current)  # shape: (EnsSize, N_obs)
+        predicted_obs.append(HXf)
         # -----------------------------------------------------------------
 
         # Concatenate prior (1time-step) and posterior (2 time-steps) and innovations
@@ -218,46 +221,36 @@ def main(cfg: DictConfig) -> None:
     chi2_mean = ChiSquared(time_aggregation="mean")
     chi2_time = ChiSquared(time_aggregation="none")
 
-    reference_metrics = {
-        "rmse": rmse(reference_ensemble, true_sol[0]),
-        "mae": mae(reference_ensemble, true_sol[0]),
-        "mape": mape(reference_ensemble, true_sol[0]),
-        "crps": crps(reference_ensemble, true_sol[0]),
-        "rmse_time": rmse_time(reference_ensemble, true_sol[0]),
-        "spread_time": ensemble_spread(reference_ensemble),
-        "crps_time": crps_time(reference_ensemble, true_sol[0]),
-    }
-    posterior_metrics = {
-        "rmse": rmse(posterior_ensemble, true_sol[0]),
-        "mae": mae(posterior_ensemble, true_sol[0]),
-        "mape": mape(posterior_ensemble, true_sol[0]),
-        "crps": crps(posterior_ensemble, true_sol[0]),
-        "rmse_time": rmse_time(posterior_ensemble, true_sol[0]),
-        "spread_time": ensemble_spread(posterior_ensemble),
-        "crps_time": crps_time(posterior_ensemble, true_sol[0]),
-    }
+    def get_metric_dict(
+        ensemble: jnp.ndarray, true_sol: jnp.ndarray, state_dim: Optional[int] = None
+    ) -> dict:
 
-    if cfg.da_method["name"] == "enkf":
-        predicted_obs = jnp.stack(
-            predicted_obs, axis=0
-        )  # shape: (Assim-Step, N_obs, EnsSize)
-        innovation_metrics = {
-            "chi_sq_mean": chi2_mean(
-                predicted_obs=predicted_obs, obs=observations, R=R
-            ),
-            "chi_sq_time": chi2_time(
-                predicted_obs=predicted_obs, obs=observations, R=R
-            ),
-            "z": innov_white(predicted_obs=predicted_obs, obs=observations, R=R),
+        metrics = {
+            "rmse": rmse(ensemble, true_sol),
+            "mae": mae(ensemble, true_sol),
+            "mape": mape(ensemble, true_sol),
+            "crps": crps(ensemble, true_sol),
+            "rmse_time": rmse_time(ensemble, true_sol),
+            "spread_time": ensemble_spread(ensemble, state_dim=state_dim),
+            "crps_time": crps_time(ensemble, true_sol),
         }
-    else:
-        innovation_metrics = {}
+        return metrics
+
+    reference_metrics = get_metric_dict(reference_ensemble, true_sol[0])
+    posterior_metrics = get_metric_dict(posterior_ensemble, true_sol[0])
+
+    post_metric_states = []
+    for i in range(cfg.case.num_states):
+        metric_dict = get_metric_dict(
+            posterior_ensemble[:, :, i, :], true_sol[0, :, i, :]
+        )
+        post_metric_states.append(metric_dict)
 
     print_metrics_table(
         reference_metrics, posterior_metrics, title=f"{cfg.case.title} Metrics"
     )
 
-    # Plot.
+    # --- Plot Hovmöller diagrams and assim-time-series
     logger.info(f"Plotting...")
     plotter = instantiate(plotter_cfg)
     plotter(
@@ -274,22 +267,43 @@ def main(cfg: DictConfig) -> None:
         model_integration_steps=cfg.model_integration_steps,
     )
 
-    # --- Plot Innovations Diagnostics and Skill-Scores
+    # --- Plot time-series of errors
+    _ = plot_metric_timeseries(posterior_metrics)
+    _ = plot_metric_timeseries(post_metric_states)
+    # ====================== For EnKF application plot innovation statistics ======================
     if cfg.da_method["name"] == "enkf":
-        fig, axs = plot_da_diagnostics(
-            z=innovation_metrics.get("z", None),
-            chi_sq=innovation_metrics.get("chi_sq_time", None),
-            chi_sq_mean=innovation_metrics.get("chi_sq_mean", None),
-            crps_time=posterior_metrics["crps_time"],
-            rmse_time=posterior_metrics["rmse_time"],
-            spread_time=posterior_metrics["spread_time"],
-            bins=51,
-            show_fig=True,
+
+        # -- Store Predicted-Obs and Split-up per state
+        pred_obs = jnp.stack(
+            predicted_obs, axis=0
+        )  # shape: [EnsSize, Assim-Step, N_obs (comined for all states)]
+
+        idx = 0
+        predobs_states, obs_states, R_states = [], [], []
+        for obs_state in da_model.obs_operator.obs_indices_per_state:
+            i = obs_state.shape[0]
+            pobs = pred_obs[:, :, idx : idx + i]
+            predobs_states.append(pobs)
+            obs_states.append(observations[:, idx : idx + i])
+            R_states.append(R[idx : idx + i, idx : idx + i])
+            idx += i
+
+        innov_metric_list = []
+        for p_obs, obs, R_state in zip(predobs_states, obs_states, R_states):
+            innovation_metrics = {
+                "chi_sq_mean": chi2_mean(predicted_obs=p_obs, obs=obs, R=R_state),
+                "chi_sq_time": chi2_time(predicted_obs=p_obs, obs=obs, R=R_state),
+                "z": innov_white(predicted_obs=p_obs, obs=obs, R=R_state),
+            }
+            innov_metric_list.append(innovation_metrics)
+
+        # --- Plot Innovations Diagnostics and Skill-Scores
+        _ = plot_innov(
+            innov_stats_list=innov_metric_list, bins=74, hist_range=None, show_fig=True
         )
+    # ==============================================================================================================
 
     # --- Plot Initial-Conditions (I.C, best-guess, Initial-Ensemble) + Breeding statitcs if available
-
-    # ==============================================================================================================
 
 
 if __name__ == "__main__":

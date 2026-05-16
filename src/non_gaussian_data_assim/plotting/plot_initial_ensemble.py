@@ -98,29 +98,29 @@ def plot_initial_fields(
             ax_bvpert.set_ylim(-bound, bound)
 
         # ---- Plot evolution of BV norm over breeding "spin-up"
-    #     bv_cylces = cfg.case.initial_ensemble.ens_perturbation.breeding_cycles
-    #     steps_per_cyle = (
-    #         cfg.case.initial_ensemble.ens_perturbation.outer_steps_per_cycle
-    #         * cfg.model_integration_steps
-    #     )
-    #     tot_steps = steps_per_cyle * bv_cylces
+        #     bv_cylces = cfg.case.initial_ensemble.ens_perturbation.breeding_cycles
+        #     steps_per_cyle = (
+        #         cfg.case.initial_ensemble.ens_perturbation.outer_steps_per_cycle
+        #         * cfg.model_integration_steps
+        #     )
+        #     tot_steps = steps_per_cyle * bv_cylces
 
-    # def create_xaxis_for_bv_norm(bv_cylces, steps_per_cyle):
-    #     n = steps_per_cyle
-    #     num_blocks = bv_cylces
-    #     eps = 10 * np.spacing(num_blocks * n)
-    #     k = np.arange(num_blocks)[:, None]
-    #     j = np.arange(n + 1)[None, :]
-    #     x_blocks = k * n + j + k * eps
-    #     return x_blocks.ravel()
+        # def create_xaxis_for_bv_norm(bv_cylces, steps_per_cyle):
+        #     n = steps_per_cyle
+        #     num_blocks = bv_cylces
+        #     eps = 10 * np.spacing(num_blocks * n)
+        #     k = np.arange(num_blocks)[:, None]
+        #     j = np.arange(n + 1)[None, :]
+        #     x_blocks = k * n + j + k * eps
+        #     return x_blocks.ravel()
 
-    # x = create_xaxis_for_bv_norm(bv_cylces, steps_per_cyle)
+        # x = create_xaxis_for_bv_norm(bv_cylces, steps_per_cyle)
 
-    ax_bvnorm = axs[1, 1]
-    bv_pert_ensmean = jnp.mean(bv_norms, axis=0)
-    ax_bvnorm.plot(bv_pert_ensmean)
-    ax_bvnorm.set_ylabel("|| BV perturbation ||")
-    ax_bvnorm.set_xlabel("Inner Model steps")
-    ax_bvnorm.set_title("Evolution of avg. ||BV|| over all BV-cycles")
-    # ax.set_xticks(range(0, tot_steps, bv_cylces))
-    ax_bvnorm.grid(True)
+        ax_bvnorm = axs[1, 1]
+        bv_pert_ensmean = jnp.mean(bv_norms, axis=0)
+        ax_bvnorm.plot(bv_pert_ensmean)
+        ax_bvnorm.set_ylabel("|| BV perturbation ||")
+        ax_bvnorm.set_xlabel("Inner Model steps")
+        ax_bvnorm.set_title("Evolution of avg. ||BV|| over all BV-cycles")
+        # ax.set_xticks(range(0, tot_steps, bv_cylces))
+        ax_bvnorm.grid(True)

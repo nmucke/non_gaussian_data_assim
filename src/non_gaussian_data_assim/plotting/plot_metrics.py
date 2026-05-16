@@ -72,7 +72,12 @@ def plot_metric_timeseries(
         ax.set_xlabel("Model time-step")
         ax.legend(frameon=False)
         ax.grid(alpha=0.25)
-        ax.set_title(f"State {i}")
+
+        if multiplot:
+            ax.set_title(f"State {i}")
+        else:
+            ax.set_title(f"{len(metrics)} State(s)")
+
         if i == 0:
             ax.set_ylabel("Score")
 
