@@ -90,17 +90,6 @@ def plot_initial_fields(
                 zorder=0,
             )
 
-        # -- Plot Initial Best-guess profile
-        if best_guess_profile is not None:
-            ax.plot(
-                best_guess_profile[state],
-                c="tab:blue",
-                label="best-guess",
-                linewidth=2,
-                alpha=0.5,
-                zorder=1,
-            )
-
         ax.set_title(f"State {state}  |  Time-step 0")
         ax.set_xlabel("State Dimension")
         if state == 0:
@@ -162,3 +151,5 @@ def plot_initial_fields(
         ax_bvnorm.grid(True)
 
         fig.tight_layout()
+
+        plt.show()
