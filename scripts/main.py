@@ -282,8 +282,7 @@ def main(cfg: DictConfig) -> None:
         predobs_states, obs_states, R_states = [], [], []
         for obs_state in da_model.obs_operator.obs_indices_per_state:
             i = obs_state.shape[0]
-            pobs = pred_obs[:, :, idx : idx + i]
-            predobs_states.append(pobs)
+            predobs_states.append(pred_obs[:, :, idx : idx + i])
             obs_states.append(observations[:, idx : idx + i])
             R_states.append(R[idx : idx + i, idx : idx + i])
             idx += i
@@ -304,6 +303,22 @@ def main(cfg: DictConfig) -> None:
     # ==============================================================================================================
 
     # --- Plot Initial-Conditions (I.C, best-guess, Initial-Ensemble) + Breeding statitcs if available
+    try:
+        best_guess_profile = best_guess_profile.squeeze()
+    except:
+        best_guess_profile = None
+    try:
+        bv_dict = ensgen_diagnostics
+    except:
+        bv_dict = None
+
+    plot_initial_fields(
+        ensemble=posterior_ensemble,
+        truth_t0=true_sol,
+        x_before_spinup=ic_ref.squeeze(),
+        best_guess_profile=best_guess_profile,
+        bv_dict=bv_dict,
+    )
 
 
 if __name__ == "__main__":
