@@ -239,12 +239,14 @@ def main(cfg: DictConfig) -> None:
     reference_metrics = get_metric_dict(reference_ensemble, true_sol[0])
     posterior_metrics = get_metric_dict(posterior_ensemble, true_sol[0])
 
+    # -- If multiple states are present, save metrics for each individual state
     post_metric_states = []
-    for i in range(cfg.case.num_states):
-        metric_dict = get_metric_dict(
-            posterior_ensemble[:, :, i, :], true_sol[0, :, i, :]
-        )
-        post_metric_states.append(metric_dict)
+    if cfg.case.num_states > 1:
+        for i in range(cfg.case.num_states):
+            metric_dict = get_metric_dict(
+                posterior_ensemble[:, :, i, :], true_sol[0, :, i, :]
+            )
+            post_metric_states.append(metric_dict)
 
     print_metrics_table(
         reference_metrics, posterior_metrics, title=f"{cfg.case.title} Metrics"
@@ -268,8 +270,8 @@ def main(cfg: DictConfig) -> None:
     )
 
     # --- Plot time-series of errors
-    _ = plot_metric_timeseries(posterior_metrics)
-    _ = plot_metric_timeseries(post_metric_states)
+    post_metrics_all = [posterior_metrics] + post_metric_states
+    _ = plot_metric_timeseries(post_metrics_all)
     # ====================== For EnKF application plot innovation statistics ======================
     if cfg.da_method["name"] == "enkf":
 
@@ -315,8 +317,8 @@ def main(cfg: DictConfig) -> None:
     plot_initial_fields(
         ensemble=posterior_ensemble,
         truth_t0=true_sol,
-        x_before_spinup=ic_ref.squeeze(),
-        best_guess_profile=best_guess_profile,
+        x_before_spinup=ic_ref[0],
+        best_guess_profile=best_guess_profile[0],
         bv_dict=bv_dict,
     )
 

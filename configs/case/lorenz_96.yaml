@@ -1,17 +1,17 @@
 # @package _global_
-data_assimilation_steps: 25
-model_integration_steps: 5
-ensemble_size: 60
-inflation_factor: 1.1
-localization_distance: 10
-spinup_steps: 100 # spinup run for spinup_steps * model_integration_steps
+data_assimilation_steps: 25   # 25
+model_integration_steps: 5   # 5
+ensemble_size: 100
+inflation_factor: 1.2        # 1.1
+localization_distance: 10     # 10
+spinup_steps: 1000 # spinup run for spinup_steps * model_integration_steps
 
 case:
   name: lorenz_96
   title: "Lorenz 96"
   num_states: 1
   state_dim: 50
-  obs_noise_variance: 0.25
+  obs_noise_variance: 0.25 # 0.25
   domain_length: ${case.state_dim}
 
   forward_model:
@@ -29,7 +29,7 @@ case:
       _target_: numpy.arange
       start: 0
       stop: ${case.state_dim}
-      step: 2
+      step: 2      # 2
 
 
   true_initial_state:
@@ -47,18 +47,18 @@ case:
 
   initial_ensemble:
     _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsemble
-    centered_around_bestguess: false
-    periodic: false
+    centered_around_bestguess: true
+    periodic: true
 
     ens_perturbation:
 
-      # --- SmoothGaussianNoise
-      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.CoupledKuramotoPseudo1DPerturbation
-      num_states: ${case.num_states}
-      state_dim: ${case.state_dim}
-      domain_length: ${case.domain_length}
-      decorrelation_length: 10.0
-      scale: 1.0
+      # # --- SmoothGaussianNoise
+      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.CoupledKuramotoPseudo1DPerturbation
+      # num_states: ${case.num_states}
+      # state_dim: ${case.state_dim}
+      # domain_length: ${case.domain_length}
+      # decorrelation_length: 10.0
+      # scale: 10.0
 
       # # --- Breeding
       # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation
@@ -69,13 +69,13 @@ case:
       # breeding_cycles: 10
       # outer_steps_per_cycle: 4
 
-      # # --- RedNoise ---
-      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise
-      # num_states: ${case.num_states}
-      # state_dim: ${case.state_dim}
-      # domain_length: ${case.domain_length}
-      # scale: 1.0
-      # alpha: 1.0
+      # --- RedNoise ---
+      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      domain_length: ${case.domain_length}
+      scale: 1.0
+      alpha: 2.0
 
       # # --- WhiteNoise ---
       # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.WhiteNoise
@@ -87,7 +87,8 @@ case:
 
 
   plotter:
-    _target_: non_gaussian_data_assim.plotting.plot_high_dim_field
+    _target_: non_gaussian_data_assim.plotting.plot_fields.plot_high_dim_field
+
     _partial_: true
 
   da_method_overrides:

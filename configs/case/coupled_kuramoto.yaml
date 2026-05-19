@@ -12,7 +12,7 @@ case:
   title: "Coupled Kuramoto-Sivashinsky"
   num_states: 2
   state_dim: 1024
-  obs_noise_variance: 0.09
+  obs_noise_variance: 0.1 # 0.09
   domain_length: 1024
 
   forward_model:
@@ -58,30 +58,30 @@ case:
 
   initial_ensemble:
     _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsemble
-    centered_around_bestguess: true
+    centered_around_bestguess: false
     periodic: false
 
     ens_perturbation:
 
-      # # --- SmoothGaussianNoise
-      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.CoupledKuramotoPseudo1DPerturbation
-      # num_states: ${case.num_states}
-      # state_dim: ${case.state_dim}
-      # domain_length: ${case.domain_length}
-      # decorrelation_length: 10.0
-      # scale: 1.0
-
-      # --- Breeding
-      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation
+      # --- SmoothGaussianNoise
+      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.CoupledKuramotoPseudo1DPerturbation
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
-      forward_model: ${case.forward_model}
-      delta0: 5.0
-      breeding_cycles: 30
-      outer_steps_per_cycle: 32
-      norm_fct:
-        _target_: non_gaussian_data_assim.ensemble_generation.breeding_vector.SelectedStateL2Norm
-        state_index: 1  # Slow ocean variable
+      domain_length: ${case.domain_length}
+      decorrelation_length: 10.0
+      scale: 1.0
+
+      # # --- Breeding
+      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation
+      # num_states: ${case.num_states}
+      # state_dim: ${case.state_dim}
+      # forward_model: ${case.forward_model}
+      # delta0: 5.0
+      # breeding_cycles: 30
+      # outer_steps_per_cycle: 32
+      # norm_fct:
+      #   _target_: non_gaussian_data_assim.ensemble_generation.breeding_vector.SelectedStateL2Norm
+      #   state_index: 0  # 0:Fast Atmosphere.     ||       1: Slow ocean variable
 
       # # --- RedNoise ---
       # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise
@@ -89,7 +89,7 @@ case:
       # state_dim: ${case.state_dim}
       # domain_length: ${case.domain_length}
       # scale: 1.0
-      # alpha: 1.0
+      # alpha: 2.0
 
       # # --- WhiteNoise ---
       # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.WhiteNoise

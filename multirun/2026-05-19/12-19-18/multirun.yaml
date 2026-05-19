@@ -1,0 +1,233 @@
+hydra:
+  run:
+    dir: .
+  sweep:
+    dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
+  launcher:
+    _target_: hydra._internal.core_plugins.basic_launcher.BasicLauncher
+  sweeper:
+    _target_: hydra._internal.core_plugins.basic_sweeper.BasicSweeper
+    max_batch_size: null
+    params: null
+  help:
+    app_name: ${hydra.job.name}
+    header: '${hydra.help.app_name} is powered by Hydra.
+
+      '
+    footer: 'Powered by Hydra (https://hydra.cc)
+
+      Use --hydra-help to view Hydra specific help
+
+      '
+    template: '${hydra.help.header}
+
+      == Configuration groups ==
+
+      Compose your configuration from those groups (group=option)
+
+
+      $APP_CONFIG_GROUPS
+
+
+      == Config ==
+
+      Override anything in the config (foo.bar=value)
+
+
+      $CONFIG
+
+
+      ${hydra.help.footer}
+
+      '
+  hydra_help:
+    template: 'Hydra (${hydra.runtime.version})
+
+      See https://hydra.cc for more info.
+
+
+      == Flags ==
+
+      $FLAGS_HELP
+
+
+      == Configuration groups ==
+
+      Compose your configuration from those groups (For example, append hydra/job_logging=disabled
+      to command line)
+
+
+      $HYDRA_CONFIG_GROUPS
+
+
+      Use ''--cfg hydra'' to Show the Hydra config.
+
+      '
+    hydra_help: ???
+  hydra_logging:
+    version: 1
+    formatters:
+      simple:
+        format: '[%(asctime)s][HYDRA] %(message)s'
+    handlers:
+      console:
+        class: logging.StreamHandler
+        formatter: simple
+        stream: ext://sys.stdout
+    root:
+      level: INFO
+      handlers:
+      - console
+    loggers:
+      logging_example:
+        level: DEBUG
+    disable_existing_loggers: false
+  job_logging:
+    version: 1
+    formatters:
+      simple:
+        format: '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
+    handlers:
+      console:
+        class: logging.StreamHandler
+        formatter: simple
+        stream: ext://sys.stdout
+      file:
+        class: logging.FileHandler
+        formatter: simple
+        filename: ${hydra.runtime.output_dir}/${hydra.job.name}.log
+    root:
+      level: INFO
+      handlers:
+      - console
+      - file
+    disable_existing_loggers: false
+  env: {}
+  mode: MULTIRUN
+  searchpath: []
+  callbacks: {}
+  output_subdir: null
+  overrides:
+    hydra:
+    - hydra.mode=MULTIRUN
+    task:
+    - case=lorenz_96
+    - da_method=enkf
+    - model_integration_steps=1,5,10,25
+  job:
+    name: main
+    chdir: null
+    override_dirname: case=lorenz_96,da_method=enkf,model_integration_steps=1,5,10,25
+    id: ???
+    num: ???
+    config_name: config
+    env_set: {}
+    env_copy: []
+    config:
+      override_dirname:
+        kv_sep: '='
+        item_sep: ','
+        exclude_keys: []
+  runtime:
+    version: 1.3.2
+    version_base: '1.3'
+    cwd: /Users/maxfrei/Desktop/TUDelft/PhD/projects.nosync/non_gaussian_data_assim
+    config_sources:
+    - path: hydra.conf
+      schema: pkg
+      provider: hydra
+    - path: /Users/maxfrei/Desktop/TUDelft/PhD/projects.nosync/non_gaussian_data_assim/configs
+      schema: file
+      provider: main
+    - path: ''
+      schema: structured
+      provider: schema
+    output_dir: ???
+    choices:
+      da_method: enkf
+      case: lorenz_96
+      hydra/env: default
+      hydra/callbacks: null
+      hydra/job_logging: default
+      hydra/hydra_logging: default
+      hydra/hydra_help: default
+      hydra/help: default
+      hydra/sweeper: basic
+      hydra/launcher: basic
+      hydra/output: default
+  verbose: false
+seed: 42
+data_assimilation_steps: 25
+model_integration_steps: 5
+ensemble_size: 100
+spinup_steps: 1000
+inflation_factor: 1.2
+localization_distance: 10
+case:
+  name: lorenz_96
+  title: Lorenz 96
+  num_states: 1
+  state_dim: 50
+  obs_noise_variance: 0.25
+  domain_length: ${case.state_dim}
+  forward_model:
+    _target_: non_gaussian_data_assim.forward_models.lorenz_96.Lorenz96Model
+    forcing_term: 8.0
+    state_dim: ${case.state_dim}
+    dt: 0.01
+    model_integration_steps: ${model_integration_steps}
+  obs_operator:
+    _target_: non_gaussian_data_assim.observations.observation_operator.LinearObservationOperator
+    state_dim: ${case.state_dim}
+    obs_states:
+    - 0
+    obs_indices:
+      _target_: numpy.arange
+      start: 0
+      stop: ${case.state_dim}
+      step: 2
+  true_initial_state:
+    _target_: non_gaussian_data_assim.initial_profiles.WhiteNoiseProfile
+    num_states: ${case.num_states}
+    state_dim: ${case.state_dim}
+    periodic: true
+    scale: 10.0
+    domain_length: ${case.domain_length}
+    decorrelation_length: 10.0
+  initial_ensemble:
+    _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsemble
+    centered_around_bestguess: true
+    periodic: true
+    ens_perturbation:
+      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      domain_length: ${case.domain_length}
+      scale: 1.0
+      alpha: 2.0
+  plotter:
+    _target_: non_gaussian_data_assim.plotting.plot_fields.plot_high_dim_field
+    _partial_: true
+  da_method_overrides:
+    enkf:
+      inflation_factor: ${inflation_factor}
+      localization_distance: ${localization_distance}
+    agmf:
+      inflation_factor: ${inflation_factor}
+      nc_threshold: 0.5
+      localization_distance: ${localization_distance}
+    pff:
+      num_pseudo_time_steps: 200
+      step_size: 0.1
+      stepper: runge_kutta_4
+      localization_distance: 5
+      inflation_factor: ${inflation_factor}
+    particle_filter:
+      resample_threshold: 0.5
+      jitter_scale: 0.3
+da_method:
+  name: enkf
+  _target_: non_gaussian_data_assim.da_methods.enkf.EnsembleKalmanFilter
+  inflation_factor: 1.0
+  localization_distance: null

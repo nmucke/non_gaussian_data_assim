@@ -15,14 +15,29 @@ def plot_metric_timeseries(
 
     if isinstance(metrics, list):
         multiplot = True
+        titles = [
+            "All states",
+            "State 0",
+            "State 1",
+        ]
     elif isinstance(metrics, dict):
         multiplot = False
         metrics = [metrics]
 
+    maxval = 0
+    for i, metric_dict in enumerate(metrics):
+        maxc = jnp.max(metric_dict["rmse_time"])
+        maxval = maxc if maxc > maxval else maxval
+    maxval = np.ceil(maxval * 2) / 2
+
+    # -- Max-val for axis
     num_states = len(metrics)
     fig, axs = plt.subplots(
-        nrows=1, ncols=num_states, figsize=(5 * num_states, 3), sharey=False
+        nrows=1, ncols=num_states, figsize=(6 * num_states, 4), sharey=False
     )
+
+    # --- Safe-guard if only one state is passed
+    axs = [axs] if num_states == 1 else axs
 
     for i, metric_dict in enumerate(metrics):
         ax = axs[i] if multiplot else axs
@@ -39,12 +54,12 @@ def plot_metric_timeseries(
             f"RMSE  = {rmse_tot:.3f}"
         )
         ax.text(
-            0.03,
+            0.95,
             0.95,
             stats,
             transform=ax.transAxes,
             va="top",
-            ha="left",
+            ha="right",
             fontsize=10,
             bbox={
                 "boxstyle": "round,pad=0.3",
@@ -68,15 +83,13 @@ def plot_metric_timeseries(
         ax.plot(steps_post, rmse_time, linewidth=1, label="RMSE", color="tab:orange")
 
         # --- Asteatics
-        ax.set_ylim(0, None)
+        ax.set_ylim(0, maxval)
         ax.set_xlabel("Model time-step")
-        ax.legend(frameon=False)
+        ax.legend(frameon=False, loc="upper left")
         ax.grid(alpha=0.25)
 
         if multiplot:
-            ax.set_title(f"State {i}")
-        else:
-            ax.set_title(f"{len(metrics)} State(s)")
+            ax.set_title(titles[i])
 
         if i == 0:
             ax.set_ylabel("Score")

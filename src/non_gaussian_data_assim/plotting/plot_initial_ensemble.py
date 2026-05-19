@@ -47,6 +47,9 @@ def plot_initial_fields(
         ncols=TOT_STATES, nrows=nrows, figsize=(9 * TOT_STATES, 4 * nrows)
     )
 
+    # --- Safe-guard if only one state is present
+    axs = [axs] if TOT_STATES == 1 else axs
+
     for state in range(TOT_STATES):
         ax = axs[state] if bv_dict is None else axs[0, state]
 

@@ -71,13 +71,8 @@ case:
 
 
 
-
-
-
-
-
   plotter:
-    _target_: non_gaussian_data_assim.plotting.plot_low_dim_trajectory
+    _target_: non_gaussian_data_assim.plotting.plot_fields.plot_low_dim_trajectory
     _partial_: true
     state_names: [x, y, z]
 
