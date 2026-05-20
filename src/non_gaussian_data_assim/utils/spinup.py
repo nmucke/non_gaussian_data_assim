@@ -34,10 +34,9 @@ def spinup_ensemble(
     # Shape rolled: [1, model_steps/int.steps, nr.state, state-dim]
 
     if get_natural_variablity:
-        # -- Calculate spread not from first input, as it might still be too dependent on inputted I.C.
-        istart = jnp.min(jnp.asarray([spinup_steps // 10, 5]))
+        # -- Calculate spread
         nat_variability = jnp.std(
-            rolled[0, istart:, :, :],
+            rolled[0],
             ddof=1,
         )  #  axis=0
         return rolled[:, -1], nat_variability

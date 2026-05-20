@@ -66,6 +66,9 @@ def main(cfg: DictConfig) -> None:
     logger.info(f"Initial state: {true_initial_state_profile}")
     rng_key, key = jax.random.split(rng_key)
 
+    # --- BEST-GUESS: Reference state for ensemble members --> determines how difficulat assimilation task will be
+    BEST_GUESS_FLAG = initial_ensemble_cfg.centered_around_bestguess
+
     ic_ref = true_initial_state_profile.sample(rng_key=key)
 
     # --- Spin-Up truth Run (optional)
@@ -73,11 +76,16 @@ def main(cfg: DictConfig) -> None:
         logger.info(
             f"Run Spin-up of {cfg.spinup_steps * cfg.model_integration_steps} model-steps"
         )
+
+        get_std = True if BEST_GUESS_FLAG else False
         true_sol = spinup_ensemble(
             ensemble=ic_ref,
             forward_model=forward_model,
             spinup_steps=cfg.spinup_steps,
+            get_natural_variablity=get_std,
         )
+        if get_std:
+            true_sol, natural_variability = true_sol
 
     else:
         logger.info("No SPINUP")
@@ -89,16 +97,26 @@ def main(cfg: DictConfig) -> None:
         x0_truth, cfg.data_assimilation_steps, return_model_integration_steps=True
     )
 
-    # --- BEST-GUESS: Reference state for ensemble members --> determines how difficulat assimilation task will be
-    BEST_GUESS_FLAG = initial_ensemble_cfg.centered_around_bestguess
     if BEST_GUESS_FLAG:
-        # NOTE: Just a design choice to add noise of with 10% scale compared to sclae of I.C. of truth
-        # NOTE: Maybe 'better' way is to take some 'climatological' scale --> E.g. Bulk variance of spin-up
-        BG_SCALE = 0.5  # Noise compared to truth
+        """
+        Best-Guess: Add white noise (certain scale) to ic_ref and spin-up with same aound of setps as x0_truht
+            ic_ref              --- spin-up ---> x0_truth
+            ic_ref + white noie --- spin-up ---> best_guess
+
+        My suggestion for what scale to use is to look at the standard deviation over the spin-up period of x0_truh and add that
+        """
+        from non_gaussian_data_assim.ensemble_generation.ensemble_perturbations import (
+            WhiteNoise,
+        )
 
         rng_key, bg_key = jax.random.split(rng_key)
-        perturbs_best_guess = true_initial_state_profile.sample(rng_key=bg_key)
-        best_guess_profile = x0_truth + perturbs_best_guess * BG_SCALE
+        whitenoise = WhiteNoise(
+            num_states=cfg.case.num_states,
+            state_dim=cfg.case.state_dim,
+            scale=natural_variability,
+        )
+        perturbs_best_guess = whitenoise.sample(rng_key=bg_key, ensemble_size=1)
+        best_guess_profile = x0_truth + perturbs_best_guess
 
     else:
         best_guess_profile = None
