@@ -154,5 +154,4 @@ def plot_initial_fields(
         ax_bvnorm.grid(True)
 
         fig.tight_layout()
-
         plt.show()

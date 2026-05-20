@@ -91,6 +91,11 @@ def main(cfg: DictConfig) -> None:
         logger.info("No SPINUP")
         true_sol = ic_ref
 
+        try:
+            natural_variability = cfg.case.true_initial_state.magnitude
+        except:
+            natural_variability = cfg.case.true_initial_state.scale
+
     # --- Rollout the truth.
     x0_truth = true_sol
     true_sol = forward_model.rollout(
@@ -325,7 +330,7 @@ def main(cfg: DictConfig) -> None:
 
     # --- Plot Initial-Conditions (I.C, best-guess, Initial-Ensemble) + Breeding statitcs if available
     try:
-        best_guess_profile = best_guess_profile.squeeze()
+        best_guess_profile = best_guess_profile[0]
     except:
         best_guess_profile = None
     try:
@@ -337,7 +342,7 @@ def main(cfg: DictConfig) -> None:
         ensemble=posterior_ensemble,
         truth_t0=true_sol,
         x_before_spinup=ic_ref[0],
-        best_guess_profile=best_guess_profile[0],
+        best_guess_profile=best_guess_profile,
         bv_dict=bv_dict,
     )
 
