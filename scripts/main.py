@@ -78,6 +78,7 @@ def main(cfg: DictConfig) -> None:
             forward_model=forward_model,
             spinup_steps=cfg.spinup_steps,
         )
+
     else:
         logger.info("No SPINUP")
         true_sol = ic_ref
@@ -87,6 +88,20 @@ def main(cfg: DictConfig) -> None:
     true_sol = forward_model.rollout(
         x0_truth, cfg.data_assimilation_steps, return_model_integration_steps=True
     )
+
+    # --- BEST-GUESS: Reference state for ensemble members --> determines how difficulat assimilation task will be
+    BEST_GUESS_FLAG = initial_ensemble_cfg.centered_around_bestguess
+    if BEST_GUESS_FLAG:
+        # NOTE: Just a design choice to add noise of with 10% scale compared to sclae of I.C. of truth
+        # NOTE: Maybe 'better' way is to take some 'climatological' scale --> E.g. Bulk variance of spin-up
+        BG_SCALE = 0.5  # Noise compared to truth
+
+        rng_key, bg_key = jax.random.split(rng_key)
+        perturbs_best_guess = true_initial_state_profile.sample(rng_key=bg_key)
+        best_guess_profile = x0_truth + perturbs_best_guess * BG_SCALE
+
+    else:
+        best_guess_profile = None
 
     # --- Create synthetic observations
     # Define Observations-error covariance
@@ -113,20 +128,6 @@ def main(cfg: DictConfig) -> None:
     )
     logger.info(f"DA method: {da_model}")
 
-    # --- BEST-GUESS: Reference state for ensemble members --> determines how difficulat assimilation task will be
-    centered_around_bestguess = initial_ensemble_cfg.centered_around_bestguess
-    if centered_around_bestguess:
-        # NOTE: Just a design choice to add noise of with 10% scale compared to sclae of I.C. of truth
-        # NOTE: Maybe 'better' way is to take some 'climatological' scale --> E.g. Bulk variance of spin-up
-        BG_SCALE = 0.5  # Noise compared to truth
-
-        rng_key, bg_key = jax.random.split(rng_key)
-        perturbs_best_guess = true_initial_state_profile.sample(rng_key=bg_key)
-        best_guess_profile = x0_truth + perturbs_best_guess * BG_SCALE
-
-    else:
-        best_guess_profile = None
-
     # --- GENERATE INITIAL ENSEMBLE !!!!!
     initial_ensemble_generator = instantiate(initial_ensemble_cfg)
     logger.info(f"Prior ensemble: {initial_ensemble_generator}")
@@ -141,8 +142,8 @@ def main(cfg: DictConfig) -> None:
     else:
         reference_ensemble = output
 
-    # --- Handle spin-up of ensemble (# TODO: Decide if we want to do this always or only when no best-guess is used!!)
-    if not centered_around_bestguess and cfg.spinup_steps:
+    # --- Handle spin-up of ensemble (only when no best-guess is used!!)
+    if not BEST_GUESS_FLAG and cfg.spinup_steps:
         logger.info(
             "\nSPIN-UP Initials Ensemble (as it is NOT centered around a best-guess profile)"
         )
@@ -152,7 +153,7 @@ def main(cfg: DictConfig) -> None:
             spinup_steps=cfg.spinup_steps,
         )
 
-    # TODO: Here it would be enough to only rollout best-guess (if present)
+    # TODO: Would it not be enough to only rollout best-guess (if present)
     # ---------------- Initialisation of data-containers that will be filled in DA-loop ------------------------------
     # Initialize the posterior ensemble from the Initial ensemble.
     posterior_ensemble = reference_ensemble.copy().reshape(
