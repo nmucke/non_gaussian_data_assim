@@ -1,0 +1,83 @@
+# 7D linear-Gaussian DA experiment scored against the analytical Kalman filter.
+# See scripts/main_analytical.py for the loop. All matrices must agree with
+# the dimension implied by `prior_mean` (validated at runtime).
+#
+# Scalar shortcut: a single number for any of the covariance fields below is
+# interpreted as that scalar times the identity matrix of the right size.
+
+defaults:
+  - _self_
+
+seed: 42
+state_dim: 7                              # MUST match len(prior_mean) and the matrices below
+
+# Linear forward model:  x_{k+1} = M x_k  (per inner step).
+# Tridiagonal pattern: 0.95 on the diagonal, +0.05 super-diagonal,
+# -0.05 sub-diagonal -- a mild "wave-like" linear coupling (spectral radius < 1).
+transition_matrix:
+  - [ 0.95,  0.05,  0.00,  0.00,  0.00,  0.00,  0.00]
+  - [-0.05,  0.95,  0.05,  0.00,  0.00,  0.00,  0.00]
+  - [ 0.00, -0.05,  0.95,  0.05,  0.00,  0.00,  0.00]
+  - [ 0.00,  0.00, -0.05,  0.95,  0.05,  0.00,  0.00]
+  - [ 0.00,  0.00,  0.00, -0.05,  0.95,  0.05,  0.00]
+  - [ 0.00,  0.00,  0.00,  0.00, -0.05,  0.95,  0.05]
+  - [ 0.00,  0.00,  0.00,  0.00,  0.00, -0.05,  0.95]
+model_integration_steps: 1                # inner steps between assimilations
+
+process_noise_cov: 0.05                   # Q  = 0.05 * I_7
+obs_noise_cov: 0.5                        # R  = 0.5  * I_7  (observation operator is H = I_7)
+prior_mean: [2.0, -1.0, 0.5, -0.5, 1.0, 0.0, -2.0]
+prior_cov: 1.0                            # P0 = 1.0  * I_7
+
+ensemble_size: 1000
+data_assimilation_steps: 30
+
+forward_model:
+  _target_: non_gaussian_data_assim.forward_models.linear.LinearModel
+  transition_matrix: ${transition_matrix}
+  model_integration_steps: ${model_integration_steps}
+
+# Default: identity observation operator (observe every state component).
+# Edit `obs_indices` to observe a subset (e.g. only `[0, 3, 6]`).
+obs_operator:
+  _target_: non_gaussian_data_assim.observations.observation_operator.LinearObservationOperator
+  obs_states: [0]
+  obs_indices:
+    _target_: numpy.arange
+    start: 2
+    stop: ${state_dim}
+  state_dim: ${state_dim}
+  num_states: 1
+
+# Same set of methods as the 2D config; tune per-method hyperparameters here.
+da_methods:
+  EnKF:
+    _target_: non_gaussian_data_assim.da_methods.enkf.EnsembleKalmanFilter
+    ensemble_size: ${ensemble_size}
+    inflation_factor: 1.0
+  AGMF:
+    _target_: non_gaussian_data_assim.da_methods.agmf.AdaptiveGaussianMixtureFilter
+    ensemble_size: ${ensemble_size}
+    w_prev:
+      _target_: non_gaussian_data_assim.da_methods.agmf.uniform_weights
+      ensemble_size: ${ensemble_size}
+    nc_threshold: 0.5
+    inflation_factor: 1.0
+  ParticleFilter:
+    _target_: non_gaussian_data_assim.da_methods.particle_filter.ParticleFilter
+    ensemble_size: ${ensemble_size}
+    resample_threshold: 0.5
+    jitter_scale: 0.0
+  # PFF (uncomment to include -- slower):
+  # PFF:
+  #   _target_: non_gaussian_data_assim.da_methods.pff.ParticleFlowFilter
+  #   ensemble_size: ${ensemble_size}
+  #   num_pseudo_time_steps: 500
+  #   step_size: 0.1
+  #   alpha: 0.1
+  #   stepper: forward_euler
+
+hydra:
+  output_subdir: null
+  run:
+    dir: .

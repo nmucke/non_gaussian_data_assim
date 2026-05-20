@@ -31,12 +31,22 @@ class ParticleFilter(BaseDataAssimilationMethod):
       1. Computes log-likelihoods of each particle under
          :math:`y \\sim \\mathcal{N}(H(x_i), R)`.
       2. Normalizes weights with the log-sum-exp trick.
-      3. Computes the effective sample size
-         :math:`N_\\text{eff} = 1 / \\sum_i w_i^2`.
-      4. Systematically resamples when
-         ``N_eff < resample_threshold * ensemble_size``.
-      5. Optionally jitters resampled particles by
+      3. Systematically resamples to recover an (approximately) equally
+         weighted particle set.
+      4. Optionally jitters resampled particles by
          ``jitter_scale * N(0, I)`` to combat sample impoverishment.
+
+    Resampling happens at *every* analysis step on purpose: this filter is
+    stateless (it returns a plain, unweighted ensemble and keeps no weights
+    between assimilation steps), so it has to fold the observation into the
+    sample each step. Adaptive ("resample only when N_eff is low") resampling
+    is correct *only* when the importance weights are carried forward across
+    steps, which this design does not do -- skipping the resample would just
+    return the forecast ensemble and ignore the observation.
+
+    The reported ``N_eff = 1 / sum(w_i^2)`` is a useful degeneracy diagnostic
+    but no longer gates resampling. ``resample_threshold`` is accepted for
+    backward compatibility but unused.
 
     The bootstrap PF is asymptotically exact but degenerates rapidly in
     high dimensions; for L96 / Kuramoto it is included mainly as a baseline.
@@ -80,22 +90,14 @@ class ParticleFilter(BaseDataAssimilationMethod):
         weights = jnp.exp(log_w)
         weights = weights / jnp.sum(weights)
 
-        # Effective sample size.
-        n_eff = 1.0 / jnp.sum(weights**2)
-        threshold = self.resample_threshold * self.ensemble_size
-
         resample_key, jitter_key = jax.random.split(rng_key)
 
-        def _resample(_: Any) -> jnp.ndarray:
-            indices = _systematic_resample(weights, resample_key)
-            resampled = prior_ensemble[indices]
-            if self.jitter_scale > 0.0:
-                resampled = resampled + self.jitter_scale * jax.random.normal(
-                    jitter_key, resampled.shape
-                )
-            return resampled
-
-        def _no_resample(_: Any) -> jnp.ndarray:
-            return prior_ensemble
-
-        return jax.lax.cond(n_eff < threshold, _resample, _no_resample, operand=None)
+        # Resample every step: this filter keeps no weights between steps, so
+        # the observation has to be folded into the sample now or it is lost.
+        indices = _systematic_resample(weights, resample_key)
+        resampled = prior_ensemble[indices]
+        if self.jitter_scale > 0.0:
+            resampled = resampled + self.jitter_scale * jax.random.normal(
+                jitter_key, resampled.shape
+            )
+        return resampled
