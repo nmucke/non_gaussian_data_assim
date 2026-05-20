@@ -87,7 +87,7 @@ case:
       nc_threshold: 0.5
       localization_distance: null
     pff:
-      num_pseudo_time_steps: 1500
+      num_pseudo_time_steps: 5000
       step_size: 0.05
       stepper: runge_kutta_4
       localization_distance: null
