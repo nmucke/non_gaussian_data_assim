@@ -80,6 +80,7 @@ target/
 
 # Max added: Track no ipynb
 *.ipynb
+multirun/
 
 
 # IPython

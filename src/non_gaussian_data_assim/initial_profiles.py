@@ -6,18 +6,31 @@ from typing import Union
 import jax
 import jax.numpy as jnp
 
+# --- If initital profile is random, take functionality from ensemble-generation methods
+from non_gaussian_data_assim.ensemble_generation.ensemble_perturbations import (
+    CoupledKuramotoPseudo1DPerturbation,
+    WhiteNoise,
+)
+
 
 class BaseProfile(ABC):
     """Base class for deterministic initial-state profiles."""
 
-    def __init__(self, name: str, num_states: int, state_dim: int) -> None:
+    def __init__(
+        self, name: str, num_states: int, state_dim: int, periodic: bool
+    ) -> None:
         self.name = name
         self.num_states = num_states
         self.state_dim = state_dim
+        self.periodic = periodic
+
+    def _enforce_periodicity(self, profile: jnp.ndarray) -> jnp.ndarray:
+        profile = profile.at[..., -1].set(profile[..., 0])
+        return profile
 
     @abstractmethod
-    def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
-        """Return a profile of shape [ensemble_size, num_states, state_dim]."""
+    def sample(self, rng_key: jax.Array) -> jnp.ndarray:
+        """Return a profile of shape [ensemble_size=1, num_states, state_dim]."""
         raise NotImplementedError
 
 
@@ -28,18 +41,27 @@ class ConstantProfile(BaseProfile):
         self,
         num_states: int,
         state_dim: int,
+        periodic: bool,
         value: float = 0.0,
+        **kwargs: int,
     ) -> None:
-        super().__init__(name="constant", num_states=num_states, state_dim=state_dim)
+        super().__init__(
+            name="constant",
+            num_states=num_states,
+            state_dim=state_dim,
+            periodic=periodic,
+        )
         self.value = value
 
-    def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
+    def sample(self, rng_key: jax.Array) -> jnp.ndarray:
         del rng_key
-        return jnp.full((ensemble_size, self.num_states, self.state_dim), self.value)
+        return jnp.full((1, self.num_states, self.state_dim), self.value)
 
 
 class WhiteNoiseProfile(BaseProfile):
-    """Profile that returns a random, uncorellated initial state."""
+    """
+    Initial profile is random White-Noise. Created just by calling the white-noise ensemble
+    """
 
     def __init__(
         self,
@@ -47,17 +69,24 @@ class WhiteNoiseProfile(BaseProfile):
         state_dim: int,
         scale: float,
         periodic: bool,
+        **kwargs: int,
     ) -> None:
-        super().__init__(name="white_noise", num_states=num_states, state_dim=state_dim)
+        super().__init__(
+            name="white_noise",
+            num_states=num_states,
+            state_dim=state_dim,
+            periodic=periodic,
+        )
         self.scale = scale
-        self.periodic = periodic
 
-    def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
-        shape = (ensemble_size, self.num_states, self.state_dim)
-        ic = jax.random.normal(rng_key, shape) * self.scale
+    def sample(self, rng_key: jax.Array) -> jnp.ndarray:
+        whitenoise = WhiteNoise(
+            num_states=self.num_states, state_dim=self.state_dim, scale=self.scale
+        )
+        field = whitenoise.sample(rng_key=rng_key, ensemble_size=1)
         if self.periodic:
-            ic = ic.at[..., -1].set(ic[..., 0])
-        return ic
+            field = self._enforce_periodicity(field)
+        return field
 
 
 class CosineProfile(BaseProfile):
@@ -72,14 +101,19 @@ class CosineProfile(BaseProfile):
         num_states: int,
         state_dim: int,
         domain_length: float,
+        periodic: bool,
         magnitude: Union[float, jnp.ndarray],
+        **kwargs: int,
     ) -> None:
-        super().__init__(name="cosine", num_states=num_states, state_dim=state_dim)
+        super().__init__(
+            name="cosine", num_states=num_states, state_dim=state_dim, periodic=periodic
+        )
         self.domain_length = domain_length
         self.magnitude = magnitude
 
-    def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
+    def sample(self, rng_key: jax.Array) -> jnp.ndarray:
         del rng_key
+        ensemble_size = 1
         x = jnp.linspace(0.0, self.domain_length, self.state_dim)
 
         magnitudes = jnp.asarray(self.magnitude)
@@ -91,33 +125,13 @@ class CosineProfile(BaseProfile):
                 4 * jnp.pi * x / self.domain_length
             )
 
-        profiles = jax.vmap(profile)(magnitudes)
-        return profiles.reshape(ensemble_size, 1, self.state_dim)
+        field = jax.vmap(profile)(magnitudes)
+        field = field.reshape(ensemble_size, 1, self.state_dim)
 
+        if self.periodic:
+            field = self._enforce_periodicity(field)
 
-def _smooth_gaussian_periodic_1d(
-    rng_key: jax.Array,
-    state_dim: int,
-    domain_length: float,
-    decorrelation_length: float,
-) -> jnp.ndarray:
-    """Sample one periodic, mean-zero, unit-variance smooth Gaussian random field.
-
-    Equivalent to Evensen's `pseudo1D`: white noise filtered in Fourier space by a
-    Gaussian power spectrum exp(-(k * L)^2 / 2), then renormalized so the realized
-    field has empirical mean 0 and std 1.
-    """
-    dx = domain_length / state_dim
-    k = 2.0 * jnp.pi * jnp.fft.rfftfreq(state_dim, d=dx)
-    spectrum = jnp.exp(-((k * decorrelation_length) ** 2) / 2.0)
-
-    key_re, key_im = jax.random.split(rng_key)
-    n_freq = k.shape[0]
-    coefs = (
-        jax.random.normal(key_re, (n_freq,)) + 1j * jax.random.normal(key_im, (n_freq,))
-    ) * spectrum
-    field = jnp.fft.irfft(coefs, n=state_dim)
-    return (field - field.mean()) / field.std()
+        return field
 
 
 class CoupledKuramotoPseudo1DProfile(BaseProfile):
@@ -133,23 +147,31 @@ class CoupledKuramotoPseudo1DProfile(BaseProfile):
         num_states: int,
         state_dim: int,
         domain_length: float,
+        periodic: bool,
         decorrelation_length: float,
         scale: float = 1.0,
     ) -> None:
         super().__init__(
-            name="coupled_kuramoto_pseudo1D", num_states=num_states, state_dim=state_dim
+            name="coupled_kuramoto_pseudo1D",
+            num_states=num_states,
+            state_dim=state_dim,
+            periodic=periodic,
         )
         self.domain_length = domain_length
         self.decorrelation_length = decorrelation_length
         self.scale = scale
 
-    def sample(self, rng_key: jax.Array, ensemble_size: int) -> jnp.ndarray:
-        keys = jax.random.split(rng_key, ensemble_size * self.num_states)
-        fields = jax.vmap(
-            lambda key: _smooth_gaussian_periodic_1d(
-                key, self.state_dim, self.domain_length, self.decorrelation_length
-            )
-        )(keys)
-        return self.scale * fields.reshape(
-            ensemble_size, self.num_states, self.state_dim
+    def sample(self, rng_key: jax.Array, ensemble_size: int = 1) -> jnp.ndarray:
+        cks_smooth_gaussian = CoupledKuramotoPseudo1DPerturbation(
+            num_states=self.num_states,
+            state_dim=self.state_dim,
+            domain_length=self.domain_length,
+            decorrelation_length=self.decorrelation_length,
+            scale=self.scale,
         )
+        profile = cks_smooth_gaussian.sample(rng_key, ensemble_size=ensemble_size)
+
+        if self.periodic:
+            profile = self._enforce_periodicity(profile)
+
+        return profile

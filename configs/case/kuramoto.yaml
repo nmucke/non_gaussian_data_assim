@@ -1,9 +1,10 @@
 # @package _global_
-data_assimilation_steps: 150
+data_assimilation_steps: 40
 model_integration_steps: 10
 ensemble_size: 50
 inflation_factor: 1.0
 localization_distance: 100
+spinup_steps: 30 # spinup run for spinup_steps * model_integration_steps
 
 
 case:
@@ -31,53 +32,59 @@ case:
       stop: ${case.state_dim}
       step: 4
 
-  true_initial_state:
-    _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
-    profile:
-      _target_: non_gaussian_data_assim.initial_profiles.CosineProfile
-      num_states: ${case.num_states}
-      state_dim: ${case.state_dim}
-      domain_length: ${case.domain_length}
-      magnitude: 0.1
 
-  prior_ensemble:
-    _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
-    profile:
-      _target_: non_gaussian_data_assim.initial_profiles.CosineProfile
-      num_states: ${case.num_states}
-      state_dim: ${case.state_dim}
-      domain_length: ${case.domain_length}
-      magnitude:
-        _target_: numpy.random.uniform
-        low: 0.0
-        high: 1.5
-        size: ${ensemble_size}
-    noise: null
+  true_initial_state:
+    _target_: non_gaussian_data_assim.initial_profiles.CosineProfile
+    num_states: ${case.num_states}
+    state_dim: ${case.state_dim}
+    domain_length: ${case.domain_length}
+    periodic: false
+    magnitude: 1
+
+
+  initial_ensemble:
+    _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsemble
+    centered_around_bestguess: true
     periodic: false
 
+    ens_perturbation:
+      # --- SmoothGaussian / pseudo1D-like field perturbation ---
+      # Recommended for KS if you want spatially structured initial uncertainty.
+      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.CoupledKuramotoPseudo1DPerturbation
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      domain_length: ${case.domain_length}
+      decorrelation_length: 10.0
+      scale: 1.0
 
-  # initial_state:
-  #   _target_: non_gaussian_data_assim.initial_conditions.cosine_initial_state
-  #   _partial_: true
-  #   state_dim: ${case.state_dim}
-  #   domain_length: ${case.domain_length}
-  #   magnitude: 0.1
+      # # --- WhiteNoise ---
+      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.WhiteNoise
+      # num_states: ${case.num_states}
+      # state_dim: ${case.state_dim}
+      # scale: 1.0
 
+      # # --- RedNoise ---
+      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise
+      # num_states: ${case.num_states}
+      # state_dim: ${case.state_dim}
+      # scale: 1.0
+      # alpha: 1.0
 
-
-  # prior_ensemble:
-  #   _target_: non_gaussian_data_assim.initial_conditions.cosine_prior_ensemble
-  #   _partial_: true
-  #   state_dim: ${case.state_dim}
-  #   domain_length: ${case.domain_length}
-  #   magnitude_min: 0.0
-  #   magnitude_max: 1.5
-
+      # # --- Breeding ---
+      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation
+      # num_states: ${case.num_states}
+      # state_dim: ${case.state_dim}
+      # forward_model: ${case.forward_model}
+      # delta0: 1.0
+      # breeding_cycles: 10
+      # outer_steps_per_cycle: 4
 
 
   plotter:
-    _target_: non_gaussian_data_assim.plotting.plot_high_dim_field
+    _target_: non_gaussian_data_assim.plotting.plot_fields.plot_high_dim_field
     _partial_: true
+
+
 
   da_method_overrides:
     enkf:

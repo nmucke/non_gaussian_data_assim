@@ -30,33 +30,33 @@ case:
       stop: 3
 
 
+
   true_initial_state:
-    _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
-    profile:
-      _target_: non_gaussian_data_assim.initial_profiles.WhiteNoiseProfile
+    _target_: non_gaussian_data_assim.initial_profiles.WhiteNoiseProfile
+    num_states: ${case.num_states}
+    state_dim: ${case.state_dim}
+    periodic: false
+    scale: 10.0
+
+
+  initial_ensemble:
+    _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsemble
+    centered_around_bestguess: true
+    periodic: false
+
+    ens_perturbation:
+      # --- WhiteNoise ---
+      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.WhiteNoise
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
-      scale: 10
-      periodic: true
+      scale: 10.0
 
-
-  prior_ensemble:
-    _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
-
-    profile:
-      _target_: non_gaussian_data_assim.initial_profiles.ConstantProfile
-      num_states: ${case.num_states}
-      state_dim: ${case.state_dim}
-      value: 0.0
-
-
-    noise:
-      # # --- Breeding
+      # # --- Breeding ---
       # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation
       # num_states: ${case.num_states}
       # state_dim: ${case.state_dim}
       # forward_model: ${case.forward_model}
-      # delta0: 1
+      # delta0: 1.0
       # breeding_cycles: 10
       # outer_steps_per_cycle: 4
 
@@ -67,22 +67,12 @@ case:
       # scale: 1.0
       # alpha: 1.0
 
-      # --- WhiteNoise ---
-      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.WhiteNoise
-      num_states: ${case.num_states}
-      state_dim: ${case.state_dim}
-      scale: 10.0
-
-
-    periodic: false
-
-
 
 
 
 
   plotter:
-    _target_: non_gaussian_data_assim.plotting.plot_low_dim_trajectory
+    _target_: non_gaussian_data_assim.plotting.plot_fields.plot_low_dim_trajectory
     _partial_: true
     state_names: [x, y, z]
 

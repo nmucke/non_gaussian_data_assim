@@ -1,5 +1,5 @@
 # @package _global_
-data_assimilation_steps: 100
+data_assimilation_steps: 50
 model_integration_steps: 32
 ensemble_size: 50
 inflation_factor: 1.0
@@ -12,7 +12,7 @@ case:
   title: "Coupled Kuramoto-Sivashinsky"
   num_states: 2
   state_dim: 1024
-  obs_noise_variance: 0.09
+  obs_noise_variance: 0.1 # 0.09
   domain_length: 1024
 
   forward_model:
@@ -43,56 +43,59 @@ case:
         stop: ${case.state_dim}
         step: 15
 
+
   true_initial_state:
-    _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
-    profile:
-      _target_: non_gaussian_data_assim.initial_profiles.CoupledKuramotoPseudo1DProfile
-      num_states: ${case.num_states}
-      state_dim: ${case.state_dim}
-      domain_length: ${case.domain_length}
-      decorrelation_length: 10.0
-    noise: null
+    _target_: non_gaussian_data_assim.initial_profiles.CoupledKuramotoPseudo1DProfile
+    num_states: ${case.num_states}
+    state_dim: ${case.state_dim}
+    periodic: false
+    scale: 1.0
+
+    # CoupledKuramotoPseudo1DProfile --> Additionaly required
+    domain_length: ${case.domain_length}
+    decorrelation_length: 10.0
+
+
+  initial_ensemble:
+    _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsemble
+    centered_around_bestguess: false
     periodic: false
 
+    ens_perturbation:
 
-
-
-  prior_ensemble:
-    _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
-
-
-    profile:
-      _target_: non_gaussian_data_assim.initial_profiles.CoupledKuramotoPseudo1DProfile
+      # --- SmoothGaussianNoise
+      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.CoupledKuramotoPseudo1DPerturbation
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
       domain_length: ${case.domain_length}
       decorrelation_length: 10.0
       scale: 1.0
 
-    noise: null
+      # # --- Breeding
+      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation
+      # num_states: ${case.num_states}
+      # state_dim: ${case.state_dim}
+      # forward_model: ${case.forward_model}
+      # delta0: 5.0
+      # breeding_cycles: 30
+      # outer_steps_per_cycle: 32
+      # norm_fct:
+      #   _target_: non_gaussian_data_assim.ensemble_generation.breeding_vector.SelectedStateL2Norm
+      #   state_index: 0  # 0:Fast Atmosphere.     ||       1: Slow ocean variable
 
+      # # --- RedNoise ---
+      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise
+      # num_states: ${case.num_states}
+      # state_dim: ${case.state_dim}
+      # domain_length: ${case.domain_length}
+      # scale: 1.0
+      # alpha: 2.0
 
-    # profile:
-    #   _target_: non_gaussian_data_assim.initial_profiles.ConstantProfile
-    #   num_states: ${case.num_states}
-    #   state_dim: ${case.state_dim}
-    #   value: 0.0
-
-    # noise:
-    #   # --- Breeding
-    #   _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation
-    #   num_states: ${case.num_states}
-    #   state_dim: ${case.state_dim}
-    #   forward_model: ${case.forward_model}
-    #   delta0: 5.0
-    #   breeding_cycles: 10
-    #   outer_steps_per_cycle: 4
-
-
-
-
-    periodic: false
-
+      # # --- WhiteNoise ---
+      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.WhiteNoise
+      # num_states: ${case.num_states}
+      # state_dim: ${case.state_dim}
+      # scale: 10.0
 
 
 
@@ -101,7 +104,7 @@ case:
 
 
   plotter:
-    _target_: non_gaussian_data_assim.plotting.plot_multi_state_high_dim_field
+    _target_: non_gaussian_data_assim.plotting.plot_fields.plot_multi_state_high_dim_field
     _partial_: true
 
   da_method_overrides:
