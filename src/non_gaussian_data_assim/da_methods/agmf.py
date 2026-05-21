@@ -32,6 +32,7 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
         name: str = "agmf",
         inflation_factor: float = 1.0,
         localization_distance: Optional[int] = None,
+        periodic: bool = False,
     ) -> None:
         """
         Initialize the Adaptive Gaussian Mixture Filter.
@@ -54,12 +55,17 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
         self.localization_distance = localization_distance
         self.num_states = forward_operator.num_states
         self.state_dim = forward_operator.state_dim
+        self.periodic = periodic
 
         if self.localization_distance is None:
             self.localization = lambda x: x
         else:
             self.localization = lambda x: distance_based_localization(
-                self.localization_distance, self.state_dim, x  # type: ignore[arg-type]
+                r_influ=self.localization_distance,  # type: ignore[arg-type]
+                state_dim=self.state_dim,
+                num_states=self.num_states,
+                cov_prior=x,
+                periodic=self.periodic,
             )
 
     def _analysis_step(

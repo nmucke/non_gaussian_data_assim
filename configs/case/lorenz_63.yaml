@@ -37,7 +37,7 @@ case:
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
       scale: 10
-      periodic: true
+      periodic: false
 
 
   prior_ensemble:
@@ -74,7 +74,7 @@ case:
       scale: 10.0
 
 
-    periodic: false
+    periodic: ${case.true_initial_state.profile.periodic}
 
 
 
@@ -92,16 +92,19 @@ case:
     enkf:
       inflation_factor: ${inflation_factor}
       localization_distance: null
+      periodic: ${case.true_initial_state.profile.periodic}
     agmf:
       inflation_factor: ${inflation_factor}
       nc_threshold: 0.5
       localization_distance: null
+      periodic: ${case.true_initial_state.profile.periodic}
     pff:
       num_pseudo_time_steps: 1500
       step_size: 0.05
       stepper: runge_kutta_4
       localization_distance: null
       inflation_factor: ${inflation_factor}
+      periodic: ${case.true_initial_state.profile.periodic}
     particle_filter:
       resample_threshold: 0.5
       jitter_scale: 0.5

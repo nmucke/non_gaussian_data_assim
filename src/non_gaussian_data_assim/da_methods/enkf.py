@@ -25,6 +25,7 @@ class EnsembleKalmanFilter(BaseDataAssimilationMethod):
         name: str = "enkf",
         inflation_factor: float = 1.0,
         localization_distance: Optional[int] = None,
+        periodic: bool = False,
     ) -> None:
         """
         Initialize the Ensemble Kalman Filter.
@@ -44,12 +45,18 @@ class EnsembleKalmanFilter(BaseDataAssimilationMethod):
         self.dofs = self.num_states * self.state_dim
         self.R = R
         self.localization_distance = localization_distance
+        self.periodic = periodic
 
         if self.localization_distance is None:
             self.localization = lambda x: x
         else:
+            # loc_distance:int = self.localization_distance
             self.localization = lambda x: distance_based_localization(
-                self.localization_distance, self.state_dim, x  # type: ignore[arg-type]
+                r_influ=self.localization_distance,  # type: ignore[arg-type]
+                state_dim=self.state_dim,
+                num_states=self.num_states,
+                cov_prior=x,  # type : ignore[arg-type]
+                periodic=self.periodic,
             )
 
     def _analysis_step(

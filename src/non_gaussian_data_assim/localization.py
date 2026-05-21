@@ -2,7 +2,11 @@ import jax.numpy as jnp
 
 
 def distance_based_localization(
-    r_influ: int, state_dim: int, cov_prior: jnp.ndarray, num_states: int | None = None
+    r_influ: int,
+    state_dim: int,
+    cov_prior: jnp.ndarray,
+    num_states: int | None = None,
+    periodic: bool = False,
 ) -> jnp.ndarray:
     """
     Apply localization to the covariance matrix.
@@ -17,7 +21,7 @@ def distance_based_localization(
     jax.numpy.array: Localized covariance matrix.
     """
 
-    # -- Check that if no Number of State is passed, that assumption that there is 1 state is correct
+    # -- Check assumption of num_state=1 is correct if that if no num_state is passed!!
     if num_states is None:
         if cov_prior.shape[0] % state_dim != 0:
             raise ValueError(
@@ -25,7 +29,7 @@ def distance_based_localization(
                 f"cov_prior shape {cov_prior.shape} is incompatible with state_dim={state_dim}"
             )
         num_states = cov_prior.shape[0] // state_dim
-    # -- Final check covariance matrix has expected shape
+    # -- Final check covariance matrix has expected shape || expected square atrix with dim: num_states * state_dim
     expected_dim = num_states * state_dim
     if cov_prior.shape != (expected_dim, expected_dim):
         raise ValueError(
@@ -33,13 +37,19 @@ def distance_based_localization(
             f"got {cov_prior.shape}. num_states={num_states}, state_dim={state_dim}."
         )
 
-    # --- Periodic mask # TODO: Is this mask periodic
+    # --- Make a matrix that shows distance from diagonal
     idx = jnp.arange(state_dim)
     dist = jnp.abs(idx[:, None] - idx[None, :])
-    dist = jnp.minimum(dist, state_dim - dist)  # periodic distance
 
+    # --- If periodic, wrap around corners of matrix
+    if periodic:
+        dist = jnp.minimum(dist, state_dim - dist)
+
+    # --- Create mask with Gaussian-like taper-off with a decay-factor r_influ
     mask = jnp.exp(-(dist**2) / r_influ**2)
-    mask = jnp.where(dist <= 3 * r_influ, mask, 0.0)
+    mask = jnp.where(
+        dist <= 3 * r_influ, mask, 0.0
+    )  # Enforce 0 a certain distance away
 
     # Apply the localization mask to the prior covariance matrix.
     # Each (state_dim x state_dim) block is multiplied by the same mask, so

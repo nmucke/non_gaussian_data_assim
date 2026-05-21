@@ -39,6 +39,7 @@ case:
       state_dim: ${case.state_dim}
       domain_length: ${case.domain_length}
       magnitude: 0.1
+      periodic: true
 
   prior_ensemble:
     _target_: non_gaussian_data_assim.ensemble_generation.prior_ensemble.PriorEnsemble
@@ -53,7 +54,7 @@ case:
         high: 1.5
         size: ${ensemble_size}
     noise: null
-    periodic: false
+    periodic: ${case.true_initial_state.profile.periodic}
 
 
   # initial_state:
@@ -83,10 +84,12 @@ case:
     enkf:
       inflation_factor: ${inflation_factor}
       localization_distance: ${localization_distance}
+      periodic: ${case.true_initial_state.profile.periodic}
     agmf:
       inflation_factor: ${inflation_factor}
       nc_threshold: 0.5
       localization_distance: ${localization_distance}
+      periodic: ${case.true_initial_state.profile.periodic}
     pff:
       num_pseudo_time_steps: 10
       step_size: 0.1
@@ -94,6 +97,7 @@ case:
       localization_distance: ${localization_distance}
       inflation_factor: ${inflation_factor}
       prior_cov_regularization: 1.0e-2
+      periodic: ${case.true_initial_state.profile.periodic}
     particle_filter:
       resample_threshold: 0.5
       jitter_scale: 0.05

@@ -124,6 +124,7 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         return_pff_trajectory: bool = False,
         inflation_factor: float = 1.0,
         prior_cov_regularization: Optional[float] = None,
+        periodic: bool = False,
     ) -> None:
         """
         Initialize the Particle Flow Filter.
@@ -160,11 +161,17 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         self.is_linear_obs_operator = obs_operator.is_linear
         self.inflation_factor = inflation_factor
         self.prior_cov_regularization = prior_cov_regularization
+        self.periodic = periodic
+
         if self.localization_distance is None:
             self.localization = lambda x: x
         else:
             self.localization = lambda x: distance_based_localization(
-                self.localization_distance, self.state_dim, x  # type: ignore[arg-type]
+                r_influ=self.localization_distance,  # type: ignore[arg-type]
+                state_dim=self.state_dim,
+                num_states=self.num_states,
+                cov_prior=x,
+                periodic=self.periodic,
             )
 
     def _analysis_step(

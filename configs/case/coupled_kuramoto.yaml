@@ -91,7 +91,7 @@ case:
 
 
 
-    periodic: false
+    periodic: ${case.true_initial_state.profile.periodic}
 
 
 
@@ -108,10 +108,12 @@ case:
     enkf:
       inflation_factor: ${inflation_factor}
       localization_distance: ${localization_distance}
+      periodic: ${case.true_initial_state.profile.periodic}
     agmf:
       inflation_factor: ${inflation_factor}
       nc_threshold: 0.5
       localization_distance: ${localization_distance}
+      periodic: ${case.true_initial_state.profile.periodic}
     pff:
       num_pseudo_time_steps: 100
       step_size: 1.0
@@ -119,6 +121,7 @@ case:
       localization_distance: ${localization_distance}
       inflation_factor: ${inflation_factor}
       prior_cov_regularization: 1.0e-2
+      periodic: ${case.true_initial_state.profile.periodic}
     particle_filter:
       resample_threshold: 0.5
       jitter_scale: 0.05
