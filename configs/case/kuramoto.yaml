@@ -4,6 +4,7 @@ model_integration_steps: 10
 ensemble_size: 50
 inflation_factor: 1.0
 localization_distance: 100
+spinup_steps: 30 # spinup run for spinup_steps * model_integration_steps
 
 
 case:
@@ -38,7 +39,7 @@ case:
     state_dim: ${case.state_dim}
     domain_length: ${case.domain_length}
     periodic: false
-    magnitude: 0.1
+    magnitude: 1
 
 
   initial_ensemble:

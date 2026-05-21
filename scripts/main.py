@@ -118,10 +118,17 @@ def main(cfg: DictConfig) -> None:
         whitenoise = WhiteNoise(
             num_states=cfg.case.num_states,
             state_dim=cfg.case.state_dim,
-            scale=natural_variability,
+            scale=natural_variability / 3,
         )
         perturbs_best_guess = whitenoise.sample(rng_key=bg_key, ensemble_size=1)
-        best_guess_profile = x0_truth + perturbs_best_guess
+        best_guess_profile0 = ic_ref + perturbs_best_guess
+
+        best_guess_profile = spinup_ensemble(
+            ensemble=best_guess_profile0,
+            forward_model=forward_model,
+            spinup_steps=cfg.spinup_steps,
+            get_natural_variablity=False,
+        )
 
     else:
         best_guess_profile = None
