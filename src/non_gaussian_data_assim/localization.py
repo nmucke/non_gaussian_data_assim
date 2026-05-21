@@ -41,16 +41,10 @@ def distance_based_localization(
     mask = jnp.exp(-(dist**2) / r_influ**2)
     mask = jnp.where(dist <= 3 * r_influ, mask, 0.0)
 
-    # Apply the localization mask to the prior covariance matrix
-    cov_prior_loc = jnp.zeros(cov_prior.shape)
-    for i in range(1, num_states + 1):
-        for j in range(1, num_states + 1):
-            # -- Set indices of current block
-            row_slice = slice((i - 1) * state_dim, i * state_dim)
-            col_slice = slice((j - 1) * state_dim, j * state_dim)
-            # -- Localise by multiplying with mask
-            localised_block = jnp.multiply(cov_prior[row_slice, col_slice], mask)
-            # -- Assign localised block to new covariance matrix
-            cov_prior_loc = cov_prior_loc.at[row_slice, col_slice].set(localised_block)
+    # Apply the localization mask to the prior covariance matrix.
+    # Each (state_dim x state_dim) block is multiplied by the same mask, so
+    # tiling the mask across the full matrix lets us do it in one operation.
+    full_mask = jnp.tile(mask, (num_states, num_states))
+    cov_prior_loc = cov_prior * full_mask
 
     return cov_prior_loc
