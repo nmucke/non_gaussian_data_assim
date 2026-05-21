@@ -42,7 +42,7 @@ case:
   initial_ensemble:
     _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsemble
     centered_around_bestguess: true
-    periodic: false
+    periodic: ${case.true_initial_state.periodic}
 
     ens_perturbation:
       # --- WhiteNoise ---
@@ -82,16 +82,19 @@ case:
     enkf:
       inflation_factor: ${inflation_factor}
       localization_distance: null
+      periodic: ${case.true_initial_state.periodic}
     agmf:
       inflation_factor: ${inflation_factor}
       nc_threshold: 0.5
       localization_distance: null
+      periodic: ${case.true_initial_state.periodic}
     pff:
       num_pseudo_time_steps: 5000
       step_size: 0.05
       stepper: runge_kutta_4
       localization_distance: null
       inflation_factor: ${inflation_factor}
+      periodic: ${case.true_initial_state.periodic}
     particle_filter:
       resample_threshold: 0.5
       jitter_scale: 0.5
