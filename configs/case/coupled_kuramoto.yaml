@@ -5,7 +5,7 @@ ensemble_size: 50
 inflation_factor: 1.0
 localization_distance: 10
 spinup_steps: 25 # spinup run for spinup_steps * model_integration_steps
-
+save_name: false
 
 case:
   name: coupled_kuramoto

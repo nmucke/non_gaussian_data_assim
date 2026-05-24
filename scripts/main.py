@@ -7,6 +7,7 @@ Examples:
 """
 
 import logging
+from pathlib import Path
 from typing import Optional
 
 import jax
@@ -17,6 +18,7 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 from tqdm import tqdm
 
+import non_gaussian_data_assim.utils.saving as saving
 from non_gaussian_data_assim.metrics.ensemble_metrics import CRPS
 from non_gaussian_data_assim.metrics.innovation_metrics import (
     ChiSquared,
@@ -50,6 +52,16 @@ def main(cfg: DictConfig) -> None:
     da_method_cfg = OmegaConf.merge(
         cfg.da_method, cfg.case.da_method_overrides[cfg.da_method.name]
     )
+
+    # ----------------------------------------------------------------------
+    # --- Save Config
+    save_name = str(cfg.save_name).strip()
+    base_path = Path("../experiments")
+    if bool(save_name) and isinstance(save_name, str):
+        # --- Check if folder-nmae is still free, if so, create folder
+        save_path_exp = saving.create_experiment_folder(save_name, root=base_path)
+        saving.save_config(cfg, save_path_exp)
+    # ---------------------------
 
     rng_key = jax.random.PRNGKey(cfg.seed)
 
