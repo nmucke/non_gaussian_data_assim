@@ -1,5 +1,6 @@
 """Plotting helpers for DA experiments."""
 
+from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
 import jax.numpy as jnp
@@ -21,6 +22,7 @@ def plot_low_dim_trajectory(
     state_names: Sequence[str],
     data_assimilation_steps: int,
     model_integration_steps: int,
+    path_savefig: Optional[Path] = None,
 ) -> None:
     """Per-state-dimension subplots for low-dimensional systems (e.g. Lorenz 63)."""
     true_sol_2d = true_sol.reshape(
@@ -31,7 +33,7 @@ def plot_low_dim_trajectory(
     std_post = posterior_ensemble.std(axis=(0, 2))
     time_axis = np.arange(posterior_ensemble.shape[1])
 
-    plt.figure()
+    plt.figure(figsize=(12, 8))
     plt.suptitle(
         f"{title}, DA Method: {da_method_name}, Ensemble Size: {ensemble_size}, \n"
         f"Reference RMSE: {reference_metrics['rmse']:.4f}, "
@@ -64,6 +66,9 @@ def plot_low_dim_trajectory(
         plt.xlabel("Time")
         plt.ylabel(state_names[state_idx])
         plt.ylim(true_sol_2d[:, state_idx].min(), true_sol_2d[:, state_idx].max())
+
+    if path_savefig is not None:
+        plt.savefig(path_savefig / "low_dim_trajectroy.png", dpi=100)
     plt.show()
 
 
@@ -81,6 +86,8 @@ def plot_high_dim_field(
     data_assimilation_steps: int,
     model_integration_steps: int,
     state_names: Optional[Sequence[str]] = None,
+    path_savefig: Optional[Path] = None,
+    figname_appendix: Optional[str] = None,
 ) -> None:
     """Spatial-field heatmaps + per-point time series for high-dim systems (L96, KS)."""
     del state_names
@@ -106,7 +113,7 @@ def plot_high_dim_field(
         "Posterior Ensemble Variance",
     ]
 
-    plt.figure()
+    plt.figure(figsize=(12, 8))
     plt.suptitle(
         f"{title}, DA Method: {da_method_name}, Ensemble Size: {ensemble_size}, \n"
         f"Reference RMSE: {reference_metrics['rmse']:.4f}, "
@@ -166,6 +173,14 @@ def plot_high_dim_field(
             + np.abs(true_sol_2d[:, idx_to_plot].max()) * 0.2,
         )
         plt.grid(True)
+
+    if path_savefig is not None:
+        figname = "high_dim_field"
+        figname = (
+            f"{figname}{figname_appendix}" if figname_appendix is not None else figname
+        )
+        plt.savefig(path_savefig / f"{figname}.png", dpi=100)
+
     plt.show()
 
 
@@ -179,6 +194,7 @@ def plot_da_diagnostics(
     bins: int = 51,
     hist_range: None | tuple[float, float] = None,
     show_fig: bool = False,
+    path_savefig: Optional[Path] = None,
 ) -> tuple[plt.Figure, plt.Axes]:
     """Plot innovation and posterior diagnostics"""
 
@@ -191,7 +207,7 @@ def plot_da_diagnostics(
         vmax = jnp.quantile(z_flat, 0.99)
         hist_range = (vmin, vmax)
 
-    fig, axs = plt.subplots(nrows=2, ncols=2, figsize=(12, 8), constrained_layout=True)
+    fig, axs = plt.subplots(nrows=2, ncols=2, figsize=(10, 6), constrained_layout=True)
     ax_hist, ax_chi, ax_scores, ax_reserved = axs.ravel()
 
     # --- Panel A: normalized innovation histogram
@@ -264,6 +280,9 @@ def plot_da_diagnostics(
     # --- Panel D
     ax_reserved.axis("off")
 
+    if path_savefig is not None:
+        plt.savefig(path_savefig / "da_diagnostics.png")
+
     if show_fig:
         plt.show()
 
@@ -284,6 +303,7 @@ def plot_multi_state_high_dim_field(
     data_assimilation_steps: int,
     model_integration_steps: int,
     state_names: Optional[Sequence[str]] = None,
+    path_savefig: Optional[Path] = None,
 ) -> None:
     """Multi-state version of `plot_high_dim_field`.
 
@@ -310,15 +330,6 @@ def plot_multi_state_high_dim_field(
             state_dim=state_dim,
             data_assimilation_steps=data_assimilation_steps,
             model_integration_steps=model_integration_steps,
+            path_savefig=path_savefig,
+            figname_appendix=f"state{state_idx}",
         )
-
-
-# def plot_starting_conditions(
-#     *,
-#     true_sol: jnp.ndarray,
-#     ic: jnp.ndarray,
-#     prior_ensemble: jnp.ndarray,
-#     best_guess: Optional[jnp.ndarray] = None,
-#     ic_spinup: Optional[jnp.ndarray] = None,
-# ) -> tuple[plt.Figure, plt.Axes]:
-#     pass

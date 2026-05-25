@@ -4,7 +4,11 @@ model_integration_steps: 5
 ensemble_size: 100
 inflation_factor: 1.0
 spinup_steps: 100
-save_name: false
+
+save:
+  experiment: true
+  figures: true
+  savename_appendix: ""
 
 case:
   name: lorenz_63

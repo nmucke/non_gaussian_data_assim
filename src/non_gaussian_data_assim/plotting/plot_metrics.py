@@ -1,5 +1,6 @@
 """Plotting metric (CRPS, RMSE) time-series """
 
+from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
 import jax.numpy as jnp
@@ -10,6 +11,7 @@ import numpy as np
 def plot_metric_timeseries(
     metrics: list[dict] | dict,
     show_fig: bool = False,
+    path_savefig: Optional[Path] = None,
 ) -> tuple[plt.Figure, plt.Axes]:
     """Plot time-series of rmse(+spread) and crps"""
 
@@ -93,6 +95,9 @@ def plot_metric_timeseries(
 
         if i == 0:
             ax.set_ylabel("Score")
+
+    if path_savefig is not None:
+        fig.savefig(path_savefig / "metric_timeseries.png", dpi=100)
 
     if show_fig:
         plt.show()
