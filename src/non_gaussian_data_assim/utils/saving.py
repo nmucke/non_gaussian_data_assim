@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import jax.numpy as jnp
+import numpy as np
 from omegaconf import DictConfig, OmegaConf
 
 
@@ -17,6 +18,7 @@ class ExperimentSaver:
     def create(
         cls, save_name: str, root: Path = Path("../experiments")
     ) -> "ExperimentSaver":
+        """This is like an overload in c++, instantiate a class given a exp_name"""
         save_name = clean_exp_name(save_name)
         root.mkdir(parents=True, exist_ok=True)
         exp_path = create_unique_folder(root=root, save_name=save_name)
@@ -34,10 +36,30 @@ class ExperimentSaver:
         return config_path
 
     def save_array(self, name: str, array: jnp.ndarray) -> Path:
-        arrays_dir = self.subdir("arrays")
+        arrays_dir = self.subdir("data")
         array_path = arrays_dir / f"{name}.npy"
         jnp.save(array_path, array, allow_pickle=False)
         return array_path
+
+    def save_metrics(
+        self, filename: str, metrics: dict[str, Any], save_summary: bool = True
+    ) -> Path:
+        metrics_dir = self.subdir("metrics")
+        path = metrics_dir / f"{filename}.npz"
+
+        metrics = {key: np.asarray(value) for key, value in metrics.items()}
+
+        np.savez(path, allow_pickle=False, **metrics)
+
+        if save_summary:
+            summary = {
+                key: float(value) for key, value in metrics.items() if value.ndim == 0
+            }
+            OmegaConf.save(
+                OmegaConf.create(summary),
+                metrics_dir / f"{filename}_summary.yaml",
+            )
+        return path
 
 
 def clean_exp_name(save_name: str) -> str:
@@ -59,30 +81,3 @@ def create_unique_folder(root: Path, save_name: str) -> Path:
             return exp_path
         except FileExistsError:
             idx += 1
-
-
-# def create_experiment_folder(save_name: str, root: Path) -> Path:
-#     """Create unique fodler-name where to save yaml and expeiremnt"""
-#     root.mkdir(parents=True, exist_ok=True)
-#     base_path = root / save_name
-#     idx = 0
-#     while True:
-#         exp_path = base_path if idx == 0 else root / f"{save_name}_{idx}"
-#         try:
-#             exp_path.mkdir()
-#             return exp_path
-#         except FileExistsError:
-#             idx += 1
-
-# def save_config(config: dict, save_path_exp: Path) -> None:
-#     # --- Check if folder-nmae is still free, if so, create folder
-#     save_path_yml = save_path_exp / "config"
-#     save_path_yml.mkdir()
-#     OmegaConf.save(config, save_path_yml / "config.yaml")
-
-
-# def create_timing_name(base_path: Path, save_name: str) -> Path:
-#     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-#     save_path_exp = base_path / f"{save_name}_{timestamp}"
-#     save_path_exp.mkdir(parents=True)
-#     return save_path_exp

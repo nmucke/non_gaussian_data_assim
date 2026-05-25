@@ -35,6 +35,7 @@ from non_gaussian_data_assim.observations.observation_utils import generate_obse
 from non_gaussian_data_assim.plotting.plot_initial_ensemble import plot_initial_fields
 from non_gaussian_data_assim.plotting.plot_innov_stats import plot_innov
 from non_gaussian_data_assim.plotting.plot_metrics import plot_metric_timeseries
+from non_gaussian_data_assim.utils.saving import ExperimentSaver
 from non_gaussian_data_assim.utils.spinup import spinup_ensemble
 
 logger = logging.getLogger(__name__)
@@ -53,15 +54,12 @@ def main(cfg: DictConfig) -> None:
         cfg.da_method, cfg.case.da_method_overrides[cfg.da_method.name]
     )
 
-    # ----------------------------------------------------------------------
-    # --- Save Config
-    save_name = str(cfg.save_name).strip()
-    base_path = Path("../experiments")
-    if bool(save_name) and isinstance(save_name, str):
-        # --- Check if folder-nmae is still free, if so, create folder
-        save_path_exp = saving.create_experiment_folder(save_name, root=base_path)
-        saving.save_config(cfg, save_path_exp)
-    # ---------------------------
+    # ------------------------------------------------------
+    # --- Init saving settings
+    exp_name = cfg.save_name
+    saver = ExperimentSaver.create(exp_name)
+    saver.save_config(cfg)
+    # ------------------------------------------------------
 
     rng_key = jax.random.PRNGKey(cfg.seed)
 
@@ -364,6 +362,33 @@ def main(cfg: DictConfig) -> None:
         best_guess_profile=best_guess_profile,
         bv_dict=bv_dict,
     )
+
+    # -------------------------------------------------------
+    # -- Save fields
+    arrays_to_save = {
+        "truth_sol": true_sol,
+        "reference_ensemble": reference_ensemble,
+        "posterior_ensemble": posterior_ensemble,
+    }
+
+    metrics_to_save = {
+        "reference_metrics": reference_metrics,
+        "posterior_metrics": posterior_metrics,
+        "innovation_metrics": innovation_metrics,
+    }
+
+    if bv_dict is not None:
+        metrics_to_save["breeding_metrics"] = bv_dict
+
+    # -- Save fields
+    for key, value in arrays_to_save.items():
+        saver.save_array(key, value)
+
+    # -- Save metrics
+    for key, value in metrics_to_save.items():
+        saver.save_array(key, value)
+
+    # -------------------------------------------------------
 
 
 if __name__ == "__main__":
