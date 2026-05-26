@@ -51,25 +51,54 @@ def main(cfg: DictConfig) -> None:
     )
 
     rng_key = jax.random.PRNGKey(cfg.seed)
+    rng_key, initial_state_key, initial_ensemble_key, obs_key = jax.random.split(rng_key, 4)
 
-    ##### Instantiate everything #####
+    ########## Forward model ##########
     forward_model = instantiate(forward_model_cfg)
     logger.info(f"Forward model: {forward_model}")
 
-    obs_operator = instantiate(obs_operator_cfg)
-    logger.info(f"Observation operator: {obs_operator}")
-
+    ########## True state ##########    
+    # Initial state
     initial_state_generator = instantiate(
         true_initial_state_cfg, forward_model=forward_model
     )
+    true_initial_state = initial_state_generator.sample(rng_key=initial_state_key)
     logger.info(f"Initial state generator: {initial_state_generator}")
 
+    # Rollout true solution 
+    true_sol = forward_model.rollout(
+        true_initial_state,
+        cfg.data_assimilation_steps,
+        return_model_integration_steps=True,
+    )
+
+    ########## Initial ensemble ##########
     initial_ensemble_generator = instantiate(
         initial_ensemble_cfg, forward_model=forward_model
     )
+    initial_ensemble = initial_ensemble_generator.sample(
+        rng_key=initial_ensemble_key,
+        ensemble_size=cfg.ensemble_size,
+        best_guess=true_initial_state if initial_ensemble_cfg.use_best_guess else None,
+    )
     logger.info(f"Initial ensemble generator: {initial_ensemble_generator}")
-    
+
+    ########## Observation operator ##########
+    obs_operator = instantiate(obs_operator_cfg)
     R = jnp.eye(obs_operator.num_obs) * cfg.case.obs_noise_variance
+    logger.info(f"Observation operator: {obs_operator}")
+
+    # Observe true solution
+    observations = generate_observations(
+        rng_key=obs_key,
+        true_sol=true_sol,
+        obs_operator=obs_operator,
+        R=R,
+        data_assimilation_steps=cfg.data_assimilation_steps,
+        model_integration_steps=cfg.model_integration_steps,
+    )
+    
+    ########## DA model ##########
     da_model = instantiate(
         da_method_cfg,
         ensemble_size=cfg.ensemble_size,
@@ -79,36 +108,7 @@ def main(cfg: DictConfig) -> None:
     )
     logger.info(f"DA model: {da_model}")
 
-
-    ##### Sample initial state and ensemble #####
-    rng_key, initial_state_key, initial_ensemble_key = jax.random.split(rng_key, 3)
-
-    true_initial_state = initial_state_generator.sample(rng_key=initial_state_key)
-    initial_ensemble = initial_ensemble_generator.sample(
-        rng_key=initial_ensemble_key,
-        ensemble_size=cfg.ensemble_size,
-        best_guess=true_initial_state if initial_ensemble_cfg.use_best_guess else None,
-    )
-    
-    ##### Rollout true solution ##### 
-    true_sol = forward_model.rollout(
-        true_initial_state,
-        cfg.data_assimilation_steps,
-        return_model_integration_steps=True,
-    )
-
-    ##### Observe true solution ##### 
-    rng_key, obs_key = jax.random.split(rng_key)
-    observations = generate_observations(
-        rng_key=obs_key,
-        true_sol=true_sol,
-        obs_operator=obs_operator,
-        R=R,
-        data_assimilation_steps=cfg.data_assimilation_steps,
-        model_integration_steps=cfg.model_integration_steps,
-    )
-
-    # ---------------- Data-containers filled in the DA loop ------------------------------
+    ########## Prepare ensembles ##########
     posterior_ensemble = initial_ensemble.copy().reshape(
         cfg.ensemble_size, 1, cfg.case.num_states, cfg.case.state_dim
     )
@@ -116,14 +116,14 @@ def main(cfg: DictConfig) -> None:
         cfg.ensemble_size, 1, cfg.case.num_states, cfg.case.state_dim
     )
 
-    # --- Rollout the initial ensemble for comparison.
+    ########## Rollout the initial ensemble for comparison ##########
     reference_ensemble = forward_model.rollout(
         initial_ensemble,
         cfg.data_assimilation_steps,
         return_model_integration_steps=True,
     )
 
-    # -------------------- Run the DA loop. ---------------------------------------------------------
+    ########## Run the DA loop. ##########
     # Initialize empty lists to track chi-square and normalized nnovations (z)
     predicted_obs = []
     logger.info(f"Running DA loop for {cfg.data_assimilation_steps} steps")
