@@ -27,6 +27,7 @@ def spinup_ensemble(
         f"Model spinup for {integration_steps} model integration steps ({seconds} s)"
     )
 
+    # --- Rollout model
     rolled = forward_model.rollout(
         ensemble, spinup_steps, return_model_integration_steps=False
     )

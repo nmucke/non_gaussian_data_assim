@@ -6,6 +6,11 @@ inflation_factor: 1.2        # 1.1
 localization_distance: 10     # 10
 spinup_steps: 1000 # spinup run for spinup_steps * model_integration_steps
 
+save:
+  experiment: true
+  figures: true
+  savename_appendix: ""
+
 case:
   name: lorenz_96
   title: "Lorenz 96"
@@ -108,16 +113,19 @@ case:
     enkf:
       inflation_factor: ${inflation_factor}
       localization_distance: ${localization_distance}
+      periodic: ${case.true_initial_state.periodic}
     agmf:
       inflation_factor: ${inflation_factor}
       nc_threshold: 0.5
       localization_distance: ${localization_distance}
+      periodic: ${case.true_initial_state.periodic}
     pff:
       num_pseudo_time_steps: 200
       step_size: 0.1
       stepper: runge_kutta_4
       localization_distance: 5
       inflation_factor: ${inflation_factor}
+      periodic: ${case.true_initial_state.periodic}
     particle_filter:
       resample_threshold: 0.5
       jitter_scale: 0.3

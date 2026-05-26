@@ -5,6 +5,11 @@ ensemble_size: 100
 inflation_factor: 1.0
 spinup_steps: 100
 
+save:
+  experiment: true
+  figures: true
+  savename_appendix: ""
+
 case:
   name: lorenz_63
   title: "Lorenz 63"
@@ -93,16 +98,19 @@ case:
     enkf:
       inflation_factor: ${inflation_factor}
       localization_distance: null
+      periodic: ${case.true_initial_state.periodic}
     agmf:
       inflation_factor: ${inflation_factor}
       nc_threshold: 0.5
       localization_distance: null
+      periodic: ${case.true_initial_state.periodic}
     pff:
       num_pseudo_time_steps: 5000
       step_size: 0.05
       stepper: runge_kutta_4
       localization_distance: null
       inflation_factor: ${inflation_factor}
+      periodic: ${case.true_initial_state.periodic}
     particle_filter:
       resample_threshold: 0.5
       jitter_scale: 0.5

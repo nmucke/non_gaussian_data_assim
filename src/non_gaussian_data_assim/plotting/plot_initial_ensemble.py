@@ -1,5 +1,6 @@
 """Plotting Initial- Conditions """
 
+from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
 import jax.numpy as jnp
@@ -19,6 +20,7 @@ def plot_initial_fields(
     x_before_spinup: Optional[jnp.ndarray] = None,
     best_guess_profile: Optional[jnp.ndarray] = None,
     bv_dict: Optional[dict[str, jnp.ndarray]] = None,
+    path_savefig: Optional[Path] = None,
 ) -> None:
 
     TOT_STATES = ensemble.shape[2]
@@ -153,5 +155,8 @@ def plot_initial_fields(
         # ax.set_xticks(range(0, tot_steps, bv_cylces))
         ax_bvnorm.grid(True)
 
-        fig.tight_layout()
-        plt.show()
+    if path_savefig is not None:
+        fig.savefig(path_savefig / "initial_states.png", dpi=50)
+
+    fig.tight_layout()
+    plt.show()
