@@ -5,6 +5,11 @@ ensemble_size: 100
 inflation_factor: 1.0
 spinup_steps: 100
 
+save:
+  experiment: true
+  figures: true
+  savename_appendix: ""
+
 case:
   name: lorenz_63
   title: "Lorenz 63"

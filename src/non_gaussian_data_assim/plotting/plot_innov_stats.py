@@ -1,5 +1,6 @@
 """Plotting innovation statistics for DA experiments."""
 
+from pathlib import Path
 from typing import List, Mapping, Optional, Sequence
 
 import jax.numpy as jnp
@@ -12,6 +13,7 @@ def plot_innov(
     bins: int = 51,
     hist_range: None | tuple[float, float] = None,
     show_fig: bool = False,
+    path_savefig: Optional[Path] = None,
 ) -> tuple[plt.Figure, plt.Axes]:
     """Plot innovation and posterior diagnostics"""
 
@@ -101,6 +103,9 @@ def plot_innov(
 
         if i > 0:
             ax_chi.legend()
+
+    if path_savefig is not None:
+        fig.savefig(path_savefig / "innovation_stats.png", dpi=100)
 
     if show_fig:
         plt.show()

@@ -6,6 +6,11 @@ inflation_factor: 1.2        # 1.1
 localization_distance: 10     # 10
 spinup_steps: 1000 # spinup run for spinup_steps * model_integration_steps
 
+save:
+  experiment: true
+  figures: true
+  savename_appendix: ""
+
 case:
   name: lorenz_96
   title: "Lorenz 96"
