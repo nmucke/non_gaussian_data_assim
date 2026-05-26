@@ -72,7 +72,7 @@ case:
       scale: 1.0
 
       # # --- Breeding
-      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation
+      # _target_: non_gaussian_data_assim.perturbations.breeding.BreedingPerturbation
       # num_states: ${case.num_states}
       # state_dim: ${case.state_dim}
       # forward_model: ${case.forward_model}
@@ -80,11 +80,11 @@ case:
       # breeding_cycles: 30
       # outer_steps_per_cycle: 32
       # norm_fct:
-      #   _target_: non_gaussian_data_assim.ensemble_generation.breeding_vector.SelectedStateL2Norm
+      #   _target_: non_gaussian_data_assim.perturbations.breeding.SelectedStateL2Norm
       #   state_index: 0  # 0:Fast Atmosphere.     ||       1: Slow ocean variable
 
       # # --- RedNoise ---
-      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise
+      # _target_: non_gaussian_data_assim.perturbations.red_noise.RedNoise
       # num_states: ${case.num_states}
       # state_dim: ${case.state_dim}
       # domain_length: ${case.domain_length}
@@ -92,7 +92,7 @@ case:
       # alpha: 2.0
 
       # # --- WhiteNoise ---
-      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.WhiteNoise
+      # _target_: non_gaussian_data_assim.perturbations.white_noise.WhiteNoise
       # num_states: ${case.num_states}
       # state_dim: ${case.state_dim}
       # scale: 10.0

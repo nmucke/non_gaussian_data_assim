@@ -2,124 +2,97 @@ from typing import Optional
 
 import jax
 import jax.numpy as jnp
+
+from non_gaussian_data_assim.perturbations import BasePerturbation
+from non_gaussian_data_assim.forward_models.base import BaseForwardModel
+from non_gaussian_data_assim.initial_profiles import BaseProfile
 from non_gaussian_data_assim.utils.spinup import spinup_ensemble
 
-from non_gaussian_data_assim.ensemble_generation.ensemble_perturbations import (
-    BasePerturbation,
-)
-from non_gaussian_data_assim.forward_models.base import BaseForwardModel
-from non_gaussian_data_assim.initial_profiles import BaseProfile, ConstantProfile
-
+best_guess_perturbation_mapping = {
+    None: lambda x: x,
+    "natural_variability": lambda x: jnp.std(x[0], ddof=1)
+}
 
 class InitialEnsembleGenerator:
+    """Generate a prior ensemble by perturbing a center field.
+
+    The center is either:
+
+        - a supplied ``best_guess`` state (already spun up), or
+        - a fresh sample from ``initial_profile`` (then optionally spun up).
+
+    Periodicity is enforced post-hoc if requested.
+    """
 
     def __init__(
         self,
-        forward_model: BaseForwardModel,
-        initial_profile: BaseProfile,
-        perturbation: BasePerturbation,
-        spinup: bool = False,
+        perturbation: Optional[BasePerturbation] = None,
+        forward_model: Optional[BaseForwardModel] = None,
+        initial_profile: Optional[BaseProfile] = None,
+        spinup_steps: int = 0,
         periodic: bool = False,
-        use_best_guess: bool = False
+        use_best_guess: bool = False,
+        best_guess_perturbation: Optional[str] = None
     ) -> None:
-
-        self.forward_model = forward_model
         self.perturbation = perturbation
-        self.spinup = spinup
+        self.forward_model = forward_model
+        self.initial_profile = initial_profile
+        self.spinup_steps = spinup_steps
         self.periodic = periodic
-
-
-    def _spin_up(self, state: jnp.array, spinup_steps: int=0):
-        spun_up_state = spinup_ensemble(
-            ensemble=state,
-            forward_model=self.forward_model,
-            spinup_steps=spinup_steps,
-        )
-        return spun_up_state
-
-    def _get_natural_variability(self, state: jnp.array):
-        # -- Calculate spread
-        return jnp.std(
-            state[0],
-            ddof=1,
-        )  #  axis=0
-
-    def sample():
-
-
-        return ensemble
-
-
-
-
-
-class InitialEnsemble:
-    """
-
-    Build a initial ensemble in one of two ways:
-
-        1) Best-guess fields is present:
-            Best-guess is a field of type: BaseProfile and ensemble perturbations are added to it
-
-        2) Best-guess is NOT present:
-            In this case ensemble-perturbations are the 'full' ensemble members
-
-    Optional:
-        - Periodic boundary conditions are enforced post-hoc.
-    """
-
-    def __init__(
-        self,
-        centered_around_bestguess: bool,
-        ens_perturbation: BasePerturbation,
-        periodic: bool,
-    ) -> None:
-
-        self.centered_around_bestguess = centered_around_bestguess
-        self.ens_perturbation = ens_perturbation
-        self.periodic = periodic
+        self.use_best_guess = use_best_guess
+        self.best_guess_perturbation = best_guess_perturbation_mapping[best_guess_perturbation]
+        
 
     def sample(
         self,
         rng_key: jax.Array,
         ensemble_size: int,
-        bg_profile: Optional[jnp.ndarray] = None,
+        best_guess: Optional[jnp.ndarray] = None,
     ) -> jax.Array | tuple[jax.Array, dict[str, jax.Array]]:
 
-        if self.centered_around_bestguess and bg_profile is None:
-            err_msga = "If centered_around_bestguess is true, a best-guess profile (bg_profile) must be specified"
-            err_msgb = f" and must be a jnp.ndarrray. \nCurrently passed as bg_profile: {bg_profile} \n of type: {type(bg_profile)}.\n"
-            raise ValueError(err_msga + err_msgb)
-        if not self.centered_around_bestguess:
-            # If centered_around_bestguess is passed as false, ensure that bg_profiule is None
-            bg_profile = None
+        center_key, pert_key = jax.random.split(rng_key)
 
-        rng_key, key = jax.random.split(rng_key)
+        # --- 1. Center the ensemble on a best-guess or a fresh profile sample.
+        if best_guess is not None:
+            center = best_guess
+            center = self.best_guess_perturbation(center)
+        else:
+            if self.initial_profile is None:
+                raise ValueError(
+                    "InitialEnsembleGenerator requires either a `best_guess` state "
+                    "or an `initial_profile` to center the ensemble on."
+                )
+            center = self.initial_profile.sample(rng_key=center_key)
 
-        # --- Sample Ensemble Perturbations!
-        rng_key, key = jax.random.split(rng_key)
-        output = self.ens_perturbation.sample(
-            rng_key=key,
-            ensemble_size=ensemble_size,
-            bg_profile=bg_profile,
-        )
-
-        # --- Catch case: Breeding might return additional metrics
-        if isinstance(output, tuple):
-            ensgen_diagnostics = True
-            ensemble, diagnostics = (
-                output[0],
-                output[1],
+        # --- 2. Perturb around the center (Breeding may also return diagnostics).
+        if self.perturbation:
+            output = self.perturbation.sample(
+                rng_key=pert_key,
+                ensemble_size=ensemble_size,
+                bg_profile=center,
             )
         else:
-            ensemble = output
-            ensgen_diagnostics = False
+            output = jnp.broadcast_to(center, (ensemble_size,) + center.shape[1:])
+       
+        if isinstance(output, tuple):
+            ensemble, diagnostics = output
+        else:
+            ensemble, diagnostics = output, None
 
-        # Enforce periodicity if desried
+        # --- 3. Spin up only when built from a profile (a best-guess is already spun up).
+        if self.spinup_steps and best_guess is None:
+            if self.forward_model is None:
+                raise ValueError("spinup_steps > 0 requires a `forward_model`.")
+            ensemble = spinup_ensemble(
+                ensemble=ensemble,
+                forward_model=self.forward_model,
+                spinup_steps=self.spinup_steps,
+            )
+
+        # --- 4. Enforce periodicity if desired.
         if self.periodic:
             ensemble = ensemble.at[..., -1].set(ensemble[..., 0])
 
-        if ensgen_diagnostics:
-            return ensemble, diagnostics
-        else:
-            return ensemble
+        # if diagnostics is not None:
+        #     return ensemble, diagnostics
+        return ensemble

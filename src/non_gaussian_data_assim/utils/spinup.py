@@ -13,7 +13,6 @@ def spinup_ensemble(
     ensemble: jnp.ndarray,
     forward_model: BaseForwardModel,
     spinup_steps: int,
-    get_natural_variablity: bool = False,
 ) -> jnp.ndarray:
     """Roll an ensemble forward for `spinup_steps` and return the final state.
 
@@ -29,16 +28,8 @@ def spinup_ensemble(
     )
 
     rolled = forward_model.rollout(
-        ensemble, spinup_steps, return_model_integration_steps=get_natural_variablity
+        ensemble, spinup_steps, return_model_integration_steps=False
     )
     # Shape rolled: [1, model_steps/int.steps, nr.state, state-dim]
 
-    if get_natural_variablity:
-        # -- Calculate spread
-        nat_variability = jnp.std(
-            rolled[0],
-            ddof=1,
-        )  #  axis=0
-        return rolled[:, -1], nat_variability
-    else:
-        return rolled[:, -1]
+    return rolled[:, -1]

@@ -6,11 +6,8 @@ from typing import Optional, Union
 import jax
 import jax.numpy as jnp
 
-# --- If initital profile is random, take functionality from ensemble-generation methods
-from non_gaussian_data_assim.ensemble_generation.ensemble_perturbations import (
-    CoupledKuramotoPseudo1DPerturbation,
-    WhiteNoise,
-)
+# --- If initital profile is random, take functionality from perturbations
+from non_gaussian_data_assim.perturbations import WhiteNoise
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 
 
@@ -147,9 +144,12 @@ class CosineProfile(BaseProfile):
 class CoupledKuramotoPseudo1DProfile(BaseProfile):
     """Smooth Gaussian random field profile, matching Evensen's `pseudo1D`.
 
-    Each state field of each ensemble member is an independent zero-mean
-    unit-variance Gaussian random field on the periodic domain, smoothed to
-    the given decorrelation length and scaled by `scale`.
+    Each state field (of each of `ensemble_size` members) is an independent
+    zero-mean unit-variance Gaussian random field on the periodic domain,
+    smoothed to `decorrelation_length` and scaled by `scale`.
+
+    Doubles as an ensemble perturbation: when `bg_profile` is supplied the
+    sampled fields are added to it.
     """
 
     def __init__(
@@ -157,9 +157,10 @@ class CoupledKuramotoPseudo1DProfile(BaseProfile):
         num_states: int,
         state_dim: int,
         domain_length: float,
-        periodic: bool,
         decorrelation_length: float,
+        periodic: bool = False,
         scale: float = 1.0,
+        **kwargs: int,
     ) -> None:
         super().__init__(
             name="coupled_kuramoto_pseudo1D",
@@ -171,17 +172,53 @@ class CoupledKuramotoPseudo1DProfile(BaseProfile):
         self.decorrelation_length = decorrelation_length
         self.scale = scale
 
-    def sample(self, rng_key: jax.Array, ensemble_size: int = 1) -> jnp.ndarray:
-        cks_smooth_gaussian = CoupledKuramotoPseudo1DPerturbation(
-            num_states=self.num_states,
-            state_dim=self.state_dim,
-            domain_length=self.domain_length,
-            decorrelation_length=self.decorrelation_length,
-            scale=self.scale,
+    @staticmethod
+    def _smooth_gaussian_periodic_1d(
+        rng_key: jax.Array,
+        state_dim: int,
+        domain_length: float,
+        decorrelation_length: float,
+    ) -> jnp.ndarray:
+        """Sample one periodic, mean-zero, unit-variance smooth Gaussian random field.
+
+        White noise filtered in Fourier space by a Gaussian power spectrum
+        exp(-(k * L)^2 / 2), then renormalized so the realized field has empirical
+        mean 0 and std 1.
+        """
+        dx = domain_length / state_dim
+        k = 2.0 * jnp.pi * jnp.fft.rfftfreq(state_dim, d=dx)
+        spectrum = jnp.exp(-((k * decorrelation_length) ** 2) / 2.0)
+
+        key_re, key_im = jax.random.split(rng_key)
+        n_freq = k.shape[0]
+        coefs = (
+            jax.random.normal(key_re, (n_freq,))
+            + 1j * jax.random.normal(key_im, (n_freq,))
+        ) * spectrum
+        field = jnp.fft.irfft(coefs, n=state_dim)
+
+        return (field - field.mean()) / field.std()
+
+    def sample(
+        self,
+        rng_key: jax.Array,
+        ensemble_size: int = 1,
+        bg_profile: Optional[jnp.ndarray] = None,
+    ) -> jnp.ndarray:
+        keys = jax.random.split(rng_key, ensemble_size * self.num_states)
+        fields = jax.vmap(
+            lambda key: self._smooth_gaussian_periodic_1d(
+                key, self.state_dim, self.domain_length, self.decorrelation_length
+            )
+        )(keys)
+        field = self.scale * fields.reshape(
+            ensemble_size, self.num_states, self.state_dim
         )
-        profile = cks_smooth_gaussian.sample(rng_key, ensemble_size=ensemble_size)
+
+        if bg_profile is not None:
+            field = bg_profile + field
 
         if self.periodic:
-            profile = self._enforce_periodicity(profile)
+            field = self._enforce_periodicity(field)
 
-        return profile
+        return field

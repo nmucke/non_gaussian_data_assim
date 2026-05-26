@@ -61,7 +61,7 @@ case:
       scale: 10.0
 
       # # --- Breeding
-      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation
+      # _target_: non_gaussian_data_assim.perturbations.breeding.BreedingPerturbation
       # num_states: ${case.num_states}
       # state_dim: ${case.state_dim}
       # forward_model: ${case.forward_model}
@@ -70,7 +70,7 @@ case:
       # outer_steps_per_cycle: 4
 
       # # --- RedNoise ---
-      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise
+      # _target_: non_gaussian_data_assim.perturbations.red_noise.RedNoise
       # num_states: ${case.num_states}
       # state_dim: ${case.state_dim}
       # domain_length: ${case.domain_length}
@@ -78,7 +78,7 @@ case:
       # alpha: 2.0
 
       # # --- WhiteNoise ---
-      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.WhiteNoise
+      # _target_: non_gaussian_data_assim.perturbations.white_noise.WhiteNoise
       # num_states: ${case.num_states}
       # state_dim: ${case.state_dim}
       # scale: 10.0

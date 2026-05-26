@@ -33,7 +33,6 @@ from non_gaussian_data_assim.observations.observation_utils import generate_obse
 from non_gaussian_data_assim.plotting.plot_initial_ensemble import plot_initial_fields
 from non_gaussian_data_assim.plotting.plot_innov_stats import plot_innov
 from non_gaussian_data_assim.plotting.plot_metrics import plot_metric_timeseries
-from non_gaussian_data_assim.utils.spinup import spinup_ensemble
 
 logger = logging.getLogger(__name__)
 
@@ -53,91 +52,52 @@ def main(cfg: DictConfig) -> None:
 
     rng_key = jax.random.PRNGKey(cfg.seed)
 
-    # --- Instantiate Forward model and observation operator
+    ##### Instantiate everything #####
     forward_model = instantiate(forward_model_cfg)
     logger.info(f"Forward model: {forward_model}")
 
-    # --- Instantiate Observation operator
     obs_operator = instantiate(obs_operator_cfg)
     logger.info(f"Observation operator: {obs_operator}")
 
-    # --- Define an initial GROUND-TRUTH state.
-    true_initial_state_profile = instantiate(true_initial_state_cfg)
-    logger.info(f"Initial state: {true_initial_state_profile}")
-    rng_key, key = jax.random.split(rng_key)
+    initial_state_generator = instantiate(
+        true_initial_state_cfg, forward_model=forward_model
+    )
+    logger.info(f"Initial state generator: {initial_state_generator}")
 
-    # --- BEST-GUESS: Reference state for ensemble members --> determines how difficulat assimilation task will be
-    BEST_GUESS_FLAG = initial_ensemble_cfg.centered_around_bestguess
+    initial_ensemble_generator = instantiate(
+        initial_ensemble_cfg, forward_model=forward_model
+    )
+    logger.info(f"Initial ensemble generator: {initial_ensemble_generator}")
+    
+    R = jnp.eye(obs_operator.num_obs) * cfg.case.obs_noise_variance
+    da_model = instantiate(
+        da_method_cfg,
+        ensemble_size=cfg.ensemble_size,
+        R=R,
+        obs_operator=obs_operator,
+        forward_operator=forward_model,
+    )
+    logger.info(f"DA model: {da_model}")
 
-    ic_ref = true_initial_state_profile.sample(rng_key=key)
 
-    # --- Spin-Up truth Run (optional)
-    if cfg.spinup_steps:
-        logger.info(
-            f"Run Spin-up of {cfg.spinup_steps * cfg.model_integration_steps} model-steps"
-        )
+    ##### Sample initial state and ensemble #####
+    rng_key, initial_state_key, initial_ensemble_key = jax.random.split(rng_key, 3)
 
-        get_std = True if BEST_GUESS_FLAG else False
-        true_sol = spinup_ensemble(
-            ensemble=ic_ref,
-            forward_model=forward_model,
-            spinup_steps=cfg.spinup_steps,
-            get_natural_variablity=get_std,
-        )
-        if get_std:
-            true_sol, natural_variability = true_sol
-
-    else:
-        logger.info("No SPINUP")
-        true_sol = ic_ref
-
-        try:
-            natural_variability = cfg.case.true_initial_state.magnitude
-        except:
-            natural_variability = cfg.case.true_initial_state.scale
-
-    # --- Rollout the truth.
-    x0_truth = true_sol
+    true_initial_state = initial_state_generator.sample(rng_key=initial_state_key)
+    initial_ensemble = initial_ensemble_generator.sample(
+        rng_key=initial_ensemble_key,
+        ensemble_size=cfg.ensemble_size,
+        best_guess=true_initial_state if initial_ensemble_cfg.use_best_guess else None,
+    )
+    
+    ##### Rollout true solution ##### 
     true_sol = forward_model.rollout(
-        x0_truth, cfg.data_assimilation_steps, return_model_integration_steps=True
+        true_initial_state,
+        cfg.data_assimilation_steps,
+        return_model_integration_steps=True,
     )
 
-    if BEST_GUESS_FLAG:
-        """
-        Best-Guess: Add white noise (certain scale) to ic_ref and spin-up with same aound of setps as x0_truht
-            ic_ref              --- spin-up ---> x0_truth
-            ic_ref + white noie --- spin-up ---> best_guess
-
-        My suggestion for what scale to use is to look at the standard deviation over the spin-up period of x0_truh and add that
-        """
-        from non_gaussian_data_assim.ensemble_generation.ensemble_perturbations import (
-            WhiteNoise,
-        )
-
-        rng_key, bg_key = jax.random.split(rng_key)
-        whitenoise = WhiteNoise(
-            num_states=cfg.case.num_states,
-            state_dim=cfg.case.state_dim,
-            scale=natural_variability / 3,
-        )
-        perturbs_best_guess = whitenoise.sample(rng_key=bg_key, ensemble_size=1)
-        best_guess_profile0 = ic_ref + perturbs_best_guess
-
-        best_guess_profile = spinup_ensemble(
-            ensemble=best_guess_profile0,
-            forward_model=forward_model,
-            spinup_steps=cfg.spinup_steps,
-            get_natural_variablity=False,
-        )
-
-    else:
-        best_guess_profile = None
-
-    # --- Create synthetic observations
-    # Define Observations-error covariance
-    R = jnp.eye(obs_operator.num_obs) * cfg.case.obs_noise_variance
-    logger.info(f"Observation noise variance: {cfg.case.obs_noise_variance}")
-    #  Generate observations from the truth.
+    ##### Observe true solution ##### 
     rng_key, obs_key = jax.random.split(rng_key)
     observations = generate_observations(
         rng_key=obs_key,
@@ -148,59 +108,17 @@ def main(cfg: DictConfig) -> None:
         model_integration_steps=cfg.model_integration_steps,
     )
 
-    # --- Instantiate DA method (with case-specific overrides applied).
-    da_model = instantiate(
-        da_method_cfg,
-        ensemble_size=cfg.ensemble_size,
-        R=R,
-        obs_operator=obs_operator,
-        forward_operator=forward_model,
-    )
-    logger.info(f"DA method: {da_model}")
-
-    # --- GENERATE INITIAL ENSEMBLE !!!!!
-    initial_ensemble_generator = instantiate(initial_ensemble_cfg)
-    logger.info(f"Prior ensemble: {initial_ensemble_generator}")
-    rng_key, key = jax.random.split(rng_key)
-
-    output = initial_ensemble_generator.sample(
-        rng_key=key, ensemble_size=cfg.ensemble_size, bg_profile=best_guess_profile
-    )
-    # Flexibel handling of Ens.Gen. output (Breeding might return additional diagnostics)
-    if isinstance(output, tuple):
-        reference_ensemble, ensgen_diagnostics = output
-    else:
-        reference_ensemble = output
-
-    # --- Handle spin-up of ensemble (only when no best-guess is used!!)
-    if not BEST_GUESS_FLAG and cfg.spinup_steps:
-        logger.info(
-            "\nSPIN-UP Initials Ensemble (as it is NOT centered around a best-guess profile)"
-        )
-        reference_ensemble = spinup_ensemble(
-            ensemble=reference_ensemble,
-            forward_model=forward_model,
-            spinup_steps=cfg.spinup_steps,
-        )
-
-    # TODO: Would it not be enough to only rollout best-guess (if present)
-    # ---------------- Initialisation of data-containers that will be filled in DA-loop ------------------------------
-    # Initialize the posterior ensemble from the Initial ensemble.
-    posterior_ensemble = reference_ensemble.copy().reshape(
+    # ---------------- Data-containers filled in the DA loop ------------------------------
+    posterior_ensemble = initial_ensemble.copy().reshape(
         cfg.ensemble_size, 1, cfg.case.num_states, cfg.case.state_dim
     )
-    # Initialize the Prior-Ensemble from the reference. NOTE: Prior-Ensemble only stores fields at assim-steps before assimilation is done
-    prior_ensemble_da = reference_ensemble.copy().reshape(
-        cfg.ensemble_size,
-        1,
-        cfg.case.num_states,
-        cfg.case.state_dim,
+    prior_ensemble_da = initial_ensemble.copy().reshape(
+        cfg.ensemble_size, 1, cfg.case.num_states, cfg.case.state_dim
     )
-    # ----------------------------------------------------------------------------------------------------------------
 
     # --- Rollout the initial ensemble for comparison.
     reference_ensemble = forward_model.rollout(
-        reference_ensemble,
+        initial_ensemble,
         cfg.data_assimilation_steps,
         return_model_integration_steps=True,
     )
@@ -335,22 +253,15 @@ def main(cfg: DictConfig) -> None:
         )
     # ==============================================================================================================
 
-    # --- Plot Initial-Conditions (I.C, best-guess, Initial-Ensemble) + Breeding statitcs if available
-    try:
-        best_guess_profile = best_guess_profile[0]
-    except:
-        best_guess_profile = None
-    try:
-        bv_dict = ensgen_diagnostics
-    except:
-        bv_dict = None
-
+    # --- Plot Initial-Conditions (I.C, Initial-Ensemble) + Breeding statistics if available
     plot_initial_fields(
         ensemble=posterior_ensemble,
         truth_t0=true_sol,
-        x_before_spinup=ic_ref[0],
-        best_guess_profile=best_guess_profile,
-        bv_dict=bv_dict,
+        x_before_spinup=None,
+        best_guess_profile=(
+            true_initial_state[0] if initial_ensemble_cfg.use_best_guess else None
+        ),
+        bv_dict=None,
     )
 
 

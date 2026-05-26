@@ -6,6 +6,11 @@ import jax.numpy as jnp
 from tqdm import tqdm
 
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
+from non_gaussian_data_assim.perturbations.base import BasePerturbation
+
+
+
+# TODO: Make sure breeding is working as expected with multiple variables!!
 
 
 class EnsembleNorm(ABC):
@@ -316,3 +321,64 @@ class BreedingVector:
         }
 
         return bv_pert, fields_metrics
+
+
+class BreedingPerturbation(BasePerturbation):
+    """Create Ensemble of Bred perturbations generated around a best-guess state."""
+
+    def __init__(
+        self,
+        forward_model: BaseForwardModel,
+        num_states: int,
+        state_dim: int,
+        delta0: float,
+        breeding_cycles: int,
+        outer_steps_per_cycle: int,
+        norm_fct: EnsembleNorm | None = None,
+        min_norm: float = 1e-10,
+    ) -> None:
+        super().__init__(
+            name="breeding_vector",
+            num_states=num_states,
+            state_dim=state_dim,
+        )
+
+        self.breeder = BreedingVector(
+            forward_model=forward_model,
+            breeding_cycles=breeding_cycles,
+            outer_steps_per_cycle=outer_steps_per_cycle,
+            delta0=delta0,
+            norm_fct=norm_fct,
+            min_norm=min_norm,
+        )
+
+    def sample(
+        self,
+        rng_key: jax.Array,
+        ensemble_size: int,
+        bg_profile: Optional[jnp.ndarray] = None,
+    ) -> jnp.ndarray:
+        """Return bred perturbations with shape [ensemble_size, num_states, state_dim]."""
+        if bg_profile is None:
+            raise ValueError(
+                f"Breeding reuires that a best-guess profile is supplied, but it was None"
+            )
+
+        return_metrics = True
+        output = self.breeder.sample_ensemble(
+            x0_bg=bg_profile,
+            rng_key=rng_key,
+            ensemble_size=ensemble_size,
+            return_metrics=return_metrics,
+        )
+
+        if return_metrics:
+            ensemble, bv_metrics = output
+        else:
+            ensemble = output
+
+        if bg_profile is not None:
+            ensemble = self._add_ensemble_to_bestguess_profile(
+                bg_profile=bg_profile, ensemble=ensemble
+            )
+        return ensemble, bv_metrics
