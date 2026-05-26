@@ -1,7 +1,7 @@
 """Initial-state profile classes used to seed prior ensembles."""
 
 from abc import ABC, abstractmethod
-from typing import Union
+from typing import Optional, Union
 
 import jax
 import jax.numpy as jnp
@@ -11,18 +11,28 @@ from non_gaussian_data_assim.ensemble_generation.ensemble_perturbations import (
     CoupledKuramotoPseudo1DPerturbation,
     WhiteNoise,
 )
+from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 
 
 class BaseProfile(ABC):
     """Base class for deterministic initial-state profiles."""
 
     def __init__(
-        self, name: str, num_states: int, state_dim: int, periodic: bool
+        self, 
+        name: str, 
+        forward_model: Optional[BaseForwardModel] = None,
+        num_states: Optional[int] = None,
+        state_dim: Optional[int] = None,
+        periodic: bool = False
     ) -> None:
         self.name = name
-        self.num_states = num_states
-        self.state_dim = state_dim
         self.periodic = periodic
+        if forward_model:
+            self.num_states = forward_model.num_states
+            self.state_dim = forward_model.state_dim
+        else:
+            self.num_states = num_states
+            self.state_dim = state_dim
 
     def _enforce_periodicity(self, profile: jnp.ndarray) -> jnp.ndarray:
         profile = profile.at[..., -1].set(profile[..., 0])

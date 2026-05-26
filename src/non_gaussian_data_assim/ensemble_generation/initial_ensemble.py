@@ -2,11 +2,55 @@ from typing import Optional
 
 import jax
 import jax.numpy as jnp
+from non_gaussian_data_assim.utils.spinup import spinup_ensemble
 
 from non_gaussian_data_assim.ensemble_generation.ensemble_perturbations import (
     BasePerturbation,
 )
+from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 from non_gaussian_data_assim.initial_profiles import BaseProfile, ConstantProfile
+
+
+class InitialEnsembleGenerator:
+
+    def __init__(
+        self,
+        forward_model: BaseForwardModel,
+        initial_profile: BaseProfile,
+        perturbation: BasePerturbation,
+        spinup: bool = False,
+        periodic: bool = False,
+        use_best_guess: bool = False
+    ) -> None:
+
+        self.forward_model = forward_model
+        self.perturbation = perturbation
+        self.spinup = spinup
+        self.periodic = periodic
+
+
+    def _spin_up(self, state: jnp.array, spinup_steps: int=0):
+        spun_up_state = spinup_ensemble(
+            ensemble=state,
+            forward_model=self.forward_model,
+            spinup_steps=spinup_steps,
+        )
+        return spun_up_state
+
+    def _get_natural_variability(self, state: jnp.array):
+        # -- Calculate spread
+        return jnp.std(
+            state[0],
+            ddof=1,
+        )  #  axis=0
+
+    def sample():
+
+
+        return ensemble
+
+
+
 
 
 class InitialEnsemble:

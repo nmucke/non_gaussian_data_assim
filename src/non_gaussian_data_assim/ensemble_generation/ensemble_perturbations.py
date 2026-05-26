@@ -23,12 +23,17 @@ class BasePerturbation(ABC):
     def __init__(
         self,
         name: str,
-        num_states: int,
-        state_dim: int,
+        forward_model: Optional[BaseForwardModel] = None,
+        num_states: Optional[int] = None,
+        state_dim: Optional[int] = None,
     ) -> None:
         self.name = name
-        self.num_states = num_states
-        self.state_dim = state_dim
+        if forward_model:
+            self.num_states = forward_model.num_states
+            self.state_dim = forward_model.state_dim
+        else:
+            self.num_states = num_states
+            self.state_dim = state_dim
 
     def _add_ensemble_to_bestguess_profile(
         self, bg_profile: jnp.ndarray, ensemble: jnp.ndarray
