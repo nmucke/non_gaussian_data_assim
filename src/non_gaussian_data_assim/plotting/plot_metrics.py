@@ -12,6 +12,7 @@ def plot_metric_timeseries(
     metrics: list[dict] | dict,
     show_fig: bool = False,
     path_savefig: Optional[Path] = None,
+    figname_appendix: Optional[str] = None,
 ) -> tuple[plt.Figure, plt.Axes]:
     """Plot time-series of rmse(+spread) and crps"""
 
@@ -91,13 +92,21 @@ def plot_metric_timeseries(
         ax.grid(alpha=0.25)
 
         if multiplot:
-            ax.set_title(titles[i])
+            title = (
+                titles[i] + f"  {figname_appendix}"
+                if figname_appendix is not None
+                else titles[i]
+            )
+            ax.set_title(title)
 
         if i == 0:
             ax.set_ylabel("Score")
 
     if path_savefig is not None:
-        fig.savefig(path_savefig / "metric_timeseries.png", dpi=100)
+        figname = "metric_timeseries"
+        if figname_appendix is not None:
+            figname += f"_{figname_appendix}"
+        fig.savefig(path_savefig / f"{figname}.png", dpi=100)
 
     if show_fig:
         plt.show()

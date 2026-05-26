@@ -263,6 +263,31 @@ def main(cfg: DictConfig) -> None:
 
     logger.info(f"Finished DA loop")
 
+    forecast = OmegaConf.select(cfg, "forecast_steps", default=None)
+    if forecast is not None:
+        logger.info(f"\nForecast -- Run Ensemble for {forecast} steps")
+
+        # --- Select last time-step of assim as start-point for forecasting
+        posterior_ensemble_tend = posterior_ensemble[:, -1]
+        # --- Forcasting has same logic as spin-up --> Model-runs without data-assim
+        forecast_ensemble = spinup_ensemble(
+            ensemble=posterior_ensemble_tend,
+            forward_model=forward_model,
+            spinup_steps=forecast,
+            return_model_integration_steps=True,
+        )
+
+        true_forecast = spinup_ensemble(
+            ensemble=true_sol[:, -1],
+            forward_model=forward_model,
+            spinup_steps=forecast,
+            return_model_integration_steps=True,
+        )
+
+    else:
+        forecast_ensemble = None
+        true_forecast = None
+
     # ======================== metrics and plotting ======================================
     # Metrics.
     rmse = RMSE(ensemble_aggregation="mean", time_aggregation="mean")
@@ -292,6 +317,8 @@ def main(cfg: DictConfig) -> None:
 
     reference_metrics = get_metric_dict(reference_ensemble, true_sol[0])
     posterior_metrics = get_metric_dict(posterior_ensemble, true_sol[0])
+    if forecast_ensemble is not None:
+        forecast_metrics = get_metric_dict(forecast_ensemble, true_forecast[0])
 
     # -- If multiple states are present, save metrics for each individual state
     post_metric_states = []
@@ -327,6 +354,11 @@ def main(cfg: DictConfig) -> None:
     # --- Plot time-series of errors
     post_metrics_all = [posterior_metrics] + post_metric_states
     _ = plot_metric_timeseries(post_metrics_all, path_savefig=path_savefig)
+
+    if forecast_ensemble is not None:
+        _ = plot_metric_timeseries(
+            [forecast_metrics], path_savefig=path_savefig, figname_appendix="forecast"
+        )
 
     if cfg.da_method["name"] == "enkf":
 
@@ -393,6 +425,9 @@ def main(cfg: DictConfig) -> None:
             "posterior_ensemble": posterior_ensemble,
         }
 
+        if forecast_ensemble is not None:
+            arrays_to_save["forecast_ensemble"] = forecast_ensemble
+
         metrics_to_save = {
             "reference_metrics": reference_metrics,
             "posterior_metrics": posterior_metrics,
@@ -400,6 +435,9 @@ def main(cfg: DictConfig) -> None:
 
         if innovation_metrics is not None:
             metrics_to_save["metrics_to_save"] = innovation_metrics
+
+        if forecast_metrics is not None:
+            metrics_to_save["forecast_metrics"] = forecast_metrics
 
         if bv_dict is not None:
             metrics_to_save["breeding_metrics"] = bv_dict
