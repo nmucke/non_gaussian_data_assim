@@ -32,33 +32,47 @@ case:
       step: 2      # 2
 
 
+  # --- Ground-truth initial state: profile + spin-up.
   true_initial_state:
-    _target_: non_gaussian_data_assim.initial_profiles.WhiteNoiseProfile
-    # _target_: non_gaussian_data_assim.initial_profiles.CoupledKuramotoPseudo1DProfile
-    num_states: ${case.num_states}
-    state_dim: ${case.state_dim}
+    _target_: non_gaussian_data_assim.ensemble_generation.initial_state.InitialState
+    spinup_steps: ${spinup_steps}
     periodic: true
-    scale: 10.0
-
-    # # CoupledKuramotoPseudo1DProfile --> Additionaly required
-    domain_length: ${case.domain_length}
-    decorrelation_length: 10.0
-
-
-  initial_ensemble:
-    _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsemble
-    centered_around_bestguess: false
-    periodic: true
-
-    ens_perturbation:
-
-      # --- SmoothGaussianNoise
-      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.CoupledKuramotoPseudo1DPerturbation
+    initial_profile:
+      _target_: non_gaussian_data_assim.initial_profiles.WhiteNoiseProfile
+      # _target_: non_gaussian_data_assim.initial_profiles.CoupledKuramotoPseudo1DProfile
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
+      periodic: true
+      scale: 10.0
+
+      # # CoupledKuramotoPseudo1DProfile --> Additionaly required
       domain_length: ${case.domain_length}
       decorrelation_length: 10.0
-      scale: 10.0
+
+  initial_ensemble:
+    _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsembleGenerator
+    periodic: true
+    spinup_steps: ${spinup_steps}
+    use_best_guess: true
+    best_guess_perturbation: natural_variability
+
+    # --- Profile to center the ensemble on when use_best_guess is false.
+    initial_profile:
+      _target_: non_gaussian_data_assim.initial_profiles.ConstantProfile
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      periodic: true
+      value: 0.0
+
+    perturbation:
+
+      # --- SmoothGaussianNoise
+      # _target_: non_gaussian_data_assim.initial_profiles.CoupledKuramotoPseudo1DProfile
+      # num_states: ${case.num_states}
+      # state_dim: ${case.state_dim}
+      # domain_length: ${case.domain_length}
+      # decorrelation_length: 10.0
+      # scale: 10.0
 
       # # --- Breeding
       # _target_: non_gaussian_data_assim.perturbations.breeding.BreedingPerturbation
@@ -70,12 +84,12 @@ case:
       # outer_steps_per_cycle: 4
 
       # # --- RedNoise ---
-      # _target_: non_gaussian_data_assim.perturbations.red_noise.RedNoise
-      # num_states: ${case.num_states}
-      # state_dim: ${case.state_dim}
-      # domain_length: ${case.domain_length}
-      # scale: 1.0
-      # alpha: 2.0
+      _target_: non_gaussian_data_assim.perturbations.red_noise.RedNoise
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      domain_length: ${case.domain_length}
+      scale: 1.0
+      alpha: 2.0
 
       # # --- WhiteNoise ---
       # _target_: non_gaussian_data_assim.perturbations.white_noise.WhiteNoise

@@ -3,13 +3,13 @@ from typing import Optional
 import jax
 import jax.numpy as jnp
 
-from non_gaussian_data_assim.perturbations import BasePerturbation
+from non_gaussian_data_assim.perturbations import BasePerturbation, WhiteNoise
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 from non_gaussian_data_assim.initial_profiles import BaseProfile
 from non_gaussian_data_assim.utils.spinup import spinup_ensemble
 
 best_guess_perturbation_mapping = {
-    None: lambda x: x,
+    None: lambda x: 0.0,
     "natural_variability": lambda x: jnp.std(x[0], ddof=1)
 }
 
@@ -41,6 +41,9 @@ class InitialEnsembleGenerator:
         self.periodic = periodic
         self.use_best_guess = use_best_guess
         self.best_guess_perturbation = best_guess_perturbation_mapping[best_guess_perturbation]
+
+        self.num_states = forward_model.num_states
+        self.state_dim = forward_model.state_dim
         
 
     def sample(
@@ -50,12 +53,17 @@ class InitialEnsembleGenerator:
         best_guess: Optional[jnp.ndarray] = None,
     ) -> jax.Array | tuple[jax.Array, dict[str, jax.Array]]:
 
-        center_key, pert_key = jax.random.split(rng_key)
+        center_key, pert_key, best_guess_key = jax.random.split(rng_key, 3)
 
         # --- 1. Center the ensemble on a best-guess or a fresh profile sample.
         if best_guess is not None:
-            center = best_guess
-            center = self.best_guess_perturbation(center)
+            best_guess_std = self.best_guess_perturbation(best_guess)
+            noise = WhiteNoise(
+                num_states=self.num_states, 
+                state_dim=self.state_dim,
+                scale=best_guess_std / 3
+            ).sample(best_guess_key, ensemble_size=1)
+            center = best_guess + noise
         else:
             if self.initial_profile is None:
                 raise ValueError(

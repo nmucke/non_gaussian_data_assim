@@ -53,8 +53,8 @@ case:
     _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsembleGenerator
     periodic: false
     spinup_steps: ${spinup_steps}
-    use_best_guess: false # This overwrites the initial_profile
-    best_guess_perturbation: null
+    use_best_guess: true # This overwrites the initial_profile
+    best_guess_perturbation: natural_variability
 
     # --- Profile to center the ensemble on when use_best_guess is false.
     initial_profile:

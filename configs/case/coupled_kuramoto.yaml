@@ -44,44 +44,50 @@ case:
         step: 15
 
 
+  # --- Ground-truth initial state: profile + spin-up.
   true_initial_state:
-    _target_: non_gaussian_data_assim.initial_profiles.CoupledKuramotoPseudo1DProfile
-    num_states: ${case.num_states}
-    state_dim: ${case.state_dim}
+    _target_: non_gaussian_data_assim.ensemble_generation.initial_state.InitialState
+    spinup_steps: ${spinup_steps}
     periodic: false
-    scale: 1.0
-
-    # CoupledKuramotoPseudo1DProfile --> Additionaly required
-    domain_length: ${case.domain_length}
-    decorrelation_length: 10.0
-
-
-  initial_ensemble:
-    _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsemble
-    centered_around_bestguess: false
-    periodic: false
-
-    ens_perturbation:
-
-      # --- SmoothGaussianNoise
-      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.CoupledKuramotoPseudo1DPerturbation
+    initial_profile:
+      _target_: non_gaussian_data_assim.initial_profiles.CoupledKuramotoPseudo1DProfile
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
-      domain_length: ${case.domain_length}
-      decorrelation_length: 10.0
+      periodic: false
       scale: 1.0
 
+      # CoupledKuramotoPseudo1DProfile --> Additionaly required
+      domain_length: ${case.domain_length}
+      decorrelation_length: 10.0
+
+  initial_ensemble:
+    _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsembleGenerator
+    periodic: false
+    spinup_steps: ${spinup_steps}
+    use_best_guess: true
+    best_guess_perturbation: natural_variability
+
+    # --- Profile to center the ensemble on when use_best_guess is false.
+    initial_profile:
+      _target_: non_gaussian_data_assim.initial_profiles.ConstantProfile
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      periodic: false
+      value: 0.0
+
+    perturbation:
+
       # # --- Breeding
-      # _target_: non_gaussian_data_assim.perturbations.breeding.BreedingPerturbation
-      # num_states: ${case.num_states}
-      # state_dim: ${case.state_dim}
-      # forward_model: ${case.forward_model}
-      # delta0: 5.0
-      # breeding_cycles: 30
-      # outer_steps_per_cycle: 32
-      # norm_fct:
-      #   _target_: non_gaussian_data_assim.perturbations.breeding.SelectedStateL2Norm
-      #   state_index: 0  # 0:Fast Atmosphere.     ||       1: Slow ocean variable
+      _target_: non_gaussian_data_assim.perturbations.breeding.BreedingPerturbation
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      forward_model: ${case.forward_model}
+      delta0: 5.0
+      breeding_cycles: 30
+      outer_steps_per_cycle: 32
+      norm_fct:
+        _target_: non_gaussian_data_assim.perturbations.breeding.SelectedStateL2Norm
+        state_index: 0  # 0:Fast Atmosphere.     ||       1: Slow ocean variable
 
       # # --- RedNoise ---
       # _target_: non_gaussian_data_assim.perturbations.red_noise.RedNoise
