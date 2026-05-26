@@ -361,6 +361,8 @@ def main(cfg: DictConfig) -> None:
             show_fig=True,
             path_savefig=path_savefig,
         )
+    else:
+        innovation_metrics = None
 
     # --- Plot Initial-Conditions (I.C, best-guess, Initial-Ensemble) + Breeding statitcs if available
     try:
@@ -394,8 +396,10 @@ def main(cfg: DictConfig) -> None:
         metrics_to_save = {
             "reference_metrics": reference_metrics,
             "posterior_metrics": posterior_metrics,
-            "innovation_metrics": innovation_metrics,
         }
+
+        if innovation_metrics is not None:
+            metrics_to_save["metrics_to_save"] = innovation_metrics
 
         if bv_dict is not None:
             metrics_to_save["breeding_metrics"] = bv_dict

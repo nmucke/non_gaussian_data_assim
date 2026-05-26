@@ -1,0 +1,95 @@
+seed: 42
+data_assimilation_steps: 10
+model_integration_steps: 5
+ensemble_size: 50
+spinup_steps: 0
+inflation_factor: 1.0
+localization_distance: 10
+save:
+  experiment: true
+  figures: true
+  savename_appendix: ''
+case:
+  name: coupled_kuramoto
+  title: Coupled Kuramoto-Sivashinsky
+  num_states: 2
+  state_dim: 64
+  obs_noise_variance: 0.1
+  domain_length: 64
+  forward_model:
+    _target_: non_gaussian_data_assim.forward_models.coupled_kuramoto_sivashinsky.CoupledKuramotoSivashinsky
+    dt: 0.0625
+    model_integration_steps: ${model_integration_steps}
+    state_dim: ${case.state_dim}
+    domain_length: ${case.domain_length}
+    alpha_oa: 0.003
+    omega_ao: 0.003
+    lambda_a: 32.0
+    lambda_o: 4.0
+    tau_a: 1.0
+    tau_o: 4.0
+  obs_operator:
+    _target_: non_gaussian_data_assim.observations.observation_operator.LinearObservationOperator
+    state_dim: ${case.state_dim}
+    num_states: ${case.num_states}
+    obs_states:
+    - 0
+    - 1
+    obs_indices:
+    - _target_: numpy.arange
+      start: 0
+      stop: ${case.state_dim}
+      step: 45
+    - _target_: numpy.arange
+      start: 0
+      stop: ${case.state_dim}
+      step: 15
+  true_initial_state:
+    _target_: non_gaussian_data_assim.initial_profiles.CoupledKuramotoPseudo1DProfile
+    num_states: ${case.num_states}
+    state_dim: ${case.state_dim}
+    periodic: false
+    scale: 1.0
+    domain_length: ${case.domain_length}
+    decorrelation_length: 10.0
+  initial_ensemble:
+    _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsemble
+    centered_around_bestguess: false
+    periodic: false
+    ens_perturbation:
+      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.CoupledKuramotoPseudo1DPerturbation
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      domain_length: ${case.domain_length}
+      decorrelation_length: 10.0
+      scale: 1.0
+  plotter:
+    _target_: non_gaussian_data_assim.plotting.plot_fields.plot_multi_state_high_dim_field
+    _partial_: true
+  da_method_overrides:
+    enkf:
+      inflation_factor: ${inflation_factor}
+      localization_distance: ${localization_distance}
+    agmf:
+      inflation_factor: ${inflation_factor}
+      nc_threshold: 0.5
+      localization_distance: ${localization_distance}
+    pff:
+      num_pseudo_time_steps: 100
+      step_size: 1.0
+      stepper: forward_euler
+      localization_distance: ${localization_distance}
+      inflation_factor: ${inflation_factor}
+      prior_cov_regularization: 0.01
+    particle_filter:
+      resample_threshold: 0.5
+      jitter_scale: 0.05
+da_method:
+  name: agmf
+  _target_: non_gaussian_data_assim.da_methods.agmf.AdaptiveGaussianMixtureFilter
+  inflation_factor: 1.0
+  nc_threshold: 0.5
+  localization_distance: null
+  w_prev:
+    _target_: non_gaussian_data_assim.da_methods.agmf.uniform_weights
+    ensemble_size: ${ensemble_size}
