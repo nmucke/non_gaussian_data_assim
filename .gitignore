@@ -167,5 +167,15 @@ cython_debug/
 # lock files
 *.lock
 
-# Figures
-figures/
+
+# ------- Handle experiments output -- ignores ------------------------
+# Ignore all experiment outputs/data
+/experiments/**
+
+# Allow Git to inspect the experiments directoryi
+!/experiments/
+!/experiments/*/
+
+# Keep each experiment's config folder
+!/experiments/*/config/
+!/experiments/*/config/**

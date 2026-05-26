@@ -7,6 +7,7 @@ Examples:
 """
 
 import logging
+from pathlib import Path
 from typing import Optional
 
 import jax
@@ -17,6 +18,7 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 from tqdm import tqdm
 
+import non_gaussian_data_assim.utils.saving as saving
 from non_gaussian_data_assim.metrics.ensemble_metrics import CRPS
 from non_gaussian_data_assim.metrics.innovation_metrics import (
     ChiSquared,
@@ -33,6 +35,7 @@ from non_gaussian_data_assim.observations.observation_utils import generate_obse
 from non_gaussian_data_assim.plotting.plot_initial_ensemble import plot_initial_fields
 from non_gaussian_data_assim.plotting.plot_innov_stats import plot_innov
 from non_gaussian_data_assim.plotting.plot_metrics import plot_metric_timeseries
+from non_gaussian_data_assim.utils.saving import ExperimentSaver, creat_exp_name
 from non_gaussian_data_assim.utils.spinup import spinup_ensemble
 
 logger = logging.getLogger(__name__)
@@ -50,6 +53,26 @@ def main(cfg: DictConfig) -> None:
     da_method_cfg = OmegaConf.merge(
         cfg.da_method, cfg.case.da_method_overrides[cfg.da_method.name]
     )
+
+    # ------------------------------------------------------
+    # --- Init saving settings
+    if cfg.save.experiment:
+        REPO_ROOT = Path(__file__).resolve().parents[1]
+        experiment_folder = REPO_ROOT / "experiments"
+        # -- Create unique experiment name
+        save_name = creat_exp_name(config=cfg)
+        # -- Create directory in ./experiments/ folder
+        saver = ExperimentSaver.create(save_name, root=experiment_folder)
+        # -- Save config
+        saver.save_config(cfg)
+        flag_savedata = True
+        # -- Create path and folder for figures (optional)
+        if cfg.save.figures:
+            path_savefig = saver.subdir("figures")
+    else:
+        flag_savedata = False
+        path_savefig = None
+    # ------------------------------------------------------
 
     rng_key = jax.random.PRNGKey(cfg.seed)
 
@@ -298,12 +321,13 @@ def main(cfg: DictConfig) -> None:
         state_dim=cfg.case.state_dim,
         data_assimilation_steps=cfg.data_assimilation_steps,
         model_integration_steps=cfg.model_integration_steps,
+        path_savefig=path_savefig,
     )
 
     # --- Plot time-series of errors
     post_metrics_all = [posterior_metrics] + post_metric_states
-    _ = plot_metric_timeseries(post_metrics_all)
-    # ====================== For EnKF application plot innovation statistics ======================
+    _ = plot_metric_timeseries(post_metrics_all, path_savefig=path_savefig)
+
     if cfg.da_method["name"] == "enkf":
 
         # -- Store Predicted-Obs and Split-up per state
@@ -331,9 +355,14 @@ def main(cfg: DictConfig) -> None:
 
         # --- Plot Innovations Diagnostics and Skill-Scores
         _ = plot_innov(
-            innov_stats_list=innov_metric_list, bins=74, hist_range=None, show_fig=True
+            innov_stats_list=innov_metric_list,
+            bins=74,
+            hist_range=None,
+            show_fig=True,
+            path_savefig=path_savefig,
         )
-    # ==============================================================================================================
+    else:
+        innovation_metrics = None
 
     # --- Plot Initial-Conditions (I.C, best-guess, Initial-Ensemble) + Breeding statitcs if available
     try:
@@ -344,6 +373,7 @@ def main(cfg: DictConfig) -> None:
         bv_dict = ensgen_diagnostics
     except:
         bv_dict = None
+    # ==============================================================================================================
 
     plot_initial_fields(
         ensemble=posterior_ensemble,
@@ -351,7 +381,37 @@ def main(cfg: DictConfig) -> None:
         x_before_spinup=ic_ref[0],
         best_guess_profile=best_guess_profile,
         bv_dict=bv_dict,
+        path_savefig=path_savefig,
     )
+
+    # -------------------------------------------------------
+    # -- Save fields
+    if flag_savedata:
+        arrays_to_save = {
+            "truth_sol": true_sol,
+            "reference_ensemble": reference_ensemble,
+            "posterior_ensemble": posterior_ensemble,
+        }
+
+        metrics_to_save = {
+            "reference_metrics": reference_metrics,
+            "posterior_metrics": posterior_metrics,
+        }
+
+        if innovation_metrics is not None:
+            metrics_to_save["metrics_to_save"] = innovation_metrics
+
+        if bv_dict is not None:
+            metrics_to_save["breeding_metrics"] = bv_dict
+
+        # -- Save fields
+        for key, value in arrays_to_save.items():
+            saver.save_array(name=key, array=value)
+
+        # -- Save metrics
+        for key, value in metrics_to_save.items():
+            saver.save_metrics(name=key, metrics=value)
+    # -------------------------------------------------------
 
 
 if __name__ == "__main__":

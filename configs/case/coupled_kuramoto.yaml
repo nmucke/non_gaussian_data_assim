@@ -7,6 +7,11 @@ localization_distance: 10
 spinup_steps: 25 # spinup run for spinup_steps * model_integration_steps
 
 
+save:
+  experiment: true
+  figures: true
+  savename_appendix: ""
+
 case:
   name: coupled_kuramoto
   title: "Coupled Kuramoto-Sivashinsky"
