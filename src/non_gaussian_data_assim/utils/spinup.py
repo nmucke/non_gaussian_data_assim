@@ -14,6 +14,7 @@ def spinup_ensemble(
     forward_model: BaseForwardModel,
     spinup_steps: int,
     get_natural_variablity: bool = False,
+    return_model_integration_steps: bool = False,
 ) -> jnp.ndarray:
     """Roll an ensemble forward for `spinup_steps` and return the final state.
 
@@ -28,8 +29,12 @@ def spinup_ensemble(
         f"Model spinup for {integration_steps} model integration steps ({seconds} s)"
     )
 
+    # --- Decide whether we want to return model integration steps
+    return_steps = return_model_integration_steps or get_natural_variablity
+
+    # --- Rollout model
     rolled = forward_model.rollout(
-        ensemble, spinup_steps, return_model_integration_steps=get_natural_variablity
+        ensemble, spinup_steps, return_model_integration_steps=return_steps
     )
     # Shape rolled: [1, model_steps/int.steps, nr.state, state-dim]
 
@@ -40,5 +45,7 @@ def spinup_ensemble(
             ddof=1,
         )  #  axis=0
         return rolled[:, -1], nat_variability
+    elif return_model_integration_steps:
+        return rolled
     else:
         return rolled[:, -1]

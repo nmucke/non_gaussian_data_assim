@@ -5,7 +5,7 @@ ensemble_size: 50
 inflation_factor: 1.0
 localization_distance: 100
 spinup_steps: 40 # spinup run for spinup_steps * model_integration_steps
-
+forecast_steps: 15
 
 save:
   experiment: true
