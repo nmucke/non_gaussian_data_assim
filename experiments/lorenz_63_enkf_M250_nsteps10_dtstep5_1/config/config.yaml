@@ -1,23 +1,20 @@
-# @package _global_
-data_assimilation_steps: 250
+seed: 42
+data_assimilation_steps: 10
 model_integration_steps: 5
 ensemble_size: 250
-inflation_factor: 1.0
 spinup_steps: 100
-forecast_steps: 15
-
+inflation_factor: 1.0
+forecast_steps: 5
 save:
   experiment: true
   figures: true
-  savename_appendix: ""
-
+  savename_appendix: ''
 case:
   name: lorenz_63
-  title: "Lorenz 63"
+  title: Lorenz 63
   num_states: 1
   state_dim: 3
   obs_noise_variance: 1.0
-
   forward_model:
     _target_: non_gaussian_data_assim.forward_models.lorenz_63.Lorenz63Model
     dt: 0.01
@@ -25,19 +22,15 @@ case:
     sigma: 10.0
     beta: 2.6666666
     rho: 28.0
-
   obs_operator:
     _target_: non_gaussian_data_assim.observations.observation_operator.LinearObservationOperator
     state_dim: ${case.state_dim}
-    obs_states: [0]
+    obs_states:
+    - 0
     obs_indices:
       _target_: numpy.arange
       start: 0
       stop: 3
-
-
-
-  # --- Ground-truth initial state: profile + spin-up.
   true_initial_state:
     _target_: non_gaussian_data_assim.ensemble_generation.initial_state.InitialState
     spinup_steps: ${spinup_steps}
@@ -48,53 +41,30 @@ case:
       state_dim: ${case.state_dim}
       periodic: false
       scale: 10.0
-
   initial_ensemble:
     _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsembleGenerator
     periodic: false
     spinup_steps: ${spinup_steps}
-    use_best_guess: true  # center the ensemble on the best-guess (true_initial_state)
+    use_best_guess: true
     best_guess_perturbation: null
-
-    # --- Profile to center the ensemble on when use_best_guess is false.
     initial_profile:
       _target_: non_gaussian_data_assim.initial_profiles.ConstantProfile
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
       periodic: false
       value: 0.0
-
     perturbation:
-      # --- WhiteNoise ---
       _target_: non_gaussian_data_assim.perturbations.white_noise.WhiteNoise
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
       scale: 5.0
-
-      # # --- Breeding ---
-      # _target_: non_gaussian_data_assim.perturbations.breeding.BreedingPerturbation
-      # num_states: ${case.num_states}
-      # state_dim: ${case.state_dim}
-      # forward_model: ${case.forward_model}
-      # delta0: 1.0
-      # breeding_cycles: 10
-      # outer_steps_per_cycle: 4
-
-      # # --- RedNoise ---
-      # _target_: non_gaussian_data_assim.perturbations.red_noise.RedNoise
-      # num_states: ${case.num_states}
-      # state_dim: ${case.state_dim}
-      # scale: 1.0
-      # alpha: 1.0
-
-
   plotter:
     _target_: non_gaussian_data_assim.plotting.plot_fields.plot_low_dim_trajectory
     _partial_: true
-    state_names: [x, y, z]
-
-  # Per-DA-method overrides specific to this case. Merged onto the chosen
-  # da_method config in main.py.
+    state_names:
+    - x
+    - 'y'
+    - z
   da_method_overrides:
     enkf:
       inflation_factor: ${inflation_factor}
@@ -115,3 +85,9 @@ case:
     particle_filter:
       resample_threshold: 0.5
       jitter_scale: 0.5
+da_method:
+  name: enkf
+  _target_: non_gaussian_data_assim.da_methods.enkf.EnsembleKalmanFilter
+  inflation_factor: 1.0
+  localization_distance: null
+  periodic: false

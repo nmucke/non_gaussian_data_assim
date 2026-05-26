@@ -4,6 +4,9 @@ Examples:
     python scripts/main.py case=lorenz_63 da_method=enkf
     python scripts/main.py case=lorenz_96 da_method=pff
     python scripts/main.py case=kuramoto da_method=agmf data_assimilation_steps=100
+
+    # Re-run a previously saved experiment from its stored config:
+    python scripts/main.py experiment=lorenz_63_enkf_M250_nsteps10_dtstep5
 """
 
 import logging
@@ -43,6 +46,18 @@ logger = logging.getLogger(__name__)
 
 @hydra_main(config_path="../configs", config_name="config", version_base=None)  # type: ignore[misc]
 def main(cfg: DictConfig) -> None:
+    # -- Optionally re-run a saved experiment from its stored config.
+    if cfg.experiment is not None:
+        saved_config = (
+            Path(__file__).resolve().parents[1]
+            / "experiments"
+            / cfg.experiment
+            / "config"
+            / "config.yaml"
+        )
+        logger.info(f"Loading config from saved experiment: {saved_config}")
+        cfg = OmegaConf.load(saved_config)
+
     print(OmegaConf.to_yaml(cfg))
 
     forward_model_cfg = cfg.case.forward_model
@@ -328,7 +343,7 @@ def main(cfg: DictConfig) -> None:
     plot_initial_fields(
         ensemble=posterior_ensemble,
         truth_t0=true_sol,
-        x_before_spinup=ic_ref[0],
+        x_before_spinup=true_initial_state[0],
         best_guess_profile=best_guess_profile,
         bv_dict=bv_dict,
     )

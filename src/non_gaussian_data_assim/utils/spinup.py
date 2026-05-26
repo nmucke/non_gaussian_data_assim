@@ -13,11 +13,15 @@ def spinup_ensemble(
     ensemble: jnp.ndarray,
     forward_model: BaseForwardModel,
     spinup_steps: int,
+    return_model_integration_steps: bool = False,
 ) -> jnp.ndarray:
-    """Roll an ensemble forward for `spinup_steps` and return the final state.
+    """Roll an ensemble forward for `spinup_steps`.
 
-    Returns the ensemble at the end of the spinup window, with the time axis
-    dropped (shape matches the input `ensemble`).
+    By default returns the ensemble at the end of the spinup window, with the
+    time axis dropped (shape matches the input `ensemble`). If
+    `return_model_integration_steps` is True, the full trajectory over all model
+    integration steps is returned with shape
+    [ensemble, time, num_states, state_dim].
 
     It spins up spinup_steps * model_integration_steps.
     """
@@ -29,8 +33,13 @@ def spinup_ensemble(
 
     # --- Rollout model
     rolled = forward_model.rollout(
-        ensemble, spinup_steps, return_model_integration_steps=False
+        ensemble,
+        spinup_steps,
+        return_model_integration_steps=return_model_integration_steps,
     )
-    # Shape rolled: [1, model_steps/int.steps, nr.state, state-dim]
+    # Shape rolled: [ensemble, time, nr.state, state-dim]
+
+    if return_model_integration_steps:
+        return rolled
 
     return rolled[:, -1]
