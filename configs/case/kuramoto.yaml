@@ -65,12 +65,12 @@ case:
       decorrelation_length: 10.0
       scale: 1.0
 
-    perturbation: null
+    perturbation:
       # # --- WhiteNoise ---
-      # _target_: non_gaussian_data_assim.perturbations.white_noise.WhiteNoise
-      # num_states: ${case.num_states}
-      # state_dim: ${case.state_dim}
-      # scale: 1.0
+      _target_: non_gaussian_data_assim.perturbations.white_noise.WhiteNoise
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      scale: 1.0
 
       # # --- RedNoise ---
       # _target_: non_gaussian_data_assim.perturbations.red_noise.RedNoise
