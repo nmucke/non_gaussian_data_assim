@@ -1,6 +1,6 @@
 import pdb
 from abc import abstractmethod
-from typing import Callable, Sequence, Union
+from typing import Callable, Optional, Sequence, Union
 
 import jax
 import jax.numpy as jnp
@@ -123,6 +123,7 @@ def get_obs_matrix(
     obs_indices_per_state: Sequence[np.ndarray],
     num_states: int,
     state_dim: int,
+    val_indices_per_state: Optional[Sequence[np.ndarray]] = None,
 ) -> np.ndarray:
     """Create an observation matrix H mapping flattened state to observations.
 

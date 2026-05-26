@@ -37,7 +37,17 @@ case:
       _target_: numpy.arange
       start: 0
       stop: ${case.state_dim}
-      step: 4
+      step: 20
+
+    validation_indices:
+      active: true
+      _target_: numpy.arange
+      start: 171
+      stop: 341
+      step: ${case.obs_operator.obs_indices.step}
+
+
+
 
 
   true_initial_state:
