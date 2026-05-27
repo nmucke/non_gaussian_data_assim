@@ -25,6 +25,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
 from non_gaussian_data_assim.da_methods.enkf import EnsembleKalmanFilter
+from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 
 # ============================= configuration =============================
 SEED = 0
@@ -42,7 +43,7 @@ INFLATION = 1.02        # multiplicative covariance inflation
 # =========================================================================
 
 
-class SimpleAdvectionModel:
+class SimpleAdvectionModel(BaseForwardModel):
     """An extremely simple forward model: 1-D linear advection on a periodic
     grid, solved with first-order upwind differencing and explicit Euler in
     time (``u_t + c u_x = 0``).
@@ -52,6 +53,7 @@ class SimpleAdvectionModel:
     """
 
     def __init__(self, state_dim, num_states, dt, speed, dx, model_integration_steps):
+        super().__init__(dt, model_integration_steps, state_dim, num_states=1)
         self.state_dim = state_dim
         self.num_states = num_states
         self.dt = dt
@@ -64,24 +66,6 @@ class SimpleAdvectionModel:
         u_upwind = jnp.roll(u, 1, axis=-1)  # u[i-1], periodic boundary
         return u - self.speed * self.dt / self.dx * (u - u_upwind)
 
-    def __call__(self, x, return_model_integration_steps=False, is_ensemble=False):
-        """Roll each ensemble member forward ``model_integration_steps`` steps.
-
-        Args:
-            x: [ensemble, num_states, state_dim]
-        Returns:
-            [ensemble, model_integration_steps, num_states, state_dim]
-        """
-
-        def rollout_member(u):
-            def step(u, _):
-                u = self.one_step(u)
-                return u, u
-
-            _, trajectory = jax.lax.scan(step, u, None, length=self.model_integration_steps)
-            return trajectory  # [model_integration_steps, num_states, state_dim]
-
-        return jax.vmap(rollout_member)(x)
 
 
 class SimpleObservationOperator:
@@ -114,7 +98,7 @@ def rollout_truth(model, initial_state, da_steps):
     states = [initial_state]
     u = initial_state[None]  # add ensemble axis of size 1
     for _ in range(da_steps):
-        trajectory = model(u, is_ensemble=True)
+        trajectory = model(u, return_model_integration_steps=True, is_ensemble=True)
         u = trajectory[:, -1]
         states.append(u[0])
     return jnp.stack(states)  # [da_steps + 1, num_states, state_dim]
