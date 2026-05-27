@@ -3,6 +3,10 @@ defaults:
   - case: lorenz_63
   - da_method: enkf
 
+# Re-run a saved experiment by name (folder under ./experiments). When set, its
+# saved config/config.yaml is loaded and used instead of the composed config.
+experiment: null
+
 # Common, case-agnostic settings.
 seed: 42
 

@@ -1,9 +1,10 @@
 # @package _global_
-data_assimilation_steps: 50
+data_assimilation_steps: 250
 model_integration_steps: 5
-ensemble_size: 100
+ensemble_size: 250
 inflation_factor: 1.0
 spinup_steps: 100
+forecast_steps: 15
 
 save:
   experiment: true
@@ -15,7 +16,7 @@ case:
   title: "Lorenz 63"
   num_states: 1
   state_dim: 3
-  obs_noise_variance: 5.0
+  obs_noise_variance: 1.0
 
   forward_model:
     _target_: non_gaussian_data_assim.forward_models.lorenz_63.Lorenz63Model
@@ -36,28 +37,42 @@ case:
 
 
 
+  # --- Ground-truth initial state: profile + spin-up.
   true_initial_state:
-    _target_: non_gaussian_data_assim.initial_profiles.WhiteNoiseProfile
-    num_states: ${case.num_states}
-    state_dim: ${case.state_dim}
+    _target_: non_gaussian_data_assim.ensemble_generation.initial_state.InitialState
+    spinup_steps: ${spinup_steps}
     periodic: false
-    scale: 10.0
-
-
-  initial_ensemble:
-    _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsemble
-    centered_around_bestguess: true
-    periodic: ${case.true_initial_state.periodic}
-
-    ens_perturbation:
-      # --- WhiteNoise ---
-      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.WhiteNoise
+    initial_profile:
+      _target_: non_gaussian_data_assim.initial_profiles.WhiteNoiseProfile
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
+      periodic: false
       scale: 10.0
 
+  initial_ensemble:
+    _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsembleGenerator
+    periodic: false
+    spinup_steps: ${spinup_steps}
+    use_best_guess: true  # center the ensemble on the best-guess (true_initial_state)
+    best_guess_perturbation: null
+
+    # --- Profile to center the ensemble on when use_best_guess is false.
+    initial_profile:
+      _target_: non_gaussian_data_assim.initial_profiles.ConstantProfile
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      periodic: false
+      value: 0.0
+
+    perturbation:
+      # --- WhiteNoise ---
+      _target_: non_gaussian_data_assim.perturbations.white_noise.WhiteNoise
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      scale: 5.0
+
       # # --- Breeding ---
-      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation
+      # _target_: non_gaussian_data_assim.perturbations.breeding.BreedingPerturbation
       # num_states: ${case.num_states}
       # state_dim: ${case.state_dim}
       # forward_model: ${case.forward_model}
@@ -66,14 +81,11 @@ case:
       # outer_steps_per_cycle: 4
 
       # # --- RedNoise ---
-      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise
+      # _target_: non_gaussian_data_assim.perturbations.red_noise.RedNoise
       # num_states: ${case.num_states}
       # state_dim: ${case.state_dim}
       # scale: 1.0
       # alpha: 1.0
-
-
-
 
 
   plotter:
