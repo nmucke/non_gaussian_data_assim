@@ -126,6 +126,9 @@ case:
       stepper: runge_kutta_4
       localization_distance: 5
       inflation_factor: ${inflation_factor}
+      # 50 members in a 50-dim state -> rank-deficient prior covariance; without
+      # this the inverse blows up and the particle flow diverges to NaN.
+      prior_cov_regularization: 0.1
       periodic: ${case.true_initial_state.periodic}
     particle_filter:
       resample_threshold: 0.5
