@@ -79,7 +79,7 @@ target/
 .ipynb_checkpoints
 
 # Max added: Track no ipynb
-*.ipynb
+# *.ipynb
 multirun/
 
 
