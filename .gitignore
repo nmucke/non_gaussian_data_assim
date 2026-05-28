@@ -168,6 +168,11 @@ cython_debug/
 *.lock
 
 
+
+# ----- Ignore Max's scratch-paper notebooks
+/notebooks/max_notebooks/*
+
+
 # ------- Handle experiments output -- ignores ------------------------
 # Ignore all experiment outputs/data
 /experiments/**
