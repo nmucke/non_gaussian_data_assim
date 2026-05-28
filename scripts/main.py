@@ -4,6 +4,9 @@ Examples:
     python scripts/main.py case=lorenz_63 da_method=enkf
     python scripts/main.py case=lorenz_96 da_method=pff
     python scripts/main.py case=kuramoto da_method=agmf data_assimilation_steps=100
+
+    # Re-run a previously saved experiment from its stored config:
+    python scripts/main.py experiment=lorenz_63_enkf_M250_nsteps10_dtstep5
 """
 
 import logging
@@ -43,6 +46,18 @@ logger = logging.getLogger(__name__)
 
 @hydra_main(config_path="../configs", config_name="config", version_base=None)  # type: ignore[misc]
 def main(cfg: DictConfig) -> None:
+    # -- Optionally re-run a saved experiment from its stored config.
+    if cfg.experiment is not None:
+        saved_config = (
+            Path(__file__).resolve().parents[1]
+            / "experiments"
+            / cfg.experiment
+            / "config"
+            / "config.yaml"
+        )
+        logger.info(f"Loading config from saved experiment: {saved_config}")
+        cfg = OmegaConf.load(saved_config)
+
     print(OmegaConf.to_yaml(cfg))
 
     forward_model_cfg = cfg.case.forward_model
@@ -75,93 +90,46 @@ def main(cfg: DictConfig) -> None:
     # ------------------------------------------------------
 
     rng_key = jax.random.PRNGKey(cfg.seed)
+    rng_key, initial_state_key, initial_ensemble_key, obs_key, val_key = (
+        jax.random.split(rng_key, 5)
+    )
 
-    # --- Instantiate Forward model and observation operator
+    ########## Forward model ##########
     forward_model = instantiate(forward_model_cfg)
     logger.info(f"Forward model: {forward_model}")
 
-    # --- Instantiate Observation operator
-    obs_operator = instantiate(obs_operator_cfg)
-    logger.info(f"Observation operator: {obs_operator}")
+    ########## True state ##########
+    # Initial state
+    initial_state_generator = instantiate(
+        true_initial_state_cfg, forward_model=forward_model
+    )
+    true_initial_state = initial_state_generator.sample(rng_key=initial_state_key)
+    logger.info(f"Initial state generator: {initial_state_generator}")
 
-    # --- Define an initial GROUND-TRUTH state.
-    true_initial_state_profile = instantiate(true_initial_state_cfg)
-    logger.info(f"Initial state: {true_initial_state_profile}")
-    rng_key, key = jax.random.split(rng_key)
-
-    # --- BEST-GUESS: Reference state for ensemble members --> determines how difficulat assimilation task will be
-    BEST_GUESS_FLAG = initial_ensemble_cfg.centered_around_bestguess
-
-    ic_ref = true_initial_state_profile.sample(rng_key=key)
-
-    # --- Spin-Up truth Run (optional)
-    if cfg.spinup_steps:
-        logger.info(
-            f"Run Spin-up of {cfg.spinup_steps * cfg.model_integration_steps} model-steps"
-        )
-
-        get_std = True if BEST_GUESS_FLAG else False
-        true_sol = spinup_ensemble(
-            ensemble=ic_ref,
-            forward_model=forward_model,
-            spinup_steps=cfg.spinup_steps,
-            get_natural_variablity=get_std,
-        )
-        if get_std:
-            true_sol, natural_variability = true_sol
-
-    else:
-        logger.info("No SPINUP")
-        true_sol = ic_ref
-
-        try:
-            natural_variability = cfg.case.true_initial_state.magnitude
-        except:
-            natural_variability = cfg.case.true_initial_state.scale
-
-    # --- Rollout the truth.
-    x0_truth = true_sol
+    # Rollout true solution
     true_sol = forward_model.rollout(
-        x0_truth, cfg.data_assimilation_steps, return_model_integration_steps=True
+        true_initial_state,
+        cfg.data_assimilation_steps,
+        return_model_integration_steps=True,
     )
 
-    if BEST_GUESS_FLAG:
-        """
-        Best-Guess: Add white noise (certain scale) to ic_ref and spin-up with same aound of setps as x0_truht
-            ic_ref              --- spin-up ---> x0_truth
-            ic_ref + white noie --- spin-up ---> best_guess
+    ########## Initial ensemble ##########
+    initial_ensemble_generator = instantiate(
+        initial_ensemble_cfg, forward_model=forward_model
+    )
+    initial_ensemble = initial_ensemble_generator.sample(
+        rng_key=initial_ensemble_key,
+        ensemble_size=cfg.ensemble_size,
+        best_guess=true_initial_state if initial_ensemble_cfg.use_best_guess else None,
+    )
+    logger.info(f"Initial ensemble generator: {initial_ensemble_generator}")
 
-        My suggestion for what scale to use is to look at the standard deviation over the spin-up period of x0_truh and add that
-        """
-        from non_gaussian_data_assim.ensemble_generation.ensemble_perturbations import (
-            WhiteNoise,
-        )
-
-        rng_key, bg_key = jax.random.split(rng_key)
-        whitenoise = WhiteNoise(
-            num_states=cfg.case.num_states,
-            state_dim=cfg.case.state_dim,
-            scale=natural_variability / 3,
-        )
-        perturbs_best_guess = whitenoise.sample(rng_key=bg_key, ensemble_size=1)
-        best_guess_profile0 = ic_ref + perturbs_best_guess
-
-        best_guess_profile = spinup_ensemble(
-            ensemble=best_guess_profile0,
-            forward_model=forward_model,
-            spinup_steps=cfg.spinup_steps,
-            get_natural_variablity=False,
-        )
-
-    else:
-        best_guess_profile = None
-
-    # --- Create synthetic observations
-    # Define Observations-error covariance
+    ########## Observation operator ##########
+    obs_operator = instantiate(obs_operator_cfg)
     R = jnp.eye(obs_operator.num_obs) * cfg.case.obs_noise_variance
-    logger.info(f"Observation noise variance: {cfg.case.obs_noise_variance}")
-    #  Generate observations from the truth.
-    rng_key, obs_key, val_key = jax.random.split(rng_key, 3)
+    logger.info(f"Observation operator: {obs_operator}")
+
+    # Observe true solution
     observations = generate_observations(
         rng_key=obs_key,
         true_sol=true_sol,
@@ -182,7 +150,7 @@ def main(cfg: DictConfig) -> None:
         validation=True,
     )
 
-    # --- Instantiate DA method (with case-specific overrides applied).
+    ########## DA model ##########
     da_model = instantiate(
         da_method_cfg,
         ensemble_size=cfg.ensemble_size,
@@ -190,56 +158,24 @@ def main(cfg: DictConfig) -> None:
         obs_operator=obs_operator,
         forward_operator=forward_model,
     )
-    logger.info(f"DA method: {da_model}")
+    logger.info(f"DA model: {da_model}")
 
-    # --- GENERATE INITIAL ENSEMBLE !!!!!
-    initial_ensemble_generator = instantiate(initial_ensemble_cfg)
-    logger.info(f"Prior ensemble: {initial_ensemble_generator}")
-    rng_key, key = jax.random.split(rng_key)
-
-    output = initial_ensemble_generator.sample(
-        rng_key=key, ensemble_size=cfg.ensemble_size, bg_profile=best_guess_profile
-    )
-    # Flexibel handling of Ens.Gen. output (Breeding might return additional diagnostics)
-    if isinstance(output, tuple):
-        reference_ensemble, ensgen_diagnostics = output
-    else:
-        reference_ensemble = output
-
-    # --- Handle spin-up of ensemble (only when no best-guess is used!!)
-    if not BEST_GUESS_FLAG and cfg.spinup_steps:
-        logger.info(
-            "\nSPIN-UP Initials Ensemble (as it is NOT centered around a best-guess profile)"
-        )
-        reference_ensemble = spinup_ensemble(
-            ensemble=reference_ensemble,
-            forward_model=forward_model,
-            spinup_steps=cfg.spinup_steps,
-        )
-
-    # TODO: Would it not be enough to only rollout best-guess (if present)
-    # ---------------- Initialisation of data-containers that will be filled in DA-loop ------------------------------
-    # Initialize the posterior ensemble from the Initial ensemble.
-    posterior_ensemble = reference_ensemble.copy().reshape(
+    ########## Prepare ensembles ##########
+    posterior_ensemble = initial_ensemble.copy().reshape(
         cfg.ensemble_size, 1, cfg.case.num_states, cfg.case.state_dim
     )
-    # Initialize the Prior-Ensemble from the reference. NOTE: Prior-Ensemble only stores fields at assim-steps before assimilation is done
-    prior_ensemble_da = reference_ensemble.copy().reshape(
-        cfg.ensemble_size,
-        1,
-        cfg.case.num_states,
-        cfg.case.state_dim,
+    prior_ensemble_da = initial_ensemble.copy().reshape(
+        cfg.ensemble_size, 1, cfg.case.num_states, cfg.case.state_dim
     )
-    # ----------------------------------------------------------------------------------------------------------------
 
-    # --- Rollout the initial ensemble for comparison.
+    ########## Rollout the initial ensemble for comparison ##########
     reference_ensemble = forward_model.rollout(
-        reference_ensemble,
+        initial_ensemble,
         cfg.data_assimilation_steps,
         return_model_integration_steps=True,
     )
 
-    # -------------------- Run the DA loop. ---------------------------------------------------------
+    ########## Run the DA loop. ##########
     # Initialize empty lists to track chi-square and normalized nnovations (z)
     predicted_obs = []
     logger.info(f"Running DA loop for {cfg.data_assimilation_steps} steps")
@@ -408,24 +344,22 @@ def main(cfg: DictConfig) -> None:
         innovation_metrics = None
 
     # --- Plot Initial-Conditions (I.C, best-guess, Initial-Ensemble) + Breeding statitcs if available
-    try:
-        best_guess_profile = best_guess_profile[0]
-    except:
-        best_guess_profile = None
-    try:
-        bv_dict = ensgen_diagnostics
-    except:
-        bv_dict = None
-    # ==============================================================================================================
+    # try:
+    #     best_guess_profile = best_guess_profile[0]
+    # except:
+    best_guess_profile = None
+    # try:
+    #     bv_dict = ensgen_diagnostics
+    # except:
+    bv_dict = None
 
-    plot_initial_fields(
-        ensemble=posterior_ensemble,
-        truth_t0=true_sol,
-        x_before_spinup=ic_ref[0],
-        best_guess_profile=best_guess_profile,
-        bv_dict=bv_dict,
-        path_savefig=path_savefig,
-    )
+    # plot_initial_fields(
+    #     ensemble=posterior_ensemble,
+    #     truth_t0=true_sol,
+    #     x_before_spinup=true_initial_state[0],
+    #     best_guess_profile=best_guess_profile,
+    #     bv_dict=bv_dict,
+    # )
 
     # -------------------------------------------------------
     # -- Save fields
@@ -450,8 +384,8 @@ def main(cfg: DictConfig) -> None:
         if forecast_metrics is not None:
             metrics_to_save["forecast_metrics"] = forecast_metrics
 
-        if bv_dict is not None:
-            metrics_to_save["breeding_metrics"] = bv_dict
+        # if bv_dict is not None:
+        #     metrics_to_save["breeding_metrics"] = bv_dict
 
         # -- Save fields
         for key, value in arrays_to_save.items():

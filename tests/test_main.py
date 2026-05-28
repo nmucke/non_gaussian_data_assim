@@ -15,11 +15,14 @@ DA_METHODS = ["enkf", "agmf", "pff", "particle_filter"]
 
 # Per-case extras layered on top of the shared smoke-test overrides.
 # coupled_kuramoto's defaults (state_dim=1024, spinup_steps=25) are too heavy
-# for a smoke test, so shrink the spatial grid and skip spinup here.
+# for a smoke test, so coarsen the grid and skip spinup here. Only state_dim is
+# reduced; domain_length stays at its default so the KS dynamics keep the
+# unstable atmosphere modes the breeding ensemble relies on (shrinking the
+# domain to 64 leaves the atmosphere fully damped, collapsing the breeding
+# normalization to a divide-by-~0 and producing NaNs).
 CASE_EXTRA_OVERRIDES: dict[str, list[str]] = {
     "coupled_kuramoto": [
-        "case.state_dim=64",
-        "case.domain_length=64",
+        "case.state_dim=256",
         "spinup_steps=0",
     ],
 }
@@ -51,6 +54,7 @@ def test_main_combination(case: str, da_method: str) -> None:
             "data_assimilation_steps=10",
             "model_integration_steps=5",
             "ensemble_size=50",
+            "save.experiment=false",
             *CASE_EXTRA_OVERRIDES.get(case, []),
         ],
         cwd=REPO_ROOT,

@@ -13,13 +13,15 @@ def spinup_ensemble(
     ensemble: jnp.ndarray,
     forward_model: BaseForwardModel,
     spinup_steps: int,
-    get_natural_variablity: bool = False,
     return_model_integration_steps: bool = False,
 ) -> jnp.ndarray:
-    """Roll an ensemble forward for `spinup_steps` and return the final state.
+    """Roll an ensemble forward for `spinup_steps`.
 
-    Returns the ensemble at the end of the spinup window, with the time axis
-    dropped (shape matches the input `ensemble`).
+    By default returns the ensemble at the end of the spinup window, with the
+    time axis dropped (shape matches the input `ensemble`). If
+    `return_model_integration_steps` is True, the full trajectory over all model
+    integration steps is returned with shape
+    [ensemble, time, num_states, state_dim].
 
     It spins up spinup_steps * model_integration_steps.
     """
@@ -29,23 +31,15 @@ def spinup_ensemble(
         f"Model spinup for {integration_steps} model integration steps ({seconds} s)"
     )
 
-    # --- Decide whether we want to return model integration steps
-    return_steps = return_model_integration_steps or get_natural_variablity
-
     # --- Rollout model
     rolled = forward_model.rollout(
-        ensemble, spinup_steps, return_model_integration_steps=return_steps
+        ensemble,
+        spinup_steps,
+        return_model_integration_steps=return_model_integration_steps,
     )
-    # Shape rolled: [1, model_steps/int.steps, nr.state, state-dim]
+    # Shape rolled: [ensemble, time, nr.state, state-dim]
 
-    if get_natural_variablity:
-        # -- Calculate spread
-        nat_variability = jnp.std(
-            rolled[0],
-            ddof=1,
-        )  #  axis=0
-        return rolled[:, -1], nat_variability
-    elif return_model_integration_steps:
+    if return_model_integration_steps:
         return rolled
-    else:
-        return rolled[:, -1]
+
+    return rolled[:, -1]
