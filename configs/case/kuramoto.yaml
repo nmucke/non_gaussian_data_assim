@@ -10,7 +10,7 @@ forecast_steps: 15
 save:
   experiment: true
   figures: true
-  savename_appendix: ""
+  savename_appendix: "valobs_spread2_5"
 
 
 
@@ -37,13 +37,12 @@ case:
       _target_: numpy.arange
       start: 0
       stop: ${case.state_dim}
-      step: 20
+      step: 12
 
     validation_indices:
-      active: true
       _target_: numpy.arange
-      start: 171
-      stop: 341
+      start: 192
+      stop: 320
       step: ${case.obs_operator.obs_indices.step}
 
 
@@ -65,14 +64,14 @@ case:
     periodic: ${case.true_initial_state.periodic}
 
     ens_perturbation:
-      # --- SmoothGaussian / pseudo1D-like field perturbation ---
-      # Recommended for KS if you want spatially structured initial uncertainty.
-      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.CoupledKuramotoPseudo1DPerturbation
-      num_states: ${case.num_states}
-      state_dim: ${case.state_dim}
-      domain_length: ${case.domain_length}
-      decorrelation_length: 10.0
-      scale: 1.0
+      # # --- SmoothGaussian / pseudo1D-like field perturbation ---
+      # # Recommended for KS if you want spatially structured initial uncertainty.
+      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.CoupledKuramotoPseudo1DPerturbation
+      # num_states: ${case.num_states}
+      # state_dim: ${case.state_dim}
+      # domain_length: ${case.domain_length}
+      # decorrelation_length: 10.0
+      # scale: 1.0
 
       # # --- WhiteNoise ---
       # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.WhiteNoise
@@ -80,12 +79,13 @@ case:
       # state_dim: ${case.state_dim}
       # scale: 1.0
 
-      # # --- RedNoise ---
-      # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise
-      # num_states: ${case.num_states}
-      # state_dim: ${case.state_dim}
-      # scale: 1.0
-      # alpha: 1.0
+      # --- RedNoise ---
+      _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.RedNoise
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      domain_length: ${case.domain_length}
+      scale: 2.5
+      alpha: 1.0
 
       # # --- Breeding ---
       # _target_: non_gaussian_data_assim.ensemble_generation.ensemble_perturbations.BreedingPerturbation

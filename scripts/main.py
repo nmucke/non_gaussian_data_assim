@@ -161,7 +161,7 @@ def main(cfg: DictConfig) -> None:
     R = jnp.eye(obs_operator.num_obs) * cfg.case.obs_noise_variance
     logger.info(f"Observation noise variance: {cfg.case.obs_noise_variance}")
     #  Generate observations from the truth.
-    rng_key, obs_key = jax.random.split(rng_key)
+    rng_key, obs_key, val_key = jax.random.split(rng_key, 3)
     observations = generate_observations(
         rng_key=obs_key,
         true_sol=true_sol,
@@ -169,6 +169,17 @@ def main(cfg: DictConfig) -> None:
         R=R,
         data_assimilation_steps=cfg.data_assimilation_steps,
         model_integration_steps=cfg.model_integration_steps,
+    )
+
+    R_val = jnp.eye(obs_operator.num_valobs) * cfg.case.obs_noise_variance
+    validation = generate_observations(
+        rng_key=val_key,
+        true_sol=true_sol,
+        obs_operator=obs_operator,
+        R=R_val,
+        data_assimilation_steps=cfg.data_assimilation_steps,
+        model_integration_steps=cfg.model_integration_steps,
+        validation=True,
     )
 
     # --- Instantiate DA method (with case-specific overrides applied).
