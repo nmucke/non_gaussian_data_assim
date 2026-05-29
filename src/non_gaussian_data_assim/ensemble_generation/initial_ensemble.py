@@ -3,15 +3,16 @@ from typing import Optional
 import jax
 import jax.numpy as jnp
 
-from non_gaussian_data_assim.perturbations import BasePerturbation, WhiteNoise
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 from non_gaussian_data_assim.initial_profiles import BaseProfile
+from non_gaussian_data_assim.perturbations import BasePerturbation, WhiteNoise
 from non_gaussian_data_assim.utils.spinup import spinup_ensemble
 
 best_guess_perturbation_mapping = {
     None: lambda x: 0.0,
-    "natural_variability": lambda x: jnp.std(x[0], ddof=1)
+    "natural_variability": lambda x: jnp.std(x[0], ddof=1),
 }
+
 
 class InitialEnsembleGenerator:
     """Generate a prior ensemble by perturbing a center field.
@@ -32,7 +33,7 @@ class InitialEnsembleGenerator:
         spinup_steps: int = 0,
         periodic: bool = False,
         use_best_guess: bool = False,
-        best_guess_perturbation: Optional[str] = None
+        best_guess_perturbation: Optional[str] = None,
     ) -> None:
         self.perturbation = perturbation
         self.forward_model = forward_model
@@ -40,11 +41,12 @@ class InitialEnsembleGenerator:
         self.spinup_steps = spinup_steps
         self.periodic = periodic
         self.use_best_guess = use_best_guess
-        self.best_guess_perturbation = best_guess_perturbation_mapping[best_guess_perturbation]
+        self.best_guess_perturbation = best_guess_perturbation_mapping[
+            best_guess_perturbation
+        ]
 
-        self.num_states = forward_model.num_states
-        self.state_dim = forward_model.state_dim
-        
+        self.num_states = forward_model.num_states  # type: ignore
+        self.state_dim = forward_model.state_dim  # type: ignore
 
     def sample(
         self,
@@ -59,11 +61,12 @@ class InitialEnsembleGenerator:
         if best_guess is not None:
             best_guess_std = self.best_guess_perturbation(best_guess)
             noise = WhiteNoise(
-                num_states=self.num_states, 
+                num_states=self.num_states,
                 state_dim=self.state_dim,
-                scale=best_guess_std / 3
+                scale=best_guess_std,
             ).sample(best_guess_key, ensemble_size=1)
             center = best_guess + noise
+            self.best_guess_profile = center
         else:
             if self.initial_profile is None:
                 raise ValueError(
@@ -71,6 +74,7 @@ class InitialEnsembleGenerator:
                     "or an `initial_profile` to center the ensemble on."
                 )
             center = self.initial_profile.sample(rng_key=center_key)
+            self.best_guess_profile = center
 
         # --- 2. Perturb around the center (Breeding may also return diagnostics).
         if self.perturbation:
@@ -81,7 +85,7 @@ class InitialEnsembleGenerator:
             )
         else:
             output = jnp.broadcast_to(center, (ensemble_size,) + center.shape[1:])
-       
+
         if isinstance(output, tuple):
             ensemble, diagnostics = output
         else:
