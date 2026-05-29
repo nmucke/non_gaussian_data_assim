@@ -4,10 +4,14 @@ A library and experiment harness for ensemble data assimilation (DA) with non-Ga
 
 It provides:
 
-- Three ensemble DA methods: Ensemble Kalman Filter, Adaptive Gaussian Mixture Filter, Particle Flow Filter.
-- Three forward-model test cases: Lorenz 63, Lorenz 96, Kuramoto–Sivashinsky.
+- Four ensemble DA methods: Ensemble Kalman Filter, Adaptive Gaussian Mixture Filter, Particle Flow Filter, bootstrap Particle Filter.
+- Four forward-model test cases: Lorenz 63, Lorenz 96, Kuramoto–Sivashinsky, Coupled Kuramoto–Sivashinsky (a two-state fast/slow system).
 - A unified, [Hydra](https://hydra.cc/)-driven experiment script that lets you mix and match cases and DA methods from the command line.
-- Trajectory and ensemble metrics (RMSE, MAE, MAPE, CRPS).
+- A composable ensemble-generation stack: initial-state profiles + perturbation schemes (white noise, red noise, breeding) + model spin-up.
+- Trajectory, ensemble, and innovation-consistency metrics (RMSE, MAE, MAPE, CRPS, ensemble spread, chi-squared / normalized innovations).
+- An experiment-saving system that persists config, fields, metrics, and figures, plus the ability to re-run a saved experiment from its stored config.
+- Post-assimilation forecasting (free-running the analysis ensemble forward).
+- A separate analytical-Kalman-filter harness that scores the ensemble methods against the exact posterior on linear-Gaussian problems.
 - A pytest suite that smoke-tests every (case, DA method) combination.
 
 ---
@@ -55,7 +59,15 @@ uv run python scripts/main.py case=lorenz_96 da_method=enkf \
     da_method.inflation_factor=2.0 da_method.localization_distance=8
 ```
 
-The script prints the resolved config, runs the DA loop, prints a metrics table, and shows plots.
+The script prints the resolved config, runs the DA loop, prints a metrics table, shows plots, and (by default) saves everything under `experiments/`.
+
+Re-run a previously saved experiment from its stored config (folders live under `experiments/`):
+
+```bash
+uv run python scripts/main.py experiment=lorenz_63_enkf_M250_nsteps10_dtstep5
+```
+
+When `experiment=…` is set, the saved `config/config.yaml` is loaded and used verbatim, ignoring the rest of the composed config.
 
 ---
 
@@ -65,16 +77,25 @@ All experiment knobs live under `[configs/](configs/)`:
 
 ```
 configs/
-├── config.yaml             # root: defaults list + common settings (seed, fallbacks)
+├── config.yaml                 # root: defaults list + common settings (seed, fallbacks)
 ├── case/
-│   ├── lorenz_63.yaml      # Lorenz 63 case
-│   ├── lorenz_96.yaml      # Lorenz 96 case
-│   └── kuramoto.yaml       # Kuramoto–Sivashinsky case
-└── da_method/
-    ├── enkf.yaml           # Ensemble Kalman Filter
-    ├── agmf.yaml           # Adaptive Gaussian Mixture Filter
-    └── pff.yaml            # Particle Flow Filter
+│   ├── lorenz_63.yaml          # Lorenz 63 case
+│   ├── lorenz_96.yaml          # Lorenz 96 case
+│   ├── kuramoto.yaml           # Kuramoto–Sivashinsky case
+│   └── coupled_kuramoto.yaml   # Coupled (two-state) Kuramoto–Sivashinsky case
+├── da_method/
+│   ├── enkf.yaml               # Ensemble Kalman Filter
+│   ├── agmf.yaml               # Adaptive Gaussian Mixture Filter
+│   ├── pff.yaml                # Particle Flow Filter
+│   └── particle_filter.yaml    # Bootstrap Particle Filter
+└── analytical/                 # standalone configs for the analytical-Kalman harness
+    ├── analytical_2d.yaml      # 2-D linear-Gaussian, compare methods vs. exact KF
+    ├── analytical_7d.yaml      # 7-D linear-Gaussian, compare methods vs. exact KF
+    ├── ensemble_2d.yaml        # 2-D ensemble-size sweep
+    └── ensemble_7d.yaml        # 7-D ensemble-size sweep
 ```
+
+The `analytical/` configs are consumed by the dedicated scripts under `scripts/analytical/` (see [Analytical experiments](#analytical-experiments)), not by `scripts/main.py`.
 
 ### How composition works
 
@@ -91,8 +112,8 @@ Selecting `case=…` swaps in one of the files in `configs/case/`; selecting `da
 
 Each `case/*.yaml` uses `# @package _global_` so it can both:
 
-1. Provide its own sensible defaults for the common settings (`data_assimilation_steps`, `model_integration_steps`, `ensemble_size`, `inflation_factor`, `localization_distance`), and
-2. Define a fully specified `case:` block (forward model, observation operator, initial-state generator, prior-ensemble generator, plotter) used by `scripts/main.py`.
+1. Provide its own sensible defaults for the common settings (`data_assimilation_steps`, `model_integration_steps`, `ensemble_size`, `inflation_factor`, `localization_distance`, `spinup_steps`, `forecast_steps`, and the `save:` block), and
+2. Define a fully specified `case:` block (forward model, observation operator, `true_initial_state` generator, `initial_ensemble` generator, plotter) used by `scripts/main.py`.
 
 Each `case/*.yaml` also declares a `da_method_overrides` block. At runtime, `scripts/main.py` does:
 
@@ -104,7 +125,7 @@ so case-specific tunings (e.g. localization radius for Lorenz 96, regularization
 
 ### Everything is built via `hydra.utils.instantiate`
 
-Forward model, observation operator, initial state, prior ensemble, DA method, and plotter all carry `_target_` and are instantiated by Hydra. Initial-state and prior-ensemble generators use `_partial_: true` so the script can supply runtime arguments (`rng_key`, `ensemble_size`).
+Forward model, observation operator, `true_initial_state`, `initial_ensemble`, DA method, and plotter all carry `_target_` and are instantiated by Hydra. The generators are handed the `forward_model` at instantiation, and `scripts/main.py` calls their `.sample(...)` methods with runtime arguments (`rng_key`, `ensemble_size`, optional `best_guess`); the plotter uses `_partial_: true`.
 
 This means you can swap implementations purely from YAML/CLI — no Python edits required.
 
@@ -113,14 +134,20 @@ This means you can swap implementations purely from YAML/CLI — no Python edits
 Lives at the root of `configs/config.yaml` (and in each case file as a `# @package _global_` override):
 
 
-| Key                       | Meaning                                                                       |
-| ------------------------- | ----------------------------------------------------------------------------- |
-| `seed`                    | PRNG seed (`jax.random.PRNGKey(seed)`).                                       |
-| `data_assimilation_steps` | Number of outer DA cycles.                                                    |
-| `model_integration_steps` | Number of forward-model sub-steps per DA cycle.                               |
-| `ensemble_size`           | Number of ensemble members / particles.                                       |
-| `inflation_factor`        | Default covariance inflation, referenced by case overrides via interpolation. |
-| `localization_distance`   | Default localization radius (case-specific).                                  |
+| Key                       | Meaning                                                                                       |
+| ------------------------- | --------------------------------------------------------------------------------------------- |
+| `seed`                    | PRNG seed (`jax.random.PRNGKey(seed)`).                                                       |
+| `experiment`              | Name of a saved experiment folder to re-run from its stored config; `null` to compose fresh.  |
+| `data_assimilation_steps` | Number of outer DA cycles.                                                                    |
+| `model_integration_steps` | Number of forward-model sub-steps per DA cycle.                                               |
+| `ensemble_size`           | Number of ensemble members / particles.                                                       |
+| `spinup_steps`            | Outer steps (× `model_integration_steps`) to free-run the truth/ensemble onto the attractor before DA. `null`/`0` disables. |
+| `forecast_steps`          | Outer steps to free-run the analysis ensemble after DA for a forecast. Absent/`null` disables. |
+| `inflation_factor`        | Default covariance inflation, referenced by case overrides via interpolation.                 |
+| `localization_distance`   | Default localization radius (case-specific).                                                  |
+| `save.experiment`         | Whether to persist config/fields/metrics under `experiments/`.                                |
+| `save.figures`            | Whether to also save the generated figures.                                                   |
+| `save.savename_appendix`  | Optional suffix appended to the auto-generated experiment folder name.                        |
 
 
 ---
@@ -128,19 +155,21 @@ Lives at the root of `configs/config.yaml` (and in each case file as a `# @packa
 ## Implemented cases
 
 
-| Case (`case=…`) | State                              | Forward model                                                    | Default obs                        |
-| --------------- | ---------------------------------- | ---------------------------------------------------------------- | ---------------------------------- |
-| `lorenz_63`     | 3-D chaotic ODE (`x, y, z`)        | RK4 integrator with `σ=10, β=8/3, ρ=28`                          | All three components, `R = 5·I`    |
-| `lorenz_96`     | 50-D ring of variables             | RK4 with forcing `F=8`, periodic boundary                        | Every 2nd grid point, `R = 0.25·I` |
-| `kuramoto`      | 512-D PDE on a periodic 1-D domain | Pseudo-spectral exponential time differencing, domain length 100 | Every 4th grid point, `R = 0.1·I`  |
+| Case (`case=…`)    | State                                       | Forward model                                                        | Default obs                                  |
+| ------------------ | ------------------------------------------- | -------------------------------------------------------------------- | -------------------------------------------- |
+| `lorenz_63`        | 3-D chaotic ODE (`x, y, z`)                 | RK4 integrator with `σ=10, β=8/3, ρ=28`                              | All three components                         |
+| `lorenz_96`        | 50-D ring of variables                      | RK4 with forcing `F=8`, periodic boundary                            | Subset of grid points                        |
+| `kuramoto`         | 512-D PDE on a periodic 1-D domain          | Pseudo-spectral exponential time differencing, domain length 100     | Subset of grid points                        |
+| `coupled_kuramoto` | Two coupled KS fields (fast + slow), 1024-D | Coupled pseudo-spectral KS with fast/slow timescales (`num_states=2`) | Subset of both fields (different stride each) |
 
+Observation noise is set per case via `case.obs_noise_variance` (`R = obs_noise_variance · I`); observed indices are set per case in the `obs_operator` block.
 
 Each case ships:
 
 - A forward-model class (`src/non_gaussian_data_assim/forward_models/…`).
-- An observation operator (linear, selecting a subset of grid points).
-- An initial-state generator and a prior-ensemble generator (`src/non_gaussian_data_assim/initial_conditions.py`).
-- A plotter that's appropriate for the dimensionality (`plot_low_dim_trajectory` for L63, `plot_high_dim_field` for L96 / Kuramoto).
+- An observation operator (linear, selecting a subset of grid points; `coupled_kuramoto` selects a different subset per state).
+- A `true_initial_state` generator (`InitialState`) and an `initial_ensemble` generator (`InitialEnsembleGenerator`), both in `src/non_gaussian_data_assim/ensemble_generation/`, configured with an initial-state profile and (for the ensemble) a perturbation scheme.
+- A plotter that's appropriate for the dimensionality (`plot_low_dim_trajectory` for L63, `plot_high_dim_field` for L96 / Kuramoto, `plot_multi_state_high_dim_field` for coupled Kuramoto).
 - Per-DA-method tuning overrides.
 
 To add a case, drop a new file under `configs/case/` and (if needed) add a corresponding forward model in `src/non_gaussian_data_assim/forward_models/`.
@@ -195,16 +224,48 @@ To add a new DA method:
 
 ---
 
+## Ensemble generation
+
+The truth's initial state and the prior ensemble are both built by a small, composable stack rather than hard-coded samplers. Two driver classes live in `src/non_gaussian_data_assim/ensemble_generation/`:
+
+- **`InitialState`** (`initial_state.py`) — builds a single ground-truth (or best-guess) state as `profile → (optional perturbation) → (optional spin-up) → (optional periodicity)`, returning shape `[1, num_states, state_dim]`.
+- **`InitialEnsembleGenerator`** (`initial_ensemble.py`) — centers an ensemble either on a supplied `best_guess` (e.g. the true initial state, with `use_best_guess: true`) or on a fresh profile sample, perturbs it, optionally spins it up, and enforces periodicity. When `use_best_guess` is set, the center is jittered with white noise scaled by `best_guess_perturbation` (`null` → no jitter, `natural_variability` → a fraction of the field's empirical std).
+
+### Initial-state profiles (`initial_profiles.py`)
+
+Deterministic or random fields the ensemble/truth is centered on. All subclass `BaseProfile`:
+
+- `ConstantProfile` — a constant value.
+- `WhiteNoiseProfile` — i.i.d. Gaussian field.
+- `CosineProfile` — two-mode cosine field (used for the Kuramoto cases).
+- `CoupledKuramotoPseudo1DProfile` — smooth periodic Gaussian random field (Evensen-style `pseudo1D`); also doubles as a perturbation when given a `bg_profile`.
+
+### Perturbations (`perturbations/`)
+
+Schemes for spreading members around the center. All subclass `BasePerturbation` and expose `.sample(rng_key, ensemble_size, bg_profile)`:
+
+- **`WhiteNoise`** (`white_noise.py`) — i.i.d. Gaussian perturbations, scaled by `scale`.
+- **`RedNoise`** (`red_noise.py`) — spatially-correlated (AR/red) noise with a decorrelation controlled by `alpha`.
+- **`BreedingPerturbation`** (`breeding.py`) — bred vectors: repeatedly perturb, integrate, and rescale to a target norm to grow the fastest-growing error modes. Configurable via `delta0`, `breeding_cycles`, `outer_steps_per_cycle`, and a pluggable `norm_fct` (`L2Norm`, `SelectedStateL2Norm` for multi-state systems). Optionally returns diagnostics about the breeding process.
+
+### Spin-up (`utils/spinup.py`)
+
+`spinup_ensemble` free-runs an ensemble (or single state) forward for `spinup_steps · model_integration_steps` so it lands on the model attractor before DA begins. The same helper backs the post-DA forecasting step.
+
+Pick all of these from YAML — e.g. each case file's `initial_ensemble.perturbation` block ships with `WhiteNoise` active and `Breeding`/`RedNoise` alternatives commented out.
+
+---
+
 ## Ensemble state shapes
 
-The pipeline uses a consistent shape convention. `num_states` is the number of physical fields per grid (e.g. velocity-x, velocity-y, temperature) — `1` for every case shipped today. `state_dim` is the spatial dimension of one field.
+The pipeline uses a consistent shape convention. `num_states` is the number of physical fields per grid (e.g. velocity-x, velocity-y, temperature) — `1` for Lorenz 63/96 and Kuramoto, `2` for the coupled Kuramoto case (fast + slow field). `state_dim` is the spatial dimension of one field.
 
 
 | Array                 | Shape                                           | Notes                                                                                            |
 | --------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | Initial state (truth) | `[1, num_states, state_dim]`                    | Single member — leading 1 lets the same forward-model code handle truth and ensembles uniformly. |
 | Truth trajectory      | `[1, T_total, num_states, state_dim]`           | `T_total = data_assimilation_steps · model_integration_steps + 1` when inner steps are returned. |
-| Prior ensemble        | `[ensemble_size, num_states, state_dim]`        | Sampled by the case-specific generator in `initial_conditions.py`.                               |
+| Prior ensemble        | `[ensemble_size, num_states, state_dim]`        | Sampled by `InitialEnsembleGenerator` (`ensemble_generation/initial_ensemble.py`).               |
 | Reference / posterior | `[ensemble_size, T_acc, num_states, state_dim]` | Time axis grows by `model_integration_steps` per DA cycle as inner steps are concatenated.       |
 | Observations          | `[data_assimilation_steps, num_obs]`            | `num_obs = len(obs_states) · len(obs_indices)`. One observation vector per outer step.           |
 | `R` (obs covariance)  | `[num_obs, num_obs]`                            | Diagonal; built from `obs_noise_variance` in the case file.                                      |
@@ -216,7 +277,7 @@ The convention `[ensemble, time, num_states, state_dim]` is what the metrics exp
 
 ## Metrics
 
-Implemented in `src/non_gaussian_data_assim/metrics/`. Two families share a common pattern: subclasses define `compute(...)` for the smallest unit; `__call__` `vmap`s over the missing axes and then applies the configured aggregation.
+Implemented in `src/non_gaussian_data_assim/metrics/`. The families share a common pattern: subclasses define `compute(...)` for the smallest unit; `__call__` `vmap`s over the missing axes and then applies the configured aggregation.
 
 ### Trajectory metrics (`metrics/trajectory_metrics.py`)
 
@@ -244,6 +305,23 @@ Score the *whole ensemble* (not a single member) against a truth at each time st
 
 CRPS supports a `time_aggregation` argument (`"none"` or any of the methods above). The pipeline uses `time_aggregation="mean"`.
 
+`metrics/trajectory_metrics.py` also exposes `ensemble_spread`, the per-time ensemble standard deviation, which the pipeline reports alongside the time-resolved RMSE/CRPS so you can check spread–error consistency.
+
+### Innovation-consistency metrics (`metrics/innovation_metrics.py`)
+
+Diagnostics computed in observation space from the predicted observations `H x_i` and the actual observations `y`. They use the ensemble to estimate the innovation covariance `S = H Pᶠ Hᵀ + R`, so there is no ensemble aggregation — only `time_aggregation`.
+
+| Metric                 | Definition                                                       | Notes                                                                                       |
+| ---------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `ChiSquared`           | `dᵀ S⁻¹ d` per step (`d = y − mean(H x)`), normalized by `n_obs` | A well-calibrated filter gives ≈ 1. Larger means under-dispersed, smaller over-dispersed.   |
+| `NormalizedInnovations`| `S^{-1/2} d` (whitened innovations)                              | Should be ≈ standard normal if the filter is consistent; plotted as a histogram.            |
+
+These are computed (and plotted) only for the EnKF, where the Gaussian innovation statistics are meaningful. For multi-state cases they are reported per observed state.
+
+### Probability metrics (`metrics/probability_metrics.py`)
+
+`KLDivergence` / `GaussianKLDivergence` measure divergence from a reference distribution. They are used by the analytical-Kalman harness (see [Analytical experiments](#analytical-experiments)) to score each ensemble method's posterior against the *exact* Kalman posterior, not by `scripts/main.py`.
+
 ### Output
 
 `scripts/main.py` reports both **reference** (no-DA ensemble rolled out from the prior) and **posterior** (DA-corrected) metrics side by side via `print_metrics_table`, so you can immediately see whether the filter is improving over the free-running baseline.
@@ -252,23 +330,78 @@ CRPS supports a `time_aggregation` argument (`"none"` or any of the methods abov
 
 ## What `scripts/main.py` does
 
-1. Seed the PRNG.
-2. Instantiate the forward model and observation operator.
-3. Sample the truth's initial state, roll out the truth trajectory.
-4. Generate noisy observations from the truth (`observations.observation_utils.generate_observations`).
-5. Compose `cfg.da_method ⊕ cfg.case.da_method_overrides[cfg.da_method.name]` and instantiate the DA method.
-6. Sample a reference ensemble (no DA), roll it out for comparison.
-7. Run the DA loop: forecast → analysis → record posterior; bail out with a warning if NaNs appear.
-8. Compute reference and posterior metrics (RMSE, MAE, MAPE, CRPS).
-9. Plot via the case-specific plotter.
+1. Optionally load a saved experiment's config (`experiment=…`), then seed the PRNG.
+2. Set up the experiment saver (`experiments/<name>/`) if `save.experiment` is on.
+3. Instantiate the forward model and observation operator.
+4. Sample the truth's initial state (profile + optional spin-up) and roll out the truth trajectory.
+5. Sample the prior ensemble via `InitialEnsembleGenerator` (profile/best-guess + perturbation + optional spin-up).
+6. Generate noisy observations from the truth (`observations.observation_utils.generate_observations`).
+7. Compose `cfg.da_method ⊕ cfg.case.da_method_overrides[cfg.da_method.name]` and instantiate the DA method.
+8. Roll out the prior ensemble with no DA as a reference baseline.
+9. Run the DA loop: forecast → analysis → record posterior; bail out with a warning if NaNs appear. For the EnKF, track predicted observations for innovation diagnostics.
+10. Optionally free-run the analysis ensemble (and truth) forward `forecast_steps` for a forecast.
+11. Compute reference and posterior metrics (RMSE, MAE, MAPE, CRPS, time-resolved RMSE/CRPS/spread; per-state when `num_states > 1`).
+12. Plot via the case-specific plotter, plus metric time-series, initial-condition/ensemble diagnostics, and (EnKF) innovation diagnostics.
+13. Persist config, fields, and metrics under `experiments/` when saving is enabled.
 
 All steps that build objects use `hydra.utils.instantiate`, so configuration alone determines the experiment.
 
 ---
 
+## Saving and re-running experiments
+
+When `save.experiment: true` (the default in every case file), `scripts/main.py` writes results under `experiments/<name>/`, where the name is auto-generated from the run (`<case>_<da_method>_M<ensemble>_nsteps<da_steps>_dtstep<int_steps>`, plus `save.savename_appendix`). The saver (`src/non_gaussian_data_assim/utils/saving.py`) creates a unique folder and lays it out as:
+
+```
+experiments/<name>/
+├── config/config.yaml     # the exact resolved config used
+├── data/*.npy             # truth_sol, reference_ensemble, posterior_ensemble, (forecast_ensemble)
+├── metrics/*.npz          # reference/posterior/forecast/innovation/breeding metrics (+ *_summary.yaml)
+└── figures/               # saved plots when save.figures is true
+```
+
+The `config/config.yaml` is what `experiment=<name>` reloads, so any saved run is fully reproducible without remembering CLI overrides.
+
+Disable saving for quick, throwaway runs:
+
+```bash
+uv run python scripts/main.py case=lorenz_63 da_method=enkf save.experiment=false
+```
+
+---
+
+## Forecasting
+
+Set `forecast_steps` (in a case file or on the CLI) to free-run the analysis ensemble forward after assimilation finishes, using the same `spinup_ensemble` machinery. The truth is rolled out over the same window, forecast metrics are computed and plotted, and the forecast ensemble is saved alongside the rest. Omit or set it to `null` to skip forecasting.
+
+```bash
+uv run python scripts/main.py case=lorenz_96 da_method=enkf forecast_steps=30
+```
+
+---
+
+## Analytical experiments
+
+`scripts/analytical/` holds a separate harness for *linear-Gaussian* problems, where the exact filtering posterior is available in closed form (the Kalman filter). It rolls out a linear truth, generates observations through an identity/linear operator, runs the analytical Kalman filter, and runs each ensemble method on the same data — so the cheap truth-only metrics (RMSE/CRPS/spread/innovation checks) can be judged against the gold-standard posterior-divergence metrics (KL divergence vs. the exact posterior).
+
+```bash
+# Compare DA methods against the exact Kalman filter (2-D default; 7-D via --config-name):
+uv run python scripts/analytical/main_analytical_methods.py
+uv run python scripts/analytical/main_analytical_methods.py --config-name analytical_7d
+
+# Sweep ensemble size:
+uv run python scripts/analytical/main_analytical_ensemble_size.py
+```
+
+Configs live in `configs/analytical/`; shared helpers (Kalman filter, metrics, plotting) live in `scripts/analytical/_common.py`. The state dimension is inferred from `prior_mean`, and covariance fields accept a scalar shortcut (interpreted as that scalar times the identity).
+
+---
+
 ## Testing
 
-A pytest suite at `[tests/test_main.py](tests/test_main.py)` parametrizes over every `(case, da_method)` combination — 9 in total — and runs `scripts/main.py` end-to-end as a subprocess with small problem sizes. A run is considered passing if the script exits cleanly (returncode `0`).
+A pytest suite at `[tests/test_main.py](tests/test_main.py)` parametrizes over every `(case, da_method)` combination — 4 cases × 4 DA methods = 16 in total — and runs `scripts/main.py` end-to-end as a subprocess with small problem sizes and `save.experiment=false`. A run is considered passing if the script exits cleanly (returncode `0`).
+
+A few combinations are known incompatibilities and are marked `xfail` via `KNOWN_FAILURES` (currently `kuramoto + pff` and `coupled_kuramoto + pff` — PFF's kernel assumes a flat state, so it breaks for `num_states > 1` and for the rank-deficient Kuramoto prior). Heavy cases also get per-case smoke-test overrides via `CASE_EXTRA_OVERRIDES` (e.g. `coupled_kuramoto` is coarsened and its spin-up skipped).
 
 Default test parameters (chosen for speed, not assimilation quality):
 
@@ -297,7 +430,7 @@ The tests don't validate metric values; they catch regressions in:
 - Numerical blowups (NaN posterior triggers a non-zero exit because of the downstream metric vmap shape mismatch).
 - Plotting wiring (the non-interactive `MPLBACKEND=Agg` exercises the plotters without opening windows).
 
-If you add a new case or DA method, extend `CASES` / `DA_METHODS` at the top of `tests/test_main.py`.
+If you add a new case or DA method, extend `CASES` / `DA_METHODS` at the top of `tests/test_main.py` (and `KNOWN_FAILURES` / `CASE_EXTRA_OVERRIDES` if needed).
 
 ---
 
@@ -306,23 +439,35 @@ If you add a new case or DA method, extend `CASES` / `DA_METHODS` at the top of 
 ```
 .
 ├── configs/                          # Hydra config tree (see above)
+├── experiments/                      # saved runs (only each run's config/ is tracked; data/metrics/figures are git-ignored)
+├── notebooks/
+│   └── kuramoto_data_assimilation.ipynb   # walkthrough notebook
 ├── scripts/
 │   ├── main.py                       # unified Hydra-driven entrypoint
-│   ├── da_lorenz_63.py               # legacy standalone script
-│   ├── da_lorenz_96.py               # legacy standalone script
-│   ├── da_kuramoto.py                # legacy standalone script
-│   └── archive/                      # older, unmaintained scripts
+│   ├── main_manual.py                # Hydra-free demo of the same pipeline
+│   ├── main_simple.py                # minimal example pipeline
+│   ├── analytical/                   # linear-Gaussian harness vs. exact Kalman filter
+│   │   ├── main_analytical_methods.py
+│   │   ├── main_analytical_ensemble_size.py
+│   │   └── _common.py                # Kalman filter, metrics, plotting helpers
+│   └── archive/                      # older, unmaintained standalone scripts
 ├── src/non_gaussian_data_assim/
-│   ├── da_methods/                   # EnKF, AGMF, PFF, base class
-│   ├── forward_models/               # Lorenz 63/96, Kuramoto–Sivashinsky, …
+│   ├── da_methods/                   # EnKF, AGMF, PFF, ParticleFilter, base class
+│   ├── forward_models/               # Lorenz 63/96, (coupled) Kuramoto–Sivashinsky, linear, …
+│   ├── ensemble_generation/          # InitialState, InitialEnsembleGenerator
+│   ├── perturbations/                # white noise, red noise, breeding (+ base)
+│   ├── initial_profiles.py           # constant / white-noise / cosine / pseudo-1D profiles
 │   ├── observations/
-│   │   ├── observation_operator.py   # Linear / Nonlinear obs operators
+│   │   ├── observation_operator.py   # Linear / Nonlinear obs operators (per-state indices)
 │   │   └── observation_utils.py      # generate_observations()
-│   ├── metrics/                      # trajectory + ensemble metrics
-│   ├── initial_conditions.py         # initial-state / prior-ensemble generators
-│   ├── plotting.py                   # plot_low_dim_trajectory, plot_high_dim_field
+│   ├── metrics/                      # trajectory, ensemble, innovation, probability metrics
+│   ├── plotting/                     # plot_fields, plot_initial_ensemble, plot_innov_stats, plot_metrics
+│   ├── utils/
+│   │   ├── saving.py                 # ExperimentSaver + experiment-name helpers
+│   │   └── spinup.py                 # spinup_ensemble (also used for forecasting)
 │   ├── localization.py               # distance-based covariance localization
 │   ├── kernels.py                    # kernels for PFF
+│   ├── gaussian_mixture.py           # Gaussian-mixture helpers for AGMF
 │   ├── time_integrators.py           # RK4, forward Euler, rollout helpers
 │   └── jax_utils.py
 ├── tests/
@@ -331,7 +476,7 @@ If you add a new case or DA method, extend `CASES` / `DA_METHODS` at the top of 
 └── uv.lock
 ```
 
-The legacy `scripts/da_*.py` files predate the unified `main.py` and are kept for reference; new work should go through `scripts/main.py` and the `configs/` tree.
+The legacy scripts under `scripts/archive/` predate the unified `main.py` and are kept for reference; new work should go through `scripts/main.py` and the `configs/` tree. `scripts/main_manual.py` and `scripts/main_simple.py` are maintained illustrations of running the pipeline without Hydra.
 
 ---
 
@@ -478,6 +623,8 @@ from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 
 class MyModel(BaseForwardModel):
     def __init__(self, dt: float, model_integration_steps: int, state_dim: int, ...) -> None:
+        # num_states defaults to 1; pass num_states=N for multi-field systems
+        # (e.g. coupled Kuramoto uses num_states=2).
         super().__init__(dt, model_integration_steps, state_dim)
         # Store any model-specific parameters here.
 
