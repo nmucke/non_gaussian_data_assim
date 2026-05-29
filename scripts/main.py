@@ -103,7 +103,9 @@ def main(cfg: DictConfig) -> None:
     initial_state_generator = instantiate(
         true_initial_state_cfg, forward_model=forward_model
     )
+    # Get spun-up (t0) and before spin-up version of truth
     true_initial_state = initial_state_generator.sample(rng_key=initial_state_key)
+    truth_before_spinup = initial_state_generator.state_before_spinup
     logger.info(f"Initial state generator: {initial_state_generator}")
 
     # Rollout true solution
@@ -112,14 +114,18 @@ def main(cfg: DictConfig) -> None:
         cfg.data_assimilation_steps,
         return_model_integration_steps=True,
     )
+    # Standard deviation of truth during spin-up
+    natural_variability_truth = initial_state_generator.natural_variability
 
     ########## Initial ensemble ##########
     initial_ensemble_generator = instantiate(
         initial_ensemble_cfg, forward_model=forward_model
     )
+
     initial_ensemble = initial_ensemble_generator.sample(
         rng_key=initial_ensemble_key,
         ensemble_size=cfg.ensemble_size,
+        best_guess_pert_scale=natural_variability_truth,
         best_guess=true_initial_state if initial_ensemble_cfg.use_best_guess else None,
     )
     logger.info(f"Initial ensemble generator: {initial_ensemble_generator}")
