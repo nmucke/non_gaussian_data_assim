@@ -126,7 +126,7 @@ def main(cfg: DictConfig) -> None:
         rng_key=initial_ensemble_key,
         ensemble_size=cfg.ensemble_size,
         best_guess_pert_scale=natural_variability_truth,
-        best_guess=true_initial_state if initial_ensemble_cfg.use_best_guess else None,
+        true_state=true_initial_state if initial_ensemble_cfg.use_best_guess else None,
     )
     logger.info(f"Initial ensemble generator: {initial_ensemble_generator}")
 
@@ -183,7 +183,7 @@ def main(cfg: DictConfig) -> None:
 
     ########## Run the DA loop. ##########
     # Initialize empty lists to track chi-square and normalized nnovations (z)
-    predicted_obs = []
+    predicted_obs, validation_obs = [], []
     logger.info(f"Running DA loop for {cfg.data_assimilation_steps} steps")
     for i in tqdm(range(cfg.data_assimilation_steps)):
         rng_key, key = jax.random.split(rng_key)
@@ -203,7 +203,11 @@ def main(cfg: DictConfig) -> None:
         # ------------Track:  Prior ensemble (in obs space)    -----------
         # Get model-state in obs-space
         HXf = da_model.obs_operator(prior_current)  # shape: (EnsSize, N_obs)
+        HXf_val = da_model.obs_operator(
+            prior_current, validation=True
+        )  # shape: (EnsSize, N_obs)
         predicted_obs.append(HXf)
+        validation_obs.append(HXf_val)
         # -----------------------------------------------------------------
 
         # Concatenate prior (1time-step) and posterior (2 time-steps) and innovations
@@ -241,6 +245,31 @@ def main(cfg: DictConfig) -> None:
         forecast_ensemble = None
         true_forecast = None
 
+    # --- Extrac predicted observation (assimilation and valdiation points)
+    pred_obs = jnp.stack(
+        predicted_obs, axis=1
+    )  # shape: [EnsSize, Assim-Step, N_obs (comined for all states)]
+
+    pred_val_obs = jnp.stack(validation_obs, axis=1)
+
+    predobs_states, obs_states, R_states = [], [], []
+    for obs_state in da_model.obs_operator.obs_indices_per_state:
+        idx = obs_state[0]
+        i = obs_state.shape[0]
+        predobs_states.append(pred_obs[:, :, idx : idx + i])
+        obs_states.append(observations[:, idx : idx + i])
+        R_states.append(R[idx : idx + i, idx : idx + i])
+        idx += i
+
+    predobs_val_states, val_obs_states, R_val_states = [], [], []
+    for valobs_state in da_model.obs_operator.val_indices_per_state:
+        idx = valobs_state[0]
+        i = valobs_state.shape[0]
+        predobs_val_states.append(pred_val_obs[:, :, idx : idx + i])
+        val_obs_states.append(validation[:, idx : idx + i])
+        R_val_states.append(R[idx : idx + i, idx : idx + i])
+        idx += i
+
     # ======================== metrics and plotting ======================================
     # Metrics.
     rmse = RMSE(ensemble_aggregation="mean", time_aggregation="mean")
@@ -272,6 +301,10 @@ def main(cfg: DictConfig) -> None:
     posterior_metrics = get_metric_dict(posterior_ensemble, true_sol[0])
     if forecast_ensemble is not None:
         forecast_metrics = get_metric_dict(forecast_ensemble, true_forecast[0])
+
+    # --- Compute metrics of Assimilation / Validation Obs against predicted Obs
+    assim_obs_metrics = get_metric_dict(predobs_states[0], obs_states[0])
+    valid_obs_metrics = get_metric_dict(predobs_val_states[0], val_obs_states[0])
 
     # -- If multiple states are present, save metrics for each individual state
     post_metric_states = []
@@ -313,22 +346,8 @@ def main(cfg: DictConfig) -> None:
             [forecast_metrics], path_savefig=path_savefig, figname_appendix="forecast"
         )
 
+    # --- Compute Innovation metrics
     if cfg.da_method["name"] == "enkf":
-
-        # -- Store Predicted-Obs and Split-up per state
-        pred_obs = jnp.stack(
-            predicted_obs, axis=0
-        )  # shape: [EnsSize, Assim-Step, N_obs (comined for all states)]
-
-        idx = 0
-        predobs_states, obs_states, R_states = [], [], []
-        for obs_state in da_model.obs_operator.obs_indices_per_state:
-            i = obs_state.shape[0]
-            predobs_states.append(pred_obs[:, :, idx : idx + i])
-            obs_states.append(observations[:, idx : idx + i])
-            R_states.append(R[idx : idx + i, idx : idx + i])
-            idx += i
-
         innov_metric_list = []
         for p_obs, obs, R_state in zip(predobs_states, obs_states, R_states):
             innovation_metrics = {
@@ -382,6 +401,8 @@ def main(cfg: DictConfig) -> None:
         metrics_to_save = {
             "reference_metrics": reference_metrics,
             "posterior_metrics": posterior_metrics,
+            "assim_obs_metrics": assim_obs_metrics,
+            "valid_obs_metrics": valid_obs_metrics,
         }
 
         if innovation_metrics is not None:

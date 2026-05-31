@@ -10,7 +10,7 @@ forecast_steps: 15
 save:
   experiment: true
   figures: true
-  savename_appendix: "valobs_spread2_5"
+  savename_appendix: "valobs_spread"
 
 
 
@@ -41,8 +41,8 @@ case:
 
     validation_indices:
       _target_: numpy.arange
-      start: 0 #192
-      stop: 0 #320
+      start: 192
+      stop: 320
       step: ${case.obs_operator.obs_indices.step}
 
   # --- Whether to center the prior ensemble on a best-guess (else on the profile).
@@ -77,11 +77,11 @@ case:
       scale: 1.0
 
     perturbation:
-      # # --- WhiteNoise ---
+      # --- WhiteNoise ---
       _target_: non_gaussian_data_assim.perturbations.white_noise.WhiteNoise
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
-      scale: 1.0
+      scale: 0.1
 
       # # --- RedNoise ---
       # _target_: non_gaussian_data_assim.perturbations.red_noise.RedNoise
