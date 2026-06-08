@@ -63,6 +63,7 @@ def main(cfg: DictConfig) -> None:
     forward_model_cfg = cfg.case.forward_model
     true_initial_state_cfg = cfg.case.true_initial_state
     obs_operator_cfg = cfg.case.obs_operator
+    val_obs_operator_cfg = cfg.case.val_obs_operator
     initial_ensemble_cfg = cfg.case.initial_ensemble
     plotter_cfg = cfg.case.plotter
     da_method_cfg = OmegaConf.merge(
@@ -139,6 +140,7 @@ def main(cfg: DictConfig) -> None:
 
     ########## Observation operator ##########
     obs_operator = instantiate(obs_operator_cfg)
+    val_obs_operator = instantiate(val_obs_operator_cfg)
     R = jnp.eye(obs_operator.num_obs) * cfg.case.obs_noise_variance
     logger.info(f"Observation operator: {obs_operator}")
 
@@ -152,15 +154,14 @@ def main(cfg: DictConfig) -> None:
         model_integration_steps=cfg.model_integration_steps,
     )
 
-    R_val = jnp.eye(obs_operator.num_valobs) * cfg.case.obs_noise_variance
+    R_val = jnp.eye(val_obs_operator.num_obs) * cfg.case.obs_noise_variance
     validation = generate_observations(
         rng_key=val_key,
         true_sol=true_sol,
-        obs_operator=obs_operator,
+        obs_operator=val_obs_operator,
         R=R_val,
         data_assimilation_steps=cfg.data_assimilation_steps,
         model_integration_steps=cfg.model_integration_steps,
-        validation=True,
     )
 
     ########## DA model ##########
@@ -210,9 +211,7 @@ def main(cfg: DictConfig) -> None:
         # ------------Track:  Prior ensemble (in obs space)    -----------
         # Get model-state in obs-space
         HXf = da_model.obs_operator(prior_current)  # shape: (EnsSize, N_obs)
-        HXf_val = da_model.obs_operator(
-            prior_current, validation=True
-        )  # shape: (EnsSize, N_obs)
+        HXf_val = val_obs_operator(prior_current)  # shape: (EnsSize, N_obs)
         predicted_obs.append(HXf)
         validation_obs.append(HXf_val)
         # -----------------------------------------------------------------
@@ -270,7 +269,7 @@ def main(cfg: DictConfig) -> None:
 
     predobs_val_states, val_obs_states, R_val_states = [], [], []
     idx = 0
-    for valobs_state in da_model.obs_operator.val_indices_per_state:
+    for valobs_state in val_obs_operator.obs_indices_per_state:
         i = valobs_state.shape[0]
         predobs_val_states.append(pred_val_obs[:, :, idx : idx + i])
         val_obs_states.append(validation[:, idx : idx + i])

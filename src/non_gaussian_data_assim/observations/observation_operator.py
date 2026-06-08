@@ -51,21 +51,13 @@ class ObservationOperator:
         raise NotImplementedError
 
     @abstractmethod
-    def _val_operator(self, x: jnp.ndarray) -> jnp.ndarray:
-        """Apply the observation operator that defines the held-out validation data, to a single state."""
-        raise NotImplementedError
-
-    @abstractmethod
     def grad_obs_operator(self, x: jnp.ndarray) -> jnp.ndarray:
         """Gradient of the observation operator."""
         raise NotImplementedError
 
-    def __call__(self, ensemble: jnp.ndarray, validation: bool = False) -> jnp.ndarray:
+    def __call__(self, ensemble: jnp.ndarray) -> jnp.ndarray:
         """Apply the observation operator to the ensemble."""
-        if validation:
-            return jax.vmap(self._val_operator)(ensemble)
-        else:
-            return jax.vmap(self._obs_operator)(ensemble)
+        return jax.vmap(self._obs_operator)(ensemble)
 
 
 class LinearObservationOperator(ObservationOperator):
@@ -84,7 +76,6 @@ class LinearObservationOperator(ObservationOperator):
         obs_states: np.ndarray,
         obs_indices: ObsIndicesLike,
         state_dim: int,
-        validation_indices: Optional[ObsIndicesLike] = None,
         num_states: int = 1,
     ):
         """
@@ -103,23 +94,8 @@ class LinearObservationOperator(ObservationOperator):
         """
         self.obs_states = obs_states
         self.obs_indices = obs_indices
-        self.validation_indices = validation_indices
         self.state_dim = state_dim
         self.num_states = num_states
-
-        # --- If Validation-Indices are passed -- Align them with obs and remove these obs
-        if self.validation_indices is not None:
-            # --- Align validation-indices with obs-idnices
-            idx = np.abs(self.obs_indices[:, None] - self.validation_indices).argmin(axis=0)  # type: ignore
-            self.validation_indices = self.obs_indices[idx]
-
-            # --- Remove validation-obs from assim-obs
-            self.obs_indices = jnp.setdiff1d(self.obs_indices, self.validation_indices)
-            self.val_indices_per_state = _normalize_obs_indices(
-                self.validation_indices, len(obs_states)
-            )
-
-            self.num_valobs = sum(len(idx) for idx in self.val_indices_per_state)
 
         self.obs_indices_per_state = _normalize_obs_indices(
             self.obs_indices, len(obs_states)
@@ -134,12 +110,6 @@ class LinearObservationOperator(ObservationOperator):
         )
         self.obs_matrix = sparse.BCOO.fromdense(self.obs_matrix)
 
-        if self.validation_indices is not None:
-            self.val_matrix = get_obs_matrix(
-                obs_states, self.val_indices_per_state, self.num_states, self.state_dim
-            )
-            self.val_matrix = sparse.BCOO.fromdense(self.val_matrix)
-
     def grad_obs_operator(self, x: jnp.ndarray) -> jnp.ndarray:
         """Gradient of the observation operator."""
         return self.obs_matrix.T
@@ -147,10 +117,6 @@ class LinearObservationOperator(ObservationOperator):
     def _obs_operator(self, x: jnp.ndarray) -> jnp.ndarray:
         """Apply the observation operator to a single state."""
         return self.obs_matrix @ x.flatten()
-
-    def _val_operator(self, x: jnp.ndarray) -> jnp.ndarray:
-        """Apply the observation operator to a single state."""
-        return self.val_matrix @ x.flatten()
 
 
 def get_obs_matrix(

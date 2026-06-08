@@ -15,7 +15,6 @@ def generate_observations(
     R: jnp.ndarray,
     data_assimilation_steps: int,
     model_integration_steps: int,
-    validation: bool = False,
 ) -> jnp.ndarray:
     """Sample noisy observations of the true trajectory at each outer step.
 
@@ -31,13 +30,11 @@ def generate_observations(
         Observations array of shape [data_assimilation_steps, obs_operator.num_obs].
     """
 
-    numobs = obs_operator.num_obs if not validation else obs_operator.num_valobs  # type: ignore[attr-defined]
+    numobs = obs_operator.num_obs  # type: ignore[attr-defined]
 
     observations = jnp.zeros((data_assimilation_steps, numobs))
     for i in range(data_assimilation_steps):
-        obs_at_t = obs_operator(
-            true_sol[:, 1 + model_integration_steps * (i + 1)], validation=validation
-        )
+        obs_at_t = obs_operator(true_sol[:, 1 + model_integration_steps * (i + 1)])
         rng_key, key = jax.random.split(rng_key)
         obs_at_t = obs_at_t + jax.random.multivariate_normal(key, jnp.zeros(numobs), R)
         observations = observations.at[i].set(obs_at_t.flatten())
