@@ -33,17 +33,42 @@ case:
     _target_: non_gaussian_data_assim.observations.observation_operator.LinearObservationOperator
     state_dim: ${case.state_dim}
     obs_states: [0]
+
+    # obs_indices:
+    #   _target_: numpy.arange
+    #   start: 0
+    #   stop: ${case.state_dim}
+    #   step: 12
+
+    obs_indices:
+      _target_: numpy.concatenate
+      _args_:
+        - - _target_: numpy.arange
+            start: 0
+            stop: 192
+            step: 12
+          - _target_: numpy.arange
+            start: 320
+            stop: ${case.state_dim}
+            step: 12
+
+    # validation_indices:
+    #   _target_: numpy.arange
+    #   start: 192
+    #   stop: 320
+    #   step: ${case.obs_operator.obs_indices.step}
+
+  val_obs_operator:
+    _target_: non_gaussian_data_assim.observations.observation_operator.LinearObservationOperator
+    state_dim: ${case.state_dim}
+    obs_states: [0]
     obs_indices:
       _target_: numpy.arange
-      start: 0
-      stop: ${case.state_dim}
-      step: 12
+      start: 192
+      stop: 320
+      step: ${case.obs_operator.obs_indices.step} #12
 
-    validation_indices:
-      _target_: numpy.arange
-      start: 0 #192
-      stop: 0 #320
-      step: ${case.obs_operator.obs_indices.step}
+
 
   # --- Whether to center the prior ensemble on a best-guess (else on the profile).
   use_best_guess: true
