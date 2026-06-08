@@ -79,8 +79,8 @@ def main(cfg: DictConfig) -> None:
 
         infl_str = str(cfg.inflation_factor).replace(".", "_")
         rloc = str(int(cfg.localization_distance))
-        # save_name = f"{save_name}_inflf{infl_str}"
-        save_name = f"{save_name}_rloc{rloc}"
+        save_name = f"{save_name}_inflf{infl_str}"
+        # save_name = f"{save_name}_rloc{rloc}"
 
         # -- Create directory in ./experiments/ folder
         saver = ExperimentSaver.create(save_name, root=experiment_folder)
