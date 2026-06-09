@@ -6,21 +6,22 @@ from typing import Optional, Union
 import jax
 import jax.numpy as jnp
 
+from non_gaussian_data_assim.forward_models.base import BaseForwardModel
+
 # --- If initital profile is random, take functionality from perturbations
 from non_gaussian_data_assim.perturbations import WhiteNoise
-from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 
 
 class BaseProfile(ABC):
     """Base class for deterministic initial-state profiles."""
 
     def __init__(
-        self, 
-        name: str, 
+        self,
+        name: str,
         forward_model: Optional[BaseForwardModel] = None,
         num_states: Optional[int] = None,
         state_dim: Optional[int] = None,
-        periodic: bool = False
+        periodic: bool = False,
     ) -> None:
         self.name = name
         self.periodic = periodic
@@ -28,8 +29,8 @@ class BaseProfile(ABC):
             self.num_states = forward_model.num_states
             self.state_dim = forward_model.state_dim
         else:
-            self.num_states = num_states
-            self.state_dim = state_dim
+            self.num_states = num_states  # type: ignore
+            self.state_dim = state_dim  # type: ignore
 
     def _enforce_periodicity(self, profile: jnp.ndarray) -> jnp.ndarray:
         profile = profile.at[..., -1].set(profile[..., 0])

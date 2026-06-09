@@ -28,8 +28,8 @@ class BasePerturbation(ABC):
             self.num_states = forward_model.num_states
             self.state_dim = forward_model.state_dim
         else:
-            self.num_states = num_states
-            self.state_dim = state_dim
+            self.num_states = num_states  # type: ignore
+            self.state_dim = state_dim  # type: ignore
 
     def _add_ensemble_to_bestguess_profile(
         self, bg_profile: jnp.ndarray, ensemble: jnp.ndarray

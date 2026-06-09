@@ -1,10 +1,10 @@
 # @package _global_
 data_assimilation_steps: 40
 model_integration_steps: 10
-ensemble_size: 50
-inflation_factor: 1.0
+ensemble_size: 20
+inflation_factor: 1.2
 localization_distance: 100
-spinup_steps: 40 # spinup run for spinup_steps * model_integration_steps
+spinup_steps: 10 # spinup run for spinup_steps * model_integration_steps
 forecast_steps: 15
 
 save:
@@ -19,7 +19,7 @@ case:
   title: "Kuramoto-Sivashinsky"
   num_states: 1
   state_dim: 512
-  obs_noise_variance: 0.1
+  obs_noise_variance: 0.25
   domain_length: 100
 
   forward_model:
@@ -33,11 +33,41 @@ case:
     _target_: non_gaussian_data_assim.observations.observation_operator.LinearObservationOperator
     state_dim: ${case.state_dim}
     obs_states: [0]
+
+    # obs_indices:
+    #   _target_: numpy.arange
+    #   start: 0
+    #   stop: ${case.state_dim}
+    #   step: 12
+
+    obs_indices:
+      _target_: numpy.concatenate
+      _args_:
+        - - _target_: numpy.arange
+            start: 0
+            stop: 192
+            step: 16
+          - _target_: numpy.arange
+            start: 320
+            stop: ${case.state_dim}
+            step: 16
+
+    # validation_indices:
+    #   _target_: numpy.arange
+    #   start: 192
+    #   stop: 320
+    #   step: ${case.obs_operator.obs_indices.step}
+
+  val_obs_operator:
+    _target_: non_gaussian_data_assim.observations.observation_operator.LinearObservationOperator
+    state_dim: ${case.state_dim}
+    obs_states: [0]
     obs_indices:
       _target_: numpy.arange
-      start: 0
-      stop: ${case.state_dim}
-      step: 4
+      start: 192
+      stop: 320
+      step: 16 #${case.obs_operator.obs_indices.step}
+
 
 
   # --- Whether to center the prior ensemble on a best-guess (else on the profile).
@@ -47,21 +77,20 @@ case:
   true_initial_state:
     _target_: non_gaussian_data_assim.ensemble_generation.initial_state.InitialState
     spinup_steps: ${spinup_steps}
-    periodic: false
+    periodic: true
     initial_profile:
       _target_: non_gaussian_data_assim.initial_profiles.CosineProfile
       num_states: ${case.num_states}
       state_dim: ${case.state_dim}
       domain_length: ${case.domain_length}
-      periodic: false
+      periodic: true
       magnitude: 1
 
   initial_ensemble:
     _target_: non_gaussian_data_assim.ensemble_generation.initial_ensemble.InitialEnsembleGenerator
-    periodic: false
+    periodic: true
     spinup_steps: ${spinup_steps}
     use_best_guess: true # This overwrites the initial_profile
-    best_guess_perturbation: natural_variability
 
     # --- Profile to center the ensemble on when use_best_guess is false.
     initial_profile:
@@ -74,17 +103,18 @@ case:
 
     perturbation:
       # # --- WhiteNoise ---
-      _target_: non_gaussian_data_assim.perturbations.white_noise.WhiteNoise
-      num_states: ${case.num_states}
-      state_dim: ${case.state_dim}
-      scale: 1.0
-
-      # # --- RedNoise ---
-      # _target_: non_gaussian_data_assim.perturbations.red_noise.RedNoise
+      # _target_: non_gaussian_data_assim.perturbations.white_noise.WhiteNoise
       # num_states: ${case.num_states}
       # state_dim: ${case.state_dim}
-      # scale: 1.0
-      # alpha: 1.0
+      # scale: 0.1
+
+      # --- RedNoise ---
+      _target_: non_gaussian_data_assim.perturbations.red_noise.RedNoise
+      num_states: ${case.num_states}
+      state_dim: ${case.state_dim}
+      domain_length: ${case.domain_length}
+      scale: 1.5
+      alpha: 2
 
       # # --- Breeding ---
       # _target_: non_gaussian_data_assim.perturbations.breeding.BreedingPerturbation

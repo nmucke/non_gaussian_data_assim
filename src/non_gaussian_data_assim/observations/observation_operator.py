@@ -1,6 +1,6 @@
 import pdb
 from abc import abstractmethod
-from typing import Callable, Sequence, Union
+from typing import Callable, Optional, Sequence, Union
 
 import jax
 import jax.numpy as jnp
@@ -98,8 +98,9 @@ class LinearObservationOperator(ObservationOperator):
         self.num_states = num_states
 
         self.obs_indices_per_state = _normalize_obs_indices(
-            obs_indices, len(obs_states)
+            self.obs_indices, len(obs_states)
         )
+
         self.num_obs = sum(len(idx) for idx in self.obs_indices_per_state)
 
         self.is_linear = True

@@ -29,12 +29,13 @@ def generate_observations(
     Returns:
         Observations array of shape [data_assimilation_steps, obs_operator.num_obs].
     """
-    observations = jnp.zeros((data_assimilation_steps, obs_operator.num_obs))  # type: ignore[attr-defined]
+
+    numobs = obs_operator.num_obs  # type: ignore[attr-defined]
+
+    observations = jnp.zeros((data_assimilation_steps, numobs))
     for i in range(data_assimilation_steps):
         obs_at_t = obs_operator(true_sol[:, 1 + model_integration_steps * (i + 1)])
         rng_key, key = jax.random.split(rng_key)
-        obs_at_t = obs_at_t + jax.random.multivariate_normal(
-            key, jnp.zeros(obs_operator.num_obs), R  # type: ignore[attr-defined]
-        )
+        obs_at_t = obs_at_t + jax.random.multivariate_normal(key, jnp.zeros(numobs), R)
         observations = observations.at[i].set(obs_at_t.flatten())
     return observations

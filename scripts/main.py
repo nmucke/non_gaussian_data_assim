@@ -63,6 +63,7 @@ def main(cfg: DictConfig) -> None:
     forward_model_cfg = cfg.case.forward_model
     true_initial_state_cfg = cfg.case.true_initial_state
     obs_operator_cfg = cfg.case.obs_operator
+    val_obs_operator_cfg = cfg.case.val_obs_operator
     initial_ensemble_cfg = cfg.case.initial_ensemble
     plotter_cfg = cfg.case.plotter
     da_method_cfg = OmegaConf.merge(
@@ -76,6 +77,12 @@ def main(cfg: DictConfig) -> None:
         experiment_folder = REPO_ROOT / "experiments"
         # -- Create unique experiment name
         save_name = creat_exp_name(config=cfg)
+
+        infl_str = str(cfg.inflation_factor).replace(".", "_")
+        rloc = str(int(cfg.localization_distance))
+        save_name = f"{save_name}_inflf{infl_str}"
+        # save_name = f"{save_name}_rloc{rloc}"
+
         # -- Create directory in ./experiments/ folder
         saver = ExperimentSaver.create(save_name, root=experiment_folder)
         # -- Save config
@@ -90,26 +97,33 @@ def main(cfg: DictConfig) -> None:
     # ------------------------------------------------------
 
     rng_key = jax.random.PRNGKey(cfg.seed)
-    rng_key, initial_state_key, initial_ensemble_key, obs_key = jax.random.split(rng_key, 4)
+    rng_key, initial_state_key, initial_ensemble_key, obs_key, val_key = (
+        jax.random.split(rng_key, 5)
+    )
 
     ########## Forward model ##########
     forward_model = instantiate(forward_model_cfg)
     logger.info(f"Forward model: {forward_model}")
 
-    ########## True state ##########    
+    ########## True state ##########
     # Initial state
     initial_state_generator = instantiate(
         true_initial_state_cfg, forward_model=forward_model
     )
+    # Get spun-up (t0) and before spin-up version of truth
     true_initial_state = initial_state_generator.sample(rng_key=initial_state_key)
+    truth_before_spinup = initial_state_generator.state_before_spinup
+
     logger.info(f"Initial state generator: {initial_state_generator}")
 
-    # Rollout true solution 
+    # Rollout true solution
     true_sol = forward_model.rollout(
         true_initial_state,
         cfg.data_assimilation_steps,
         return_model_integration_steps=True,
     )
+    # Standard deviation of truth during spin-up
+    natural_variability_truth = initial_state_generator.natural_variability
 
     ########## Initial ensemble ##########
     initial_ensemble_generator = instantiate(
@@ -118,12 +132,15 @@ def main(cfg: DictConfig) -> None:
     initial_ensemble = initial_ensemble_generator.sample(
         rng_key=initial_ensemble_key,
         ensemble_size=cfg.ensemble_size,
-        best_guess=true_initial_state if initial_ensemble_cfg.use_best_guess else None,
+        best_guess_pert_scale=natural_variability_truth,
+        true_state=true_initial_state if initial_ensemble_cfg.use_best_guess else None,
     )
+    best_guess_profile = initial_ensemble_generator.best_guess_profile
     logger.info(f"Initial ensemble generator: {initial_ensemble_generator}")
 
     ########## Observation operator ##########
     obs_operator = instantiate(obs_operator_cfg)
+    val_obs_operator = instantiate(val_obs_operator_cfg)
     R = jnp.eye(obs_operator.num_obs) * cfg.case.obs_noise_variance
     logger.info(f"Observation operator: {obs_operator}")
 
@@ -136,7 +153,17 @@ def main(cfg: DictConfig) -> None:
         data_assimilation_steps=cfg.data_assimilation_steps,
         model_integration_steps=cfg.model_integration_steps,
     )
-    
+
+    R_val = jnp.eye(val_obs_operator.num_obs) * cfg.case.obs_noise_variance
+    validation = generate_observations(
+        rng_key=val_key,
+        true_sol=true_sol,
+        obs_operator=val_obs_operator,
+        R=R_val,
+        data_assimilation_steps=cfg.data_assimilation_steps,
+        model_integration_steps=cfg.model_integration_steps,
+    )
+
     ########## DA model ##########
     da_model = instantiate(
         da_method_cfg,
@@ -164,7 +191,7 @@ def main(cfg: DictConfig) -> None:
 
     ########## Run the DA loop. ##########
     # Initialize empty lists to track chi-square and normalized nnovations (z)
-    predicted_obs = []
+    predicted_obs, validation_obs = [], []
     logger.info(f"Running DA loop for {cfg.data_assimilation_steps} steps")
     for i in tqdm(range(cfg.data_assimilation_steps)):
         rng_key, key = jax.random.split(rng_key)
@@ -184,7 +211,9 @@ def main(cfg: DictConfig) -> None:
         # ------------Track:  Prior ensemble (in obs space)    -----------
         # Get model-state in obs-space
         HXf = da_model.obs_operator(prior_current)  # shape: (EnsSize, N_obs)
+        HXf_val = val_obs_operator(prior_current)  # shape: (EnsSize, N_obs)
         predicted_obs.append(HXf)
+        validation_obs.append(HXf_val)
         # -----------------------------------------------------------------
 
         # Concatenate prior (1time-step) and posterior (2 time-steps) and innovations
@@ -222,6 +251,31 @@ def main(cfg: DictConfig) -> None:
         forecast_ensemble = None
         true_forecast = None
 
+    # --- Extrac predicted observation (assimilation and valdiation points)
+    pred_obs = jnp.stack(
+        predicted_obs, axis=1
+    )  # shape: [EnsSize, Assim-Step, N_obs (comined for all states)]
+
+    pred_val_obs = jnp.stack(validation_obs, axis=1)
+
+    predobs_states, obs_states, R_states = [], [], []
+    idx = 0
+    for obs_state in da_model.obs_operator.obs_indices_per_state:
+        i = obs_state.shape[0]
+        predobs_states.append(pred_obs[:, :, idx : idx + i])
+        obs_states.append(observations[:, idx : idx + i])
+        R_states.append(R[idx : idx + i, idx : idx + i])
+        idx += i
+
+    predobs_val_states, val_obs_states, R_val_states = [], [], []
+    idx = 0
+    for valobs_state in val_obs_operator.obs_indices_per_state:
+        i = valobs_state.shape[0]
+        predobs_val_states.append(pred_val_obs[:, :, idx : idx + i])
+        val_obs_states.append(validation[:, idx : idx + i])
+        R_val_states.append(R[idx : idx + i, idx : idx + i])
+        idx += i
+
     # ======================== metrics and plotting ======================================
     # Metrics.
     rmse = RMSE(ensemble_aggregation="mean", time_aggregation="mean")
@@ -254,6 +308,10 @@ def main(cfg: DictConfig) -> None:
     if forecast_ensemble is not None:
         forecast_metrics = get_metric_dict(forecast_ensemble, true_forecast[0])
 
+    # --- Compute metrics of Assimilation / Validation Obs against predicted Obs
+    assim_obs_metrics = get_metric_dict(predobs_states[0], obs_states[0])
+    valid_obs_metrics = get_metric_dict(predobs_val_states[0], val_obs_states[0])
+
     # -- If multiple states are present, save metrics for each individual state
     post_metric_states = []
     if cfg.case.num_states > 1:
@@ -267,23 +325,23 @@ def main(cfg: DictConfig) -> None:
         reference_metrics, posterior_metrics, title=f"{cfg.case.title} Metrics"
     )
 
-    # --- Plot Hovmöller diagrams and assim-time-series
-    logger.info(f"Plotting...")
-    plotter = instantiate(plotter_cfg)
-    plotter(
-        true_sol=true_sol,
-        reference_ensemble=reference_ensemble,
-        posterior_ensemble=posterior_ensemble,
-        title=cfg.case.title,
-        da_method_name=cfg.da_method.name,
-        ensemble_size=cfg.ensemble_size,
-        reference_metrics=reference_metrics,
-        posterior_metrics=posterior_metrics,
-        state_dim=cfg.case.state_dim,
-        data_assimilation_steps=cfg.data_assimilation_steps,
-        model_integration_steps=cfg.model_integration_steps,
-        path_savefig=path_savefig,
-    )
+    # # --- Plot Hovmöller diagrams and assim-time-series
+    # logger.info(f"Plotting...")
+    # plotter = instantiate(plotter_cfg)
+    # plotter(
+    #     true_sol=true_sol,
+    #     reference_ensemble=reference_ensemble,
+    #     posterior_ensemble=posterior_ensemble,
+    #     title=cfg.case.title,
+    #     da_method_name=cfg.da_method.name,
+    #     ensemble_size=cfg.ensemble_size,
+    #     reference_metrics=reference_metrics,
+    #     posterior_metrics=posterior_metrics,
+    #     state_dim=cfg.case.state_dim,
+    #     data_assimilation_steps=cfg.data_assimilation_steps,
+    #     model_integration_steps=cfg.model_integration_steps,
+    #     path_savefig=path_savefig,
+    # )
 
     # --- Plot time-series of errors
     post_metrics_all = [posterior_metrics] + post_metric_states
@@ -294,22 +352,8 @@ def main(cfg: DictConfig) -> None:
             [forecast_metrics], path_savefig=path_savefig, figname_appendix="forecast"
         )
 
+    # --- Compute Innovation metrics
     if cfg.da_method["name"] == "enkf":
-
-        # -- Store Predicted-Obs and Split-up per state
-        pred_obs = jnp.stack(
-            predicted_obs, axis=0
-        )  # shape: [EnsSize, Assim-Step, N_obs (comined for all states)]
-
-        idx = 0
-        predobs_states, obs_states, R_states = [], [], []
-        for obs_state in da_model.obs_operator.obs_indices_per_state:
-            i = obs_state.shape[0]
-            predobs_states.append(pred_obs[:, :, idx : idx + i])
-            obs_states.append(observations[:, idx : idx + i])
-            R_states.append(R[idx : idx + i, idx : idx + i])
-            idx += i
-
         innov_metric_list = []
         for p_obs, obs, R_state in zip(predobs_states, obs_states, R_states):
             innovation_metrics = {
@@ -319,14 +363,14 @@ def main(cfg: DictConfig) -> None:
             }
             innov_metric_list.append(innovation_metrics)
 
-        # --- Plot Innovations Diagnostics and Skill-Scores
-        _ = plot_innov(
-            innov_stats_list=innov_metric_list,
-            bins=74,
-            hist_range=None,
-            show_fig=True,
-            path_savefig=path_savefig,
-        )
+        # # --- Plot Innovations Diagnostics and Skill-Scores
+        # _ = plot_innov(
+        #     innov_stats_list=innov_metric_list,
+        #     bins=74,
+        #     hist_range=None,
+        #     show_fig=True,
+        #     path_savefig=path_savefig,
+        # )
     else:
         innovation_metrics = None
 
@@ -335,18 +379,18 @@ def main(cfg: DictConfig) -> None:
         best_guess_profile = best_guess_profile[0]
     except:
         best_guess_profile = None
-    try:
-        bv_dict = ensgen_diagnostics
-    except:
-        bv_dict = None
+    # try:
+    #     bv_dict = ensgen_diagnostics
+    # except:
+    bv_dict = None
 
-    plot_initial_fields(
-        ensemble=posterior_ensemble,
-        truth_t0=true_sol,
-        x_before_spinup=true_initial_state[0],
-        best_guess_profile=best_guess_profile,
-        bv_dict=bv_dict,
-    )
+    # plot_initial_fields(
+    #     ensemble=posterior_ensemble,
+    #     truth_t0=true_sol,
+    #     x_before_spinup=true_initial_state[0],
+    #     best_guess_profile=best_guess_profile,
+    #     bv_dict=bv_dict,
+    # )
 
     # -------------------------------------------------------
     # -- Save fields
@@ -363,6 +407,8 @@ def main(cfg: DictConfig) -> None:
         metrics_to_save = {
             "reference_metrics": reference_metrics,
             "posterior_metrics": posterior_metrics,
+            "assim_obs_metrics": assim_obs_metrics,
+            "valid_obs_metrics": valid_obs_metrics,
         }
 
         if innovation_metrics is not None:
@@ -371,8 +417,8 @@ def main(cfg: DictConfig) -> None:
         if forecast_metrics is not None:
             metrics_to_save["forecast_metrics"] = forecast_metrics
 
-        if bv_dict is not None:
-            metrics_to_save["breeding_metrics"] = bv_dict
+        # if bv_dict is not None:
+        #     metrics_to_save["breeding_metrics"] = bv_dict
 
         # -- Save fields
         for key, value in arrays_to_save.items():
@@ -382,6 +428,13 @@ def main(cfg: DictConfig) -> None:
         for key, value in metrics_to_save.items():
             saver.save_metrics(name=key, metrics=value)
     # -------------------------------------------------------
+
+    print()
+    print()
+    print("CRPS:")
+    print(valid_obs_metrics["crps"])
+    print()
+    print()
 
 
 if __name__ == "__main__":
