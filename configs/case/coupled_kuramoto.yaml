@@ -110,9 +110,10 @@ case:
       # scale: 10.0
 
 
-
-
-
+  information_metrics:
+    enabled: true
+    n_bins: 30
+    bin_range: auto # e.g. (-10.0, 10.0), if you want fixed bins else auto
 
 
   plotter:

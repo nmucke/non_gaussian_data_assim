@@ -88,6 +88,13 @@ case:
       # alpha: 1.0
 
 
+  information_metrics:
+    enabled: true
+    n_bins: 30
+    bin_range: auto # e.g. (-10.0, 10.0), if you want fixed bins else auto
+
+
+
   plotter:
     _target_: non_gaussian_data_assim.plotting.plot_fields.plot_low_dim_trajectory
     _partial_: true
