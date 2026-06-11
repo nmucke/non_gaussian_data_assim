@@ -23,6 +23,9 @@ from tqdm import tqdm
 
 import non_gaussian_data_assim.utils.saving as saving
 from non_gaussian_data_assim.metrics.ensemble_metrics import CRPS
+from non_gaussian_data_assim.metrics.information_metrics import (
+    compute_information_metrics,
+)
 from non_gaussian_data_assim.metrics.innovation_metrics import (
     ChiSquared,
     NormalizedInnovations,
@@ -97,8 +100,8 @@ def main(cfg: DictConfig) -> None:
     # ------------------------------------------------------
 
     rng_key = jax.random.PRNGKey(cfg.seed)
-    rng_key, initial_state_key, initial_ensemble_key, obs_key, val_key = (
-        jax.random.split(rng_key, 5)
+    rng_key, initial_state_key, initial_ensemble_key, obs_key, val_key, info_key = (
+        jax.random.split(rng_key, 6)
     )
 
     ########## Forward model ##########
@@ -154,6 +157,15 @@ def main(cfg: DictConfig) -> None:
         model_integration_steps=cfg.model_integration_steps,
     )
 
+    validation_info = generate_observations(
+        rng_key=info_key,
+        true_sol=true_sol,
+        obs_operator=obs_operator,
+        R=R,
+        data_assimilation_steps=cfg.data_assimilation_steps,
+        model_integration_steps=cfg.model_integration_steps,
+    )
+
     R_val = jnp.eye(val_obs_operator.num_obs) * cfg.case.obs_noise_variance
     validation = generate_observations(
         rng_key=val_key,
@@ -191,7 +203,7 @@ def main(cfg: DictConfig) -> None:
 
     ########## Run the DA loop. ##########
     # Initialize empty lists to track chi-square and normalized nnovations (z)
-    predicted_obs, validation_obs = [], []
+    predicted_prior_obs, validation_obs = [], []
     logger.info(f"Running DA loop for {cfg.data_assimilation_steps} steps")
     for i in tqdm(range(cfg.data_assimilation_steps)):
         rng_key, key = jax.random.split(rng_key)
@@ -212,7 +224,7 @@ def main(cfg: DictConfig) -> None:
         # Get model-state in obs-space
         HXf = da_model.obs_operator(prior_current)  # shape: (EnsSize, N_obs)
         HXf_val = val_obs_operator(prior_current)  # shape: (EnsSize, N_obs)
-        predicted_obs.append(HXf)
+        predicted_prior_obs.append(HXf)
         validation_obs.append(HXf_val)
         # -----------------------------------------------------------------
 
@@ -252,17 +264,16 @@ def main(cfg: DictConfig) -> None:
         true_forecast = None
 
     # --- Extrac predicted observation (assimilation and valdiation points)
-    pred_obs = jnp.stack(
-        predicted_obs, axis=1
+    pred_prior_obs = jnp.stack(
+        predicted_prior_obs, axis=1
     )  # shape: [EnsSize, Assim-Step, N_obs (comined for all states)]
-
     pred_val_obs = jnp.stack(validation_obs, axis=1)
 
     predobs_states, obs_states, R_states = [], [], []
     idx = 0
     for obs_state in da_model.obs_operator.obs_indices_per_state:
         i = obs_state.shape[0]
-        predobs_states.append(pred_obs[:, :, idx : idx + i])
+        predobs_states.append(pred_prior_obs[:, :, idx : idx + i])
         obs_states.append(observations[:, idx : idx + i])
         R_states.append(R[idx : idx + i, idx : idx + i])
         idx += i
@@ -325,6 +336,69 @@ def main(cfg: DictConfig) -> None:
         reference_metrics, posterior_metrics, title=f"{cfg.case.title} Metrics"
     )
 
+    if cfg.case.information_metrics.enabled:
+        # ======================== information metrics ======================================
+        # X  = open-loop/reference model prediction
+        # Y  = assimilated obs
+        # Z  = independent validation_info obs (NOT same as validation ops! HERE: same location as assim-obs, but with different obs-noise sample)
+        # X+ = analysis/posterior model prediction
+        #
+        # We assume thwt Y and Z are aligned (spatially/temporally) samples:
+        if observations.shape != validation_info.shape:
+            raise ValueError(
+                "Information metrics reuqire aligned & paired samples. "
+                f"Got observations.shape={observations.shape} and "
+                f"validation_info.shape={validation_info.shape}."
+            )
+
+        n_info_bins = cfg.case.information_metrics.n_bins
+        bin_range = cfg.case.information_metrics.bin_range
+        info_value_range = None if bin_range == "auto" else bin_range
+
+        # --- Get indexes of assimilation times
+        # obs_time_idx = 1 + cfg.model_integration_steps * (np.arange(cfg.data_assimilation_steps)+1)
+        obs_time_idx = cfg.model_integration_steps * (
+            np.arange(cfg.data_assimilation_steps) + 1
+        )
+
+        X_openloop = []
+        X_plus = []
+        for t in obs_time_idx:
+            X_avg = np.asarray(obs_operator(reference_ensemble[:, t])).mean(axis=0)
+            Xp_avg = np.asarray(obs_operator(posterior_ensemble[:, t])).mean(axis=0)
+            X_openloop.append(X_avg)
+            X_plus.append(Xp_avg)
+        x_model = np.stack(X_openloop, axis=0)
+        x_analysis = np.stack(X_plus, axis=0)
+
+        # x_model = np.stack([np.asarray(obs_operator(reference_ensemble[:, t])).mean(axis=0) for t in obs_time_idx], axis=0,)
+        # x_analysis = np.stack([np.asarray(obs_operator(posterior_ensemble[:, t])).mean(axis=0) for t in obs_time_idx], axis=0,)
+
+        information_metrics = compute_information_metrics(
+            x_model=x_model,
+            y_data=np.asarray(observations),
+            z_eval=np.asarray(validation_info),
+            x_analysis=x_analysis,
+            n_bins=n_info_bins,
+            value_range=info_value_range,
+        )
+
+        print()
+        print("Information metrics:")
+        for key in (
+            "i_z_x",
+            "i_z_x_analysis",
+            "data_assimilation_efficiency",
+            "data_efficiency",
+        ):
+            print(f"{key:3s}: {information_metrics[key]:.3f}")
+    else:
+        information_metrics = None
+
+    # ==========================================================================================================================
+    # ==========================================================================================================================
+
+    # ======================== Plotting  ======================================
     # # --- Plot Hovmöller diagrams and assim-time-series
     # logger.info(f"Plotting...")
     # plotter = instantiate(plotter_cfg)
@@ -411,6 +485,9 @@ def main(cfg: DictConfig) -> None:
             "valid_obs_metrics": valid_obs_metrics,
         }
 
+        if information_metrics is not None:
+            metrics_to_save["information_metrics"] = information_metrics
+
         if innovation_metrics is not None:
             metrics_to_save["metrics_to_save"] = innovation_metrics
 
@@ -428,13 +505,6 @@ def main(cfg: DictConfig) -> None:
         for key, value in metrics_to_save.items():
             saver.save_metrics(name=key, metrics=value)
     # -------------------------------------------------------
-
-    print()
-    print()
-    print("CRPS:")
-    print(valid_obs_metrics["crps"])
-    print()
-    print()
 
 
 if __name__ == "__main__":
