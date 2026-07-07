@@ -37,6 +37,18 @@ case:
       stop: ${case.state_dim}
       step: 2      # 2
 
+  # Validation points are the grid cells not assimilated (odd indices), so the
+  # information-metric evaluation variable Z is spatially independent of Y.
+  val_obs_operator:
+    _target_: non_gaussian_data_assim.observations.observation_operator.LinearObservationOperator
+    state_dim: ${case.state_dim}
+    obs_states: [0]
+    obs_indices:
+      _target_: numpy.arange
+      start: 1
+      stop: ${case.state_dim}
+      step: 2
+
 
   # --- Ground-truth initial state: profile + spin-up.
   true_initial_state:
@@ -60,7 +72,6 @@ case:
     periodic: true
     spinup_steps: ${spinup_steps}
     use_best_guess: true
-    best_guess_perturbation: natural_variability
 
     # --- Profile to center the ensemble on when use_best_guess is false.
     initial_profile:

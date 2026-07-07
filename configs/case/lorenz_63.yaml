@@ -35,6 +35,18 @@ case:
       start: 0
       stop: 3
 
+  # All three L63 components are observed, so validation reuses the same
+  # observation locations (the information metrics distinguish Z from Y only by
+  # drawing a different observation-noise sample, not different points).
+  val_obs_operator:
+    _target_: non_gaussian_data_assim.observations.observation_operator.LinearObservationOperator
+    state_dim: ${case.state_dim}
+    obs_states: [0]
+    obs_indices:
+      _target_: numpy.arange
+      start: 0
+      stop: 3
+
 
 
   # --- Ground-truth initial state: profile + spin-up.
@@ -54,7 +66,6 @@ case:
     periodic: false
     spinup_steps: ${spinup_steps}
     use_best_guess: true  # center the ensemble on the best-guess (true_initial_state)
-    best_guess_perturbation: null
 
     # --- Profile to center the ensemble on when use_best_guess is false.
     initial_profile:
@@ -118,6 +129,7 @@ case:
       stepper: runge_kutta_4
       localization_distance: null
       inflation_factor: ${inflation_factor}
+      prior_cov_regularization: 1.0e-2
       periodic: ${case.true_initial_state.periodic}
     particle_filter:
       resample_threshold: 0.5

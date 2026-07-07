@@ -56,18 +56,18 @@ class InitialEnsembleGenerator:
 
         # --- 1. Create best-guess and Center the ensemble around it
         if true_state is not None:
-            # --- 1.1 Perturb truth-state with WhiteNoise to create best-guess-raw
+            # --- 1.1 Perturb truth-state with WhiteNoise to create best-guess-raw.
+            # `best_guess_pert_scale` is the (per-state) natural variability of the
+            # truth, so the drawn noise already has the desired magnitude. We simply
+            # add it to the truth; we do NOT rescale the whole state (that would
+            # teleport the best guess off the attractor for fields with nonzero mean
+            # or amplitude differing from their temporal variability).
             noise = WhiteNoise(
                 num_states=self.num_states,
                 state_dim=self.state_dim,
                 scale=best_guess_pert_scale,
             ).sample(best_guess_key, ensemble_size=1)
             center_raw = true_state + noise
-
-            # -- Rescale perturbed truth, s.t. it has same variability as actual truth
-            center_raw = (
-                center_raw / jnp.std(center_raw, ddof=1) * best_guess_pert_scale
-            )
 
             # ---1.1 Spin-up raw best-guess to create spin-up state,
             # --- s.t. it lies on model attractor but different to truth

@@ -6,5 +6,8 @@ inflation_factor: 1.0
 step_size: 0.05
 stepper: forward_euler
 localization_distance: null
-prior_cov_regularization: null
+# Regularization is effectively always required: the Gaussian-prior PFF needs an
+# invertible prior covariance, but jnp.cov is rank-deficient whenever
+# dofs >= ensemble_size (e.g. Kuramoto). Adds reg * mean(diag(cov)) * I.
+prior_cov_regularization: 1.0e-2
 periodic: false

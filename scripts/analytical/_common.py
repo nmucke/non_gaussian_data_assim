@@ -22,11 +22,10 @@ from non_gaussian_data_assim.metrics.innovation_metrics import (
 from non_gaussian_data_assim.metrics.probability_metrics import KLDivergence
 from non_gaussian_data_assim.metrics.trajectory_metrics import (
     MAE,
-    MAPE,
+    NRMSE,
     RMSE,
     ensemble_spread,
 )
-
 
 # --------------------------------------------------------------------------- #
 #                          Analytical Kalman filter                           #
@@ -51,7 +50,9 @@ def gaussian_kl(mu_p, sig_p, mu_q, sig_q):
     diff = mu_q - mu_p
     _, ldp = jnp.linalg.slogdet(sig_p)
     _, ldq = jnp.linalg.slogdet(sig_q)
-    return 0.5 * (jnp.trace(sig_q_inv @ sig_p) + diff @ sig_q_inv @ diff - d + ldq - ldp)
+    return 0.5 * (
+        jnp.trace(sig_q_inv @ sig_p) + diff @ sig_q_inv @ diff - d + ldq - ldp
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -75,7 +76,11 @@ def np_matrix(x, expected_shape, name):
     so covariance fields can be written as ``0.05`` instead of a full matrix.
     """
     arr = np.asarray(x, dtype=np.float64)
-    if arr.ndim == 0 and len(expected_shape) == 2 and expected_shape[0] == expected_shape[1]:
+    if (
+        arr.ndim == 0
+        and len(expected_shape) == 2
+        and expected_shape[0] == expected_shape[1]
+    ):
         arr = float(arr) * np.eye(expected_shape[0])
     if arr.shape != expected_shape:
         raise ValueError(f"{name} must have shape {expected_shape}, got {arr.shape}")
@@ -84,8 +89,12 @@ def np_matrix(x, expected_shape, name):
 
 def load_system_matrices(cfg, state_dim, num_obs, obs_operator):
     """Materialize ``(M_eff, Q, R, m0, P0, H)`` from the config."""
-    M = jnp.asarray(np_matrix(cfg.transition_matrix, (state_dim, state_dim), "transition_matrix"))
-    Q = jnp.asarray(np_matrix(cfg.process_noise_cov, (state_dim, state_dim), "process_noise_cov"))
+    M = jnp.asarray(
+        np_matrix(cfg.transition_matrix, (state_dim, state_dim), "transition_matrix")
+    )
+    Q = jnp.asarray(
+        np_matrix(cfg.process_noise_cov, (state_dim, state_dim), "process_noise_cov")
+    )
     R = jnp.asarray(np_matrix(cfg.obs_noise_cov, (num_obs, num_obs), "obs_noise_cov"))
     m0 = jnp.asarray(np_matrix(cfg.prior_mean, (state_dim,), "prior_mean"))
     P0 = jnp.asarray(np_matrix(cfg.prior_cov, (state_dim, state_dim), "prior_cov"))
@@ -121,10 +130,13 @@ def run_truth_and_kf(rng_key, n_steps, state_dim, M_eff, Q, R, H, m0, P0, obs_op
     m_kf, P_kf = m0, P0
     for _ in range(n_steps):
         rng_key, sub = jax.random.split(rng_key)
-        x_true = M_eff @ x_true + jax.random.multivariate_normal(sub, jnp.zeros(state_dim), Q)
+        x_true = M_eff @ x_true + jax.random.multivariate_normal(
+            sub, jnp.zeros(state_dim), Q
+        )
         rng_key, sub = jax.random.split(rng_key)
-        y = obs_operator(x_true.reshape(1, 1, state_dim))[0] + \
-            jax.random.multivariate_normal(sub, jnp.zeros(obs_operator.num_obs), R)
+        y = obs_operator(x_true.reshape(1, 1, state_dim))[
+            0
+        ] + jax.random.multivariate_normal(sub, jnp.zeros(obs_operator.num_obs), R)
         m_pred, P_pred = kalman_predict(m_kf, P_kf, M_eff, Q)
         m_kf, P_kf = kalman_update(m_pred, P_pred, H, R, y)
         truth_hist.append(x_true)
@@ -139,8 +151,17 @@ def run_truth_and_kf(rng_key, n_steps, state_dim, M_eff, Q, R, H, m0, P0, obs_op
     return truth_arr, obs_arr, kf_mean_arr, kf_cov_arr
 
 
-def run_da_method(rng_key, da_model, forward_model, obs_operator,
-                  prior_ensemble, observations, Q, n_steps, state_dim):
+def run_da_method(
+    rng_key,
+    da_model,
+    forward_model,
+    obs_operator,
+    prior_ensemble,
+    observations,
+    Q,
+    n_steps,
+    state_dim,
+):
     """Run one DA method for ``n_steps``.
 
     Returns ``(ens [N,T+1,1,d], pred_obs [T,N,num_obs])``.
@@ -170,10 +191,14 @@ def run_da_method(rng_key, da_model, forward_model, obs_operator,
 def sample_analytical_posterior(rng_key, n_steps, kf_mean_arr, kf_cov_arr, n_samples):
     """Sample ``n_samples`` from each step's Gaussian posterior. Shape ``[T+1, n_samples, d]``."""
     keys = jax.random.split(rng_key, n_steps + 1)
-    return jnp.stack([
-        jax.random.multivariate_normal(keys[t], kf_mean_arr[t], kf_cov_arr[t], shape=(n_samples,))
-        for t in range(n_steps + 1)
-    ])
+    return jnp.stack(
+        [
+            jax.random.multivariate_normal(
+                keys[t], kf_mean_arr[t], kf_cov_arr[t], shape=(n_samples,)
+            )
+            for t in range(n_steps + 1)
+        ]
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -181,13 +206,23 @@ def sample_analytical_posterior(rng_key, n_steps, kf_mean_arr, kf_cov_arr, n_sam
 # --------------------------------------------------------------------------- #
 
 
-def compute_metrics(state_dim, n_steps, ens, pred_obs, truth_arr, obs_arr, R,
-                    kf_mean_arr, kf_cov_arr, analytical_samples_arr):
+def compute_metrics(
+    state_dim,
+    n_steps,
+    ens,
+    pred_obs,
+    truth_arr,
+    obs_arr,
+    R,
+    kf_mean_arr,
+    kf_cov_arr,
+    analytical_samples_arr,
+):
     """Compute every diagnostic for one ``(ens, pred_obs)`` run."""
     eye = jnp.eye(state_dim)
     rmse = RMSE(ensemble_aggregation="mean", time_aggregation="none")
     mae = MAE(ensemble_aggregation="mean", time_aggregation="none")
-    mape = MAPE(ensemble_aggregation="mean", time_aggregation="none")
+    nrmse = NRMSE(ensemble_aggregation="mean", time_aggregation="none")
     crps = CRPS(time_aggregation="none")
     chi2 = ChiSquared(time_aggregation="none")
     z_innov = NormalizedInnovations(time_aggregation="none")
@@ -196,7 +231,7 @@ def compute_metrics(state_dim, n_steps, ens, pred_obs, truth_arr, obs_arr, R,
     out: dict = {}
     out["rmse"] = np.asarray(rmse(ens, truth_arr))
     out["mae"] = np.asarray(mae(ens, truth_arr))
-    out["mape"] = np.asarray(mape(ens, truth_arr))
+    out["nrmse"] = np.asarray(nrmse(ens, truth_arr))
     out["crps"] = np.asarray(crps(ens, truth_arr))
     out["spread"] = np.asarray(ensemble_spread(ens))
     out["chi_squared"] = np.asarray(chi2(pred_obs, obs_arr, R))
@@ -206,7 +241,7 @@ def compute_metrics(state_dim, n_steps, ens, pred_obs, truth_arr, obs_arr, R,
     pred_mean = jnp.mean(pred_obs, axis=1)
     pred_var = jnp.var(pred_obs, axis=1)
     residual = obs_arr - pred_mean
-    out["innov_rmse"] = np.asarray(jnp.sqrt(jnp.mean(residual ** 2, axis=1)))
+    out["innov_rmse"] = np.asarray(jnp.sqrt(jnp.mean(residual**2, axis=1)))
     out["innov_mae"] = np.asarray(jnp.mean(jnp.abs(residual), axis=1))
     out["innov_bias"] = np.asarray(jnp.mean(residual, axis=1))
     out["pred_obs_spread"] = np.asarray(jnp.sqrt(jnp.mean(pred_var, axis=1)))
@@ -214,9 +249,9 @@ def compute_metrics(state_dim, n_steps, ens, pred_obs, truth_arr, obs_arr, R,
     obs_for_crps = obs_arr[:, None, :]
     out["pred_obs_crps"] = np.asarray(crps(pred_for_crps, obs_for_crps))
     pred_std = jnp.sqrt(pred_var)
-    out["coverage_2sigma"] = np.asarray(jnp.mean(
-        (jnp.abs(residual) <= 2.0 * pred_std).astype(jnp.float32), axis=1
-    ))
+    out["coverage_2sigma"] = np.asarray(
+        jnp.mean((jnp.abs(residual) <= 2.0 * pred_std).astype(jnp.float32), axis=1)
+    )
 
     # ---- posterior-aware diagnostics: ensemble vs analytical KF ---- #
     gkl, hkl, merr, cerr = [], [], [], []
@@ -227,15 +262,23 @@ def compute_metrics(state_dim, n_steps, ens, pred_obs, truth_arr, obs_arr, R,
         sig_p = sig_p + 1e-9 * eye
         P_kf_t = kf_cov_arr[t] + 1e-9 * eye
         gkl.append(float(gaussian_kl(mu_p, sig_p, kf_mean_arr[t], P_kf_t)))
-        hkl.append(float(hist_kl(to_metric_shape(ens_t, state_dim),
-                                 to_metric_shape(analytical_samples_arr[t], state_dim))))
+        hkl.append(
+            float(
+                hist_kl(
+                    to_metric_shape(ens_t, state_dim),
+                    to_metric_shape(analytical_samples_arr[t], state_dim),
+                )
+            )
+        )
         diff = mu_p - kf_mean_arr[t]
         merr.append(float(jnp.linalg.norm(diff)))
         cerr.append(float(jnp.linalg.norm(sig_p - kf_cov_arr[t])))
         state_bias.append(float(jnp.mean(-diff)))
         state_mahal.append(float(diff @ jnp.linalg.solve(P_kf_t, diff) / state_dim))
         method_std_t = jnp.sqrt(jnp.clip(jnp.diag(sig_p), 0.0, None))
-        state_cov.append(float(jnp.mean((jnp.abs(diff) <= 2.0 * method_std_t).astype(jnp.float32))))
+        state_cov.append(
+            float(jnp.mean((jnp.abs(diff) <= 2.0 * method_std_t).astype(jnp.float32)))
+        )
     out["gaussian_kl"] = np.asarray(gkl)
     out["hist_kl"] = np.asarray(hkl)
     out["mean_err"] = np.asarray(merr)
@@ -263,7 +306,7 @@ def summary_value(arr, key):
 METRIC_TITLES = {
     "rmse": "RMSE vs truth",
     "mae": "MAE vs truth",
-    "mape": "MAPE vs truth",
+    "nrmse": "NRMSE vs truth",
     "crps": "CRPS vs truth",
     "spread": "ensemble spread",
     "chi_squared": r"$\chi^2$ innovation (ideal = 1)",
@@ -289,5 +332,6 @@ def cov_ellipse(ax, mean, cov, n_std, **kwargs):
     vals, vecs = vals[order], vecs[:, order]
     angle = np.degrees(np.arctan2(vecs[1, 0], vecs[0, 0]))
     width, height = 2.0 * n_std * np.sqrt(np.clip(vals, 0.0, None))
-    ax.add_patch(Ellipse(xy=mean, width=width, height=height, angle=angle,
-                         fill=False, **kwargs))
+    ax.add_patch(
+        Ellipse(xy=mean, width=width, height=height, angle=angle, fill=False, **kwargs)
+    )

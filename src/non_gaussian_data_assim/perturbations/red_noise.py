@@ -97,3 +97,10 @@ class RedNoise(BasePerturbation):
                 rng_key=rng_key, ensemble_size=ensemble_size, bg_profile=bg_profile
             )
             return wn_ensemble
+
+        else:
+            raise ValueError(
+                f"RedNoise requires alpha >= 0 (alpha == 0 falls back to white "
+                f"noise, alpha > 0 gives a k^(-alpha) power spectrum). Got "
+                f"alpha={self.alpha}."
+            )

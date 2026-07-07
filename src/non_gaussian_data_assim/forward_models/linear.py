@@ -29,7 +29,9 @@ class LinearModel(BaseForwardModel):
                 step. The effective per-outer-step transition is ``M ** model_integration_steps``.
             dt: Nominal time step (unused by the dynamics, kept for API parity).
         """
-        M = jnp.asarray(transition_matrix) * 1.0  # promote int -> float without forcing x64
+        M = (
+            jnp.asarray(transition_matrix) * 1.0
+        )  # promote int -> float without forcing x64
         if M.ndim != 2 or M.shape[0] != M.shape[1]:
             raise ValueError(
                 f"transition_matrix must be square, got shape {tuple(M.shape)}"

@@ -92,16 +92,31 @@ class MAE(Metric):
         return jnp.mean(jnp.abs(pred - truth))
 
 
-class MAPE(Metric):
+class NRMSE(Metric):
+    """Normalized RMSE: per-step RMSE divided by the RMS amplitude of the truth.
+
+    MAPE (mean of ``|pred - truth| / (|truth| + eps)``) is meaningless for
+    near-zero-mean chaotic fields (KS, L96, L63 anomalies): individual truth
+    components pass through zero, so the pointwise ratio blows up and produces
+    the huge, uninterpretable values seen previously (MAPE ~ 48). This replaces
+    it with a scale-relative error that normalizes by the aggregate signal
+    amplitude at each step rather than pointwise, which is well-defined for
+    zero-crossing fields:
+
+        nrmse = sqrt(mean((pred - truth)^2)) / (sqrt(mean(truth^2)) + eps)
+    """
+
     def __init__(
         self,
         ensemble_aggregation: Optional[str] = None,
         time_aggregation: Optional[str] = None,
     ) -> None:
-        super().__init__("mape", ensemble_aggregation, time_aggregation)
+        super().__init__("nrmse", ensemble_aggregation, time_aggregation)
 
     def compute(self, pred: jnp.ndarray, truth: jnp.ndarray) -> jnp.ndarray:
-        return jnp.mean(jnp.abs(pred - truth) / (jnp.abs(truth) + 1e-6))
+        rmse = jnp.sqrt(jnp.mean((pred - truth) ** 2))
+        truth_rms = jnp.sqrt(jnp.mean(truth**2))
+        return rmse / (truth_rms + 1e-6)
 
 
 def print_metrics_table(

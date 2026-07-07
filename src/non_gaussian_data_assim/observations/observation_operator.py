@@ -1,4 +1,4 @@
-import pdb
+import abc
 from abc import abstractmethod
 from typing import Callable, Optional, Sequence, Union
 
@@ -36,7 +36,7 @@ def _normalize_obs_indices(
     return [flat for _ in range(num_obs_states)]
 
 
-class ObservationOperator:
+class ObservationOperator(abc.ABC):
     """Observation operator for selecting specific states and indices from a 3D state array."""
 
     def __init__(
@@ -174,6 +174,10 @@ class NonlinearObservationOperator(ObservationOperator):
         self.obs_states = obs_states
         self.obs_indices = obs_indices
         self.state_dim = state_dim
+        # NOTE: here num_states is the number of OBSERVED states (len(obs_states)),
+        # not the full model num_states as used by LinearObservationOperator / the
+        # forward model. Kept for backwards compatibility; no external code reads
+        # this attribute on observation operators.
         self.num_states = len(obs_states)
         self.num_obs = len(obs_indices) * len(obs_states)
 
@@ -182,8 +186,12 @@ class NonlinearObservationOperator(ObservationOperator):
         self.nonlinear_fn = nonlinear_fn
 
     def grad_obs_operator(self, x: jnp.ndarray) -> jnp.ndarray:
-        """Gradient of the observation operator."""
-        return jax.grad(self._obs_operator)(x)
+        """Jacobian of the observation operator, shape [num_obs, dofs].
+
+        Uses jax.jacobian (not jax.grad) so operators with more than one
+        observation output are supported.
+        """
+        return jax.jacobian(self._obs_operator)(x)
 
     def _obs_operator(self, x: jnp.ndarray) -> jnp.ndarray:
         return self.nonlinear_fn(x)

@@ -357,14 +357,18 @@ class BreedingPerturbation(BasePerturbation):
         rng_key: jax.Array,
         ensemble_size: int,
         bg_profile: Optional[jnp.ndarray] = None,
-    ) -> jnp.ndarray:
-        """Return bred perturbations with shape [ensemble_size, num_states, state_dim]."""
+        return_metrics: bool = False,
+    ) -> jnp.ndarray | tuple[jnp.ndarray, dict[str, jnp.ndarray]]:
+        """Return bred perturbations with shape [ensemble_size, num_states, state_dim].
+
+        If ``return_metrics`` is True, also return a dictionary of breeding
+        diagnostics as ``(ensemble, bv_metrics)``.
+        """
         if bg_profile is None:
             raise ValueError(
                 f"Breeding reuires that a best-guess profile is supplied, but it was None"
             )
 
-        return_metrics = True
         output = self.breeder.sample_ensemble(
             x0_bg=bg_profile,
             rng_key=rng_key,
@@ -377,8 +381,10 @@ class BreedingPerturbation(BasePerturbation):
         else:
             ensemble = output
 
-        if bg_profile is not None:
-            ensemble = self._add_ensemble_to_bestguess_profile(
-                bg_profile=bg_profile, ensemble=ensemble
-            )
-        return ensemble, bv_metrics
+        ensemble = self._add_ensemble_to_bestguess_profile(
+            bg_profile=bg_profile, ensemble=ensemble
+        )
+
+        if return_metrics:
+            return ensemble, bv_metrics
+        return ensemble

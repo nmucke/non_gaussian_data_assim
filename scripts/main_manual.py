@@ -38,7 +38,7 @@ from non_gaussian_data_assim.metrics.innovation_metrics import (
 )
 from non_gaussian_data_assim.metrics.trajectory_metrics import (
     MAE,
-    MAPE,
+    NRMSE,
     RMSE,
     ensemble_spread,
     print_metrics_table,
@@ -234,7 +234,7 @@ def main() -> None:
     # Metrics.
     rmse = RMSE(ensemble_aggregation="mean", time_aggregation="mean")
     mae = MAE(ensemble_aggregation="mean", time_aggregation="mean")
-    mape = MAPE(ensemble_aggregation="mean", time_aggregation="mean")
+    nrmse = NRMSE(ensemble_aggregation="mean", time_aggregation="mean")
     crps = CRPS(time_aggregation="mean")
     rmse_time = RMSE(ensemble_aggregation="mean", time_aggregation="none")
     crps_time = CRPS(time_aggregation="none")
@@ -249,7 +249,7 @@ def main() -> None:
         metrics = {
             "rmse": rmse(ensemble, true_sol),
             "mae": mae(ensemble, true_sol),
-            "mape": mape(ensemble, true_sol),
+            "nrmse": nrmse(ensemble, true_sol),
             "crps": crps(ensemble, true_sol),
             "rmse_time": rmse_time(ensemble, true_sol),
             "spread_time": ensemble_spread(ensemble, state_dim=state_dim),
@@ -269,9 +269,7 @@ def main() -> None:
             )
             post_metric_states.append(metric_dict)
 
-    print_metrics_table(
-        reference_metrics, posterior_metrics, title=f"{TITLE} Metrics"
-    )
+    print_metrics_table(reference_metrics, posterior_metrics, title=f"{TITLE} Metrics")
 
     # --- Plot Hovmöller diagrams and assim-time-series
     logger.info(f"Plotting...")

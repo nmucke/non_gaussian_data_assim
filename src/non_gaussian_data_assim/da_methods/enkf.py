@@ -1,13 +1,14 @@
-import pdb
 from typing import Any, Callable, Dict, Optional
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
-from non_gaussian_data_assim.da_methods.base import BaseDataAssimilationMethod
+from non_gaussian_data_assim.da_methods.base import (
+    BaseDataAssimilationMethod,
+    make_localization_fn,
+)
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
-from non_gaussian_data_assim.localization import distance_based_localization
 from non_gaussian_data_assim.observations.observation_operator import (
     ObservationOperator,
 )
@@ -47,16 +48,12 @@ class EnsembleKalmanFilter(BaseDataAssimilationMethod):
         self.localization_distance = localization_distance
         self.periodic = periodic
 
-        if self.localization_distance is None:
-            self.localization = lambda x: x
-        else:
-            self.localization = lambda x: distance_based_localization(
-                r_influ=self.localization_distance,  # type: ignore[arg-type]
-                state_dim=self.state_dim,
-                cov_prior=x,
-                num_states=self.num_states,
-                periodic=self.periodic,
-            )
+        self.localization = make_localization_fn(
+            self.localization_distance,
+            self.state_dim,
+            self.num_states,
+            self.periodic,
+        )
 
     def _analysis_step(
         self,
@@ -81,19 +78,32 @@ class EnsembleKalmanFilter(BaseDataAssimilationMethod):
         """
         # Identify indices of valid observations
 
-        # Prepare the prior state vector (ensemble matrix)
+        # Prepare the prior state vector (ensemble matrix) -> shape [dofs, N]
         prior_ensemble = prior_ensemble.reshape(self.ensemble_size, -1).T
 
-        # Calculate the mean and covariance of the prior
+        # Standard multiplicative prior inflation: inflate the forecast ensemble
+        # ANOMALIES about their mean by inflation_factor (lambda). This scales the
+        # standard deviation by lambda (covariance by lambda^2) AND, because the
+        # analysis update below starts from these inflated members, it actually
+        # increases the posterior spread -- unlike scaling only cov_prior, which
+        # would inflate the gain and shrink the posterior spread (the opposite of
+        # the intended effect).
+        mean = jnp.mean(prior_ensemble, axis=1, keepdims=True)
+        prior_ensemble = mean + self.inflation_factor * (prior_ensemble - mean)
+
+        # Calculate the covariance of the (inflated) prior
         cov_prior = jnp.cov(prior_ensemble)
         cov_prior = self.localization(cov_prior)
-        cov_prior = self.inflation_factor * cov_prior
 
         # Filter and perturb the observation vector
         rng_key, key = jax.random.split(rng_key)
         perturb = jax.random.multivariate_normal(
             key, jnp.zeros(self.obs_operator.num_obs), self.R, shape=(self.ensemble_size,)  # type: ignore[attr-defined]
         )
+        # Center the perturbations exactly across the ensemble axis. The raw draws
+        # carry an O(1/sqrt(N)) sample mean that would otherwise add a spurious
+        # shift to the analysis mean; subtracting the ensemble mean removes it.
+        perturb = perturb - perturb.mean(axis=0, keepdims=True)
         obs_vect_perturbed = obs_vect + perturb
         obs_vect_perturbed = obs_vect_perturbed.T
 
@@ -119,17 +129,3 @@ class EnsembleKalmanFilter(BaseDataAssimilationMethod):
         )
 
         return posterior_ensemble
-
-
-# Compute mean and covariance of the posterior
-# mean_posterior = np.mean(posterior_ensemble, axis=0)
-# cov_posterior = np.cov(posterior_ensemble.T)
-
-# Return a dictionary of EnKF outputs
-# enkf_output = {
-#     "posterior": posterior_vect,
-#     "kalman_gain": kalman_gain,
-#     "innovation": innovation,
-#     "mean_post": mean_posterior,
-#     "cov_post": cov_posterior,
-# }

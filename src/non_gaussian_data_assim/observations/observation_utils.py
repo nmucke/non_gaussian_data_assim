@@ -34,9 +34,13 @@ def generate_observations(
 
     observations = jnp.zeros((data_assimilation_steps, numobs))
     for i in range(data_assimilation_steps):
-        obs_idx = model_integration_steps * i + 1
+        # The truth trajectory stores the initial state at index 0 followed by
+        # every inner integration step, so the analysis produced at DA step i
+        # (after one outer step of `model_integration_steps` inner steps applied
+        # to the previous analysis) lands at truth index (i + 1) * m. Observe the
+        # truth there so observations[i] is aligned with the assimilation time.
+        obs_idx = model_integration_steps * (i + 1)
         obs_at_t = obs_operator(true_sol[:, obs_idx])
-        # obs_at_t = obs_operator(true_sol[:, 1 + model_integration_steps * (i + 1)])
         rng_key, key = jax.random.split(rng_key)
         obs_at_t = obs_at_t + jax.random.multivariate_normal(key, jnp.zeros(numobs), R)
         observations = observations.at[i].set(obs_at_t.flatten())

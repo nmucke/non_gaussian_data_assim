@@ -24,106 +24,50 @@ def rk4_bk_1d_step(
     gamma_mu = 0.5
     f = 3.2
 
-    # Setting up initial conditions
-    theta_00, u_00, v_00 = theta_in[:], u_in[:], v_in[:]
+    def _slopes(
+        theta: np.ndarray, u: np.ndarray, v: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Evaluate the RHS slopes at the given stage state."""
+        # Periodic neighbor shifts recomputed from the current stage state.
+        u_p1 = np.zeros(N)
+        u_p1[0:-1] = u[1:]
+        u_p1[-1] = u[0]
 
-    u_p1 = np.zeros(N)
-    u_p1[0:-1] = u_00[1:]
-    u_p1[-1] = u_00[0]
+        u_n1 = np.zeros(N)
+        u_n1[0] = u[1]
+        u_n1[1:] = u[0:-1]
 
-    u_n1 = np.zeros(N)
-    u_n1[0] = u_00[1]
-    u_n1[1:] = u_00[0:-1]
+        dthetadt = -(v + 1) * (theta + (1 + eps) * np.log(v + 1))
+        dudt = v
+        dvdt = (
+            (gamma_mu**2) * (u_n1 - 2 * u + u_p1)
+            - (gamma_lambda**2) * u
+            - ((gamma_mu**2) / (xi)) * (f + theta + np.log(v + 1))
+        )
+        return dthetadt, dudt, dvdt
 
-    # ------------
-    # K1
-    # ------------
-    dthetadt = -(v_00 + 1) * (theta_00 + (1 + eps) * np.log(v_00 + 1))
-    dudt = v_00
-    dvdt = (
-        (gamma_mu**2) * (u_n1 - 2 * u_00 + u_p1)
-        - (gamma_lambda**2) * u_00
-        - ((gamma_mu**2) / (xi)) * (f + theta_00 + np.log(v_00 + 1))
+    # RK4 stages: each stage is evaluated at the ORIGINAL input state plus the
+    # appropriate single previous slope (not accumulated across stages).
+    # K1 at x
+    k11, k12, k13 = _slopes(theta_in, u_in, v_in)
+    # K2 at x + 0.5*dt*k1
+    k21, k22, k23 = _slopes(
+        theta_in + 0.5 * dt * k11,
+        u_in + 0.5 * dt * k12,
+        v_in + 0.5 * dt * k13,
     )
-
-    k11 = dthetadt[:]
-    k12 = dudt[:]
-    k13 = dvdt[:]
-
-    theta_00 = theta_00 + 0.5 * k11 * dt
-    u_00 = u_00 + 0.5 * k12 * dt
-    v_00 = v_00 + 0.5 * k13 * dt
-
-    # ------------
-    # K2
-    # ------------
-    u_p1[0:-1] = u_00[1:]
-    u_p1[-1] = u_00[0]
-
-    u_n1[0] = u_00[1]
-    u_n1[1:] = u_00[0:-1]
-
-    dthetadt = -(v_00 + 1) * (theta_00 + (1 + eps) * np.log(v_00 + 1))
-    dudt = v_00
-    dvdt = (
-        (gamma_mu**2) * (u_n1 - 2 * u_00 + u_p1)
-        - (gamma_lambda**2) * u_00
-        - ((gamma_mu**2) / (xi)) * (f + theta_00 + np.log(v_00 + 1))
+    # K3 at x + 0.5*dt*k2
+    k31, k32, k33 = _slopes(
+        theta_in + 0.5 * dt * k21,
+        u_in + 0.5 * dt * k22,
+        v_in + 0.5 * dt * k23,
     )
-
-    k21 = dthetadt[:]
-    k22 = dudt[:]
-    k23 = dvdt[:]
-
-    theta_00 = theta_00 + 0.5 * k21 * dt
-    u_00 = u_00 + 0.5 * k22 * dt
-    v_00 = v_00 + 0.5 * k23 * dt
-
-    # ------------
-    # K3
-    # ------------
-    u_p1[0:-1] = u_00[1:]
-    u_p1[-1] = u_00[0]
-
-    u_n1[0] = u_00[1]
-    u_n1[1:] = u_00[0:-1]
-
-    dthetadt = -(v_00 + 1) * (theta_00 + (1 + eps) * np.log(v_00 + 1))
-    dudt = v_00
-    dvdt = (
-        (gamma_mu**2) * (u_n1 - 2 * u_00 + u_p1)
-        - (gamma_lambda**2) * u_00
-        - ((gamma_mu**2) / (xi)) * (f + theta_00 + np.log(v_00 + 1))
+    # K4 at x + dt*k3
+    k41, k42, k43 = _slopes(
+        theta_in + dt * k31,
+        u_in + dt * k32,
+        v_in + dt * k33,
     )
-
-    k31 = dthetadt[:]
-    k32 = dudt[:]
-    k33 = dvdt[:]
-
-    theta_00 = theta_00 + 0.5 * k31 * dt
-    u_00 = u_00 + 0.5 * k32 * dt
-    v_00 = v_00 + 0.5 * k33 * dt
-
-    # ------------
-    # K4
-    # ------------
-    u_p1[0:-1] = u_00[1:]
-    u_p1[-1] = u_00[0]
-
-    u_n1[0] = u_00[1]
-    u_n1[1:] = u_00[0:-1]
-
-    dthetadt = -(v_00 + 1) * (theta_00 + (1 + eps) * np.log(v_00 + 1))
-    dudt = v_00
-    dvdt = (
-        (gamma_mu**2) * (u_n1 - 2 * u_00 + u_p1)
-        - (gamma_lambda**2) * u_00
-        - ((gamma_mu**2) / (xi)) * (f + theta_00 + np.log(v_00 + 1))
-    )
-
-    k41 = dthetadt[:]
-    k42 = dudt[:]
-    k43 = dvdt[:]
 
     theta_out = theta_in + (dt / 6) * (k11 + 2 * k21 + 2 * k31 + k41)
     u_out = u_in + (dt / 6) * (k12 + 2 * k22 + 2 * k32 + k42)
@@ -161,106 +105,50 @@ def rk4_bk_1d_ensemble(
 
     # Initial conditions
 
-    # Setting up initial conditions for the ensemble
-    theta_00, u_00, v_00 = theta_in[:, :], u_in[:, :], v_in[:, :]
+    def _slopes(
+        theta: np.ndarray, u: np.ndarray, v: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Evaluate the RHS slopes at the given ensemble stage state."""
+        # Periodic neighbor shifts recomputed from the current stage state.
+        u_p1 = np.zeros((N, n_mem))
+        u_p1[0:-1, :] = u[1:, :]
+        u_p1[-1, :] = u[0, :]
 
-    u_p1 = np.zeros((N, n_mem))
-    u_p1[0:-1] = u_00[1:, :]
-    u_p1[-1] = u_00[0, :]
+        u_n1 = np.zeros((N, n_mem))
+        u_n1[0, :] = u[1, :]
+        u_n1[1:, :] = u[0:-1, :]
 
-    u_n1 = np.zeros((N, n_mem))
-    u_n1[0] = u_00[1, :]
-    u_n1[1:] = u_00[0:-1, :]
+        dthetadt = -(v + 1) * (theta + (1 + eps) * np.log(v + 1))
+        dudt = v
+        dvdt = (
+            (gamma_mu**2) * (u_n1 - 2 * u + u_p1)
+            - (gamma_lambda**2) * u
+            - ((gamma_mu**2) / (xi)) * (f + theta + np.log(v + 1))
+        )
+        return dthetadt, dudt, dvdt
 
-    # ------------
-    # K1
-    # ------------
-    dthetadt = -(v_00 + 1) * (theta_00 + (1 + eps) * np.log(v_00 + 1))
-    dudt = v_00
-    dvdt = (
-        (gamma_mu**2) * (u_n1 - 2 * u_00 + u_p1)
-        - (gamma_lambda**2) * u_00
-        - ((gamma_mu**2) / (xi)) * (f + theta_00 + np.log(v_00 + 1))
+    # RK4 stages: each stage is evaluated at the ORIGINAL input state plus the
+    # appropriate single previous slope (not accumulated across stages).
+    # K1 at x
+    k11, k12, k13 = _slopes(theta_in, u_in, v_in)
+    # K2 at x + 0.5*dt*k1
+    k21, k22, k23 = _slopes(
+        theta_in + 0.5 * dt * k11,
+        u_in + 0.5 * dt * k12,
+        v_in + 0.5 * dt * k13,
     )
-
-    k11 = dthetadt[:, :]
-    k12 = dudt[:, :]
-    k13 = dvdt[:, :]
-
-    theta_00 = theta_00 + 0.5 * k11 * dt
-    u_00 = u_00 + 0.5 * k12 * dt
-    v_00 = v_00 + 0.5 * k13 * dt
-
-    # ------------
-    # K2
-    # ------------
-    u_p1[0:-1, :] = u_00[1:, :]
-    u_p1[-1, :] = u_00[0, :]
-
-    u_n1[0, :] = u_00[1, :]
-    u_n1[1:, :] = u_00[0:-1, :]
-
-    dthetadt = -(v_00 + 1) * (theta_00 + (1 + eps) * np.log(v_00 + 1))
-    dudt = v_00
-    dvdt = (
-        (gamma_mu**2) * (u_n1 - 2 * u_00 + u_p1)
-        - (gamma_lambda**2) * u_00
-        - ((gamma_mu**2) / (xi)) * (f + theta_00 + np.log(v_00 + 1))
+    # K3 at x + 0.5*dt*k2
+    k31, k32, k33 = _slopes(
+        theta_in + 0.5 * dt * k21,
+        u_in + 0.5 * dt * k22,
+        v_in + 0.5 * dt * k23,
     )
-
-    k21 = dthetadt[:, :]
-    k22 = dudt[:, :]
-    k23 = dvdt[:, :]
-
-    theta_00 = theta_00 + 0.5 * k21 * dt
-    u_00 = u_00 + 0.5 * k22 * dt
-    v_00 = v_00 + 0.5 * k23 * dt
-
-    # ------------
-    # K3
-    # ------------
-    u_p1[0:-1, :] = u_00[1:, :]
-    u_p1[-1, :] = u_00[0, :]
-
-    u_n1[0, :] = u_00[1, :]
-    u_n1[1:, :] = u_00[0:-1, :]
-
-    dthetadt = -(v_00 + 1) * (theta_00 + (1 + eps) * np.log(v_00 + 1))
-    dudt = v_00
-    dvdt = (
-        (gamma_mu**2) * (u_n1 - 2 * u_00 + u_p1)
-        - (gamma_lambda**2) * u_00
-        - ((gamma_mu**2) / (xi)) * (f + theta_00 + np.log(v_00 + 1))
+    # K4 at x + dt*k3
+    k41, k42, k43 = _slopes(
+        theta_in + dt * k31,
+        u_in + dt * k32,
+        v_in + dt * k33,
     )
-
-    k31 = dthetadt[:, :]
-    k32 = dudt[:, :]
-    k33 = dvdt[:, :]
-
-    theta_00 = theta_00 + 0.5 * k31 * dt
-    u_00 = u_00 + 0.5 * k32 * dt
-    v_00 = v_00 + 0.5 * k33 * dt
-
-    # ------------
-    # K4
-    # ------------
-    u_p1[0:-1, :] = u_00[1:, :]
-    u_p1[-1, :] = u_00[0, :]
-
-    u_n1[0, :] = u_00[1, :]
-    u_n1[1:, :] = u_00[0:-1, :]
-
-    dthetadt = -(v_00 + 1) * (theta_00 + (1 + eps) * np.log(v_00 + 1))
-    dudt = v_00
-    dvdt = (
-        (gamma_mu**2) * (u_n1 - 2 * u_00 + u_p1)
-        - (gamma_lambda**2) * u_00
-        - ((gamma_mu**2) / (xi)) * (f + theta_00 + np.log(v_00 + 1))
-    )
-
-    k41 = dthetadt[:, :]
-    k42 = dudt[:, :]
-    k43 = dvdt[:, :]
 
     theta_out = theta_in + (dt / 6) * (k11 + 2 * k21 + 2 * k31 + k41)
     u_out = u_in + (dt / 6) * (k12 + 2 * k22 + 2 * k32 + k42)
