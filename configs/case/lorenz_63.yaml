@@ -54,7 +54,6 @@ case:
     periodic: false
     spinup_steps: ${spinup_steps}
     use_best_guess: true  # center the ensemble on the best-guess (true_initial_state)
-    best_guess_perturbation: null
 
     # --- Profile to center the ensemble on when use_best_guess is false.
     initial_profile:

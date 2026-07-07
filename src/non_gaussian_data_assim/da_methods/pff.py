@@ -4,14 +4,16 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from non_gaussian_data_assim.da_methods.base import BaseDataAssimilationMethod
+from non_gaussian_data_assim.da_methods.base import (
+    BaseDataAssimilationMethod,
+    make_localization_fn,
+)
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 from non_gaussian_data_assim.jax_utils import get_pairwise_interaction_fn
 from non_gaussian_data_assim.kernels import (
     get_divergence_kernel_fn,
     get_kernel_matrix_fn,
 )
-from non_gaussian_data_assim.localization import distance_based_localization
 from non_gaussian_data_assim.observations.observation_operator import (
     LinearObservationOperator,
     NonlinearObservationOperator,
@@ -57,9 +59,14 @@ def get_likelihood_score_fn_with_non_linear_obs_operator(
     """Get the likelihood score function."""
 
     def likelihood_score_fn(x_s: np.ndarray) -> np.ndarray:
-        obs_gradient = obs_operator.grad_obs_operator(x_s)
+        # grad_obs_operator now returns the Jacobian J = dh/dx with shape
+        # [num_obs, dofs] (jax.jacobian). The likelihood score is
+        # -J^T R^-1 (h(x) - y), matching the linear form -H^T R^-1 (H x - y).
+        obs_jacobian = obs_operator.grad_obs_operator(x_s)
         return (
-            -obs_gradient @ obs_cov_inv @ (obs_operator._obs_operator(x_s) - obs_vect)
+            -obs_jacobian.T
+            @ obs_cov_inv
+            @ (obs_operator._obs_operator(x_s) - obs_vect)
         )
 
     return likelihood_score_fn
@@ -163,16 +170,12 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         self.prior_cov_regularization = prior_cov_regularization
         self.periodic = periodic
 
-        if self.localization_distance is None:
-            self.localization = lambda x: x
-        else:
-            self.localization = lambda x: distance_based_localization(
-                r_influ=self.localization_distance,  # type: ignore[arg-type]
-                state_dim=self.state_dim,
-                cov_prior=x,
-                num_states=self.num_states,
-                periodic=self.periodic,
-            )
+        self.localization = make_localization_fn(
+            self.localization_distance,
+            self.state_dim,
+            self.num_states,
+            self.periodic,
+        )
 
     def _analysis_step(
         self,
@@ -192,13 +195,14 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
             prior_cov = jnp.cov(x_s.T)
         prior_cov = self.localization(prior_cov)
         prior_cov = self.inflation_factor * prior_cov
+        # Ensure prior_cov is 2-D before inverting: for a 1-dof problem
+        # jnp.cov returns a 0-d scalar, which jnp.linalg.inv cannot handle.
+        if len(prior_cov.shape) == 0:
+            prior_cov = prior_cov.reshape(1, 1)
         if self.prior_cov_regularization is not None:
             eps = self.prior_cov_regularization * jnp.mean(jnp.diag(prior_cov))
             prior_cov = prior_cov + eps * jnp.eye(prior_cov.shape[0])
         prior_cov_inv = jnp.linalg.inv(prior_cov)
-
-        if len(prior_cov.shape) == 0:
-            prior_cov = prior_cov.reshape(1, 1)
 
         # distance_weight_matrix = jnp.linalg.inv(self.alpha * prior_cov)
         distance_weight_matrix = jnp.eye(self.state_dim) * jnp.pi
@@ -264,15 +268,6 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         rollout_fn = jax.jit(rollout_fn)
 
         x_s = rollout_fn(x_s)
-
-        # Pseudo-time for data assimilation
-        # flow = []
-        # for _ in range(self.num_pseudo_time_steps):
-        #     x_s = stepper(x_s)
-        #     flow.append(x_s)
-
-        # x_s = jnp.array(flow)
-        # x_s = x_s[-1]
 
         if self.return_pff_trajectory:
             x_s = jnp.transpose(x_s, (1, 0, 2))

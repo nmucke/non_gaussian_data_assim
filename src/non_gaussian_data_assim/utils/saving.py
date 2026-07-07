@@ -46,9 +46,15 @@ class ExperimentSaver:
         metrics_dir = self.subdir("metrics")
         path = metrics_dir / f"{name}.npz"
 
-        metrics = {key: np.asarray(value) for key, value in metrics.items()}
+        # Drop None-valued metrics: np.asarray(None) yields an object array,
+        # which np.savez cannot serialize (and which breaks the .ndim summary).
+        metrics = {
+            key: np.asarray(value)
+            for key, value in metrics.items()
+            if value is not None
+        }
 
-        np.savez(path, allow_pickle=False, **metrics)
+        np.savez(path, **metrics)
 
         if save_summary:
             summary = {

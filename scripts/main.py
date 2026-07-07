@@ -82,9 +82,7 @@ def main(cfg: DictConfig) -> None:
         save_name = creat_exp_name(config=cfg)
 
         infl_str = str(cfg.inflation_factor).replace(".", "_")
-        rloc = str(int(cfg.localization_distance))
         save_name = f"{save_name}_inflf{infl_str}"
-        # save_name = f"{save_name}_rloc{rloc}"
 
         # -- Create directory in ./experiments/ folder
         saver = ExperimentSaver.create(save_name, root=experiment_folder)
@@ -187,12 +185,19 @@ def main(cfg: DictConfig) -> None:
     logger.info(f"DA model: {da_model}")
 
     ########## Prepare ensembles ##########
-    posterior_ensemble = initial_ensemble.copy().reshape(
-        cfg.ensemble_size, 1, cfg.case.num_states, cfg.case.state_dim
-    )
-    prior_ensemble_da = initial_ensemble.copy().reshape(
-        cfg.ensemble_size, 1, cfg.case.num_states, cfg.case.state_dim
-    )
+    # Collect the trajectories in Python lists (one block per DA step) and
+    # concatenate once after the loop; growing a device array with
+    # jnp.concatenate every step is O(T^2) copying.
+    posterior_blocks = [
+        initial_ensemble.copy().reshape(
+            cfg.ensemble_size, 1, cfg.case.num_states, cfg.case.state_dim
+        )
+    ]
+    prior_blocks = [
+        initial_ensemble.copy().reshape(
+            cfg.ensemble_size, 1, cfg.case.num_states, cfg.case.state_dim
+        )
+    ]
 
     ########## Rollout the initial ensemble for comparison ##########
     reference_ensemble = forward_model.rollout(
@@ -208,7 +213,7 @@ def main(cfg: DictConfig) -> None:
     for i in tqdm(range(cfg.data_assimilation_steps)):
         rng_key, key = jax.random.split(rng_key)
 
-        prior_current = posterior_ensemble[:, -1]
+        prior_current = posterior_blocks[-1][:, -1]
 
         posterior_next = da_model(
             prior_ensemble=prior_current,
@@ -228,13 +233,11 @@ def main(cfg: DictConfig) -> None:
         validation_obs.append(HXf_val)
         # -----------------------------------------------------------------
 
-        # Concatenate prior (1time-step) and posterior (2 time-steps) and innovations
-        prior_ensemble_da = jnp.concatenate(
-            [prior_ensemble_da, prior_current[:, None, :, :]], axis=1
-        )
-        posterior_ensemble = jnp.concatenate(
-            [posterior_ensemble, posterior_next], axis=1
-        )
+        prior_blocks.append(prior_current[:, None, :, :])
+        posterior_blocks.append(posterior_next)
+
+    prior_ensemble_da = jnp.concatenate(prior_blocks, axis=1)
+    posterior_ensemble = jnp.concatenate(posterior_blocks, axis=1)
 
     logger.info(f"Finished DA loop")
 
@@ -263,6 +266,10 @@ def main(cfg: DictConfig) -> None:
         forecast_ensemble = None
         true_forecast = None
 
+    # Metrics for the forecast are only computed when a forecast was produced;
+    # initialize here so the save path can reference it unconditionally.
+    forecast_metrics = None
+
     # --- Extrac predicted observation (assimilation and valdiation points)
     pred_prior_obs = jnp.stack(
         predicted_prior_obs, axis=1
@@ -284,7 +291,7 @@ def main(cfg: DictConfig) -> None:
         i = valobs_state.shape[0]
         predobs_val_states.append(pred_val_obs[:, :, idx : idx + i])
         val_obs_states.append(validation[:, idx : idx + i])
-        R_val_states.append(R[idx : idx + i, idx : idx + i])
+        R_val_states.append(R_val[idx : idx + i, idx : idx + i])
         idx += i
 
     # ======================== metrics and plotting ======================================
@@ -355,8 +362,9 @@ def main(cfg: DictConfig) -> None:
         bin_range = cfg.case.information_metrics.bin_range
         info_value_range = None if bin_range == "auto" else bin_range
 
-        # --- Get indexes of assimilation times
-        # obs_time_idx = 1 + cfg.model_integration_steps * (np.arange(cfg.data_assimilation_steps)+1)
+        # --- Indices of the assimilation times in the full-resolution trajectory.
+        # The analysis at DA step i lands at inner-step index (i + 1) * m, matching
+        # how generate_observations samples the truth.
         obs_time_idx = cfg.model_integration_steps * (
             np.arange(cfg.data_assimilation_steps) + 1
         )
@@ -446,16 +454,13 @@ def main(cfg: DictConfig) -> None:
         #     path_savefig=path_savefig,
         # )
     else:
-        innovation_metrics = None
+        innov_metric_list = None
 
     # --- Plot Initial-Conditions (I.C, best-guess, Initial-Ensemble) + Breeding statitcs if available
     try:
         best_guess_profile = best_guess_profile[0]
-    except:
+    except (TypeError, IndexError):
         best_guess_profile = None
-    # try:
-    #     bv_dict = ensgen_diagnostics
-    # except:
     bv_dict = None
 
     # plot_initial_fields(
@@ -488,8 +493,17 @@ def main(cfg: DictConfig) -> None:
         if information_metrics is not None:
             metrics_to_save["information_metrics"] = information_metrics
 
-        if innovation_metrics is not None:
-            metrics_to_save["metrics_to_save"] = innovation_metrics
+        if innov_metric_list is not None:
+            # Save innovation diagnostics for every observed state (not just the
+            # last one). Single-state cases keep the plain "innovation_metrics"
+            # name for backward compatibility.
+            for j, innov in enumerate(innov_metric_list):
+                name = (
+                    "innovation_metrics"
+                    if len(innov_metric_list) == 1
+                    else f"innovation_metrics_state{j}"
+                )
+                metrics_to_save[name] = innov
 
         if forecast_metrics is not None:
             metrics_to_save["forecast_metrics"] = forecast_metrics

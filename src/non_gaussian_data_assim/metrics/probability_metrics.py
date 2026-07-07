@@ -1,4 +1,4 @@
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import Optional
 
 import jax
@@ -14,7 +14,7 @@ AGGREGATION_METHODS = {
 }
 
 
-class ProbabilityMetric:
+class ProbabilityMetric(ABC):
     """Compare a predicted ensemble against a true ensemble.
 
     Subclasses implement ``compute`` for a single time step on flattened state

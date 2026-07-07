@@ -1,6 +1,5 @@
 import functools
-import pdb
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import Any, Callable
 
 import jax
@@ -13,7 +12,7 @@ from non_gaussian_data_assim.time_integrators import (
 )
 
 
-class BaseForwardModel:
+class BaseForwardModel(ABC):
     """Base class for forward models."""
 
     def __init__(
@@ -29,10 +28,32 @@ class BaseForwardModel:
         self.dt = dt
         self.model_integration_steps = model_integration_steps
 
+        # Cache jitted callables so repeated DA steps reuse compiled functions
+        # instead of re-jitting a fresh closure on every invocation.
+        self._call_cache: dict[tuple[bool, bool], Callable] = {}
+        self._rollout_cache: dict[tuple[bool, int], Callable] = {}
+
     @abstractmethod
     def one_step(self, x: jnp.ndarray) -> jnp.ndarray:
         """Compute one inner step of the forward model."""
         raise NotImplementedError
+
+    def _get_call_fn(
+        self, return_model_integration_steps: bool, is_ensemble: bool
+    ) -> Callable:
+        """Return a cached jitted rollout for the given flags."""
+        key = (return_model_integration_steps, is_ensemble)
+        if key not in self._call_cache:
+            rollout_fn = rollout(
+                self.one_step,
+                self.model_integration_steps,
+                return_model_integration_steps=return_model_integration_steps,
+                include_initial_state=not return_model_integration_steps,
+            )
+            if is_ensemble:
+                rollout_fn = jax.vmap(rollout_fn)
+            self._call_cache[key] = jax.jit(rollout_fn)
+        return self._call_cache[key]
 
     def __call__(
         self,
@@ -51,17 +72,34 @@ class BaseForwardModel:
             tuple: (new_time, new_state) where new_state has shape [ensemble, num_states, state_dim]
         """
 
-        rollout_fn = rollout(
-            self.one_step,
-            self.model_integration_steps,
-            return_model_integration_steps=return_model_integration_steps,
-            include_initial_state=not return_model_integration_steps,
-        )
-
-        if is_ensemble:
-            rollout_fn = jax.vmap(rollout_fn)
-        rollout_fn = jax.jit(rollout_fn)
+        rollout_fn = self._get_call_fn(return_model_integration_steps, is_ensemble)
         return rollout_fn(x)
+
+    def _get_rollout_fn(
+        self, return_model_integration_steps: bool, data_assimilation_steps: int
+    ) -> Callable:
+        """Return a cached jitted outer rollout for the given flags/steps."""
+        key = (return_model_integration_steps, data_assimilation_steps)
+        if key not in self._rollout_cache:
+            if return_model_integration_steps:
+                inner_rollout_fn = functools.partial(
+                    self.__call__,
+                    return_model_integration_steps=True,
+                )
+                rollout_fn = rollout_with_model_integration_steps(
+                    inner_rollout_fn,
+                    data_assimilation_steps,
+                    include_initial_state=False,
+                )
+            else:
+                rollout_fn = rollout(
+                    self.__call__,
+                    data_assimilation_steps,
+                    return_model_integration_steps=True,
+                    include_initial_state=True,
+                )
+            self._rollout_cache[key] = jax.jit(rollout_fn)
+        return self._rollout_cache[key]
 
     def rollout(
         self,
@@ -80,22 +118,7 @@ class BaseForwardModel:
             State array of shape [ensemble, num_states, state_dim]
         """
 
-        if return_model_integration_steps:
-            inner_rollout_fn = functools.partial(
-                self.__call__,
-                return_model_integration_steps=True,
-            )
-            rollout_fn = rollout_with_model_integration_steps(
-                inner_rollout_fn,
-                data_assimilation_steps,
-                include_initial_state=False,
-            )
-        else:
-            rollout_fn = rollout(
-                self.__call__,
-                data_assimilation_steps,
-                return_model_integration_steps=True,
-                include_initial_state=True,
-            )
-        rollout_fn = jax.jit(rollout_fn)
+        rollout_fn = self._get_rollout_fn(
+            return_model_integration_steps, data_assimilation_steps
+        )
         return jax.vmap(rollout_fn)(x)

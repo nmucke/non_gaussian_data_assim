@@ -65,6 +65,10 @@ class InitialState:
                 rng_key=noise_key, ensemble_size=1, bg_profile=state
             )
 
+        # --- Natural variability fallback for the no-spin-up case; the spin-up
+        # branch below overrides it with the value measured over the trajectory.
+        self.natural_variability = jnp.std(state, ddof=1)
+
         # --- Optional spin-up so the raw state lies on the model attractor.
         if self.spinup_steps:
             if self.forward_model is None:

@@ -71,7 +71,6 @@ case:
     periodic: false
     spinup_steps: ${spinup_steps}
     use_best_guess: true
-    best_guess_perturbation: natural_variability
 
     # --- Profile to center the ensemble on when use_best_guess is false.
     initial_profile:

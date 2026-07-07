@@ -1,4 +1,3 @@
-import pdb
 from typing import Callable
 
 import jax
@@ -10,7 +9,7 @@ def rollout(
     num_steps: int,
     return_model_integration_steps: bool = False,
     include_initial_state: bool = False,
-) -> jnp.ndarray:
+) -> Callable[[jnp.ndarray], jnp.ndarray]:
     """Rollout the system using the given stepper."""
 
     def scan_fn(x: jnp.ndarray, _: None = None) -> jnp.ndarray:
@@ -37,7 +36,7 @@ def rollout_with_model_integration_steps(
     inner_rollout_fn: Callable,
     data_assimilation_steps: int,
     include_initial_state: bool = False,
-) -> jnp.ndarray:
+) -> Callable[[jnp.ndarray], jnp.ndarray]:
     """Rollout the system using the given stepper with inner steps."""
 
     def scan_fn(x: jnp.ndarray, _: jnp.ndarray) -> jnp.ndarray:
@@ -171,32 +170,3 @@ def get_stepper(
         raise ValueError(
             f"Invalid stepper type: {stepper_type}. We only support 'runge_kutta_4', 'forward_euler', and 'backward_euler'."
         )
-
-
-# class RungeKutta4:
-#     """Runge-Kutta 4th order time integrator."""
-
-#     def __init__(self, dt: float, rhs: Callable):
-#         """Initialize the Runge-Kutta 4th order time integrator."""
-#         self.dt = dt
-#         self.rhs = rhs
-
-#     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-#         """Runge-Kutta 4th order time integration."""
-#         k1 = self.rhs(x)
-#         k2 = self.rhs(x + 0.5 * self.dt * k1)
-#         k3 = self.rhs(x + 0.5 * self.dt * k2)
-#         k4 = self.rhs(x + self.dt * k3)
-#         return x + self.dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-
-# class ForwardEuler:
-#     """Forward Euler time integrator."""
-
-#     def __init__(self, dt: float, rhs: Callable):
-#         """Initialize the Forward Euler time integrator."""
-#         self.dt = dt
-#         self.rhs = rhs
-
-#     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-#         """Forward Euler time integration."""
-#         return x + self.dt * self.rhs(x)

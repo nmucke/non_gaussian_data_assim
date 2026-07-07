@@ -27,19 +27,18 @@ def gaussian_mixt(
     """
     # Normalizing factor for Gaussian probability density function
     norm_factor = 1 / jnp.sqrt(((2 * np.pi) ** n_obs) * jnp.linalg.det(cov_matrix))
-    weight_mixt = jnp.zeros(len(weight_vect))
-    prob_dens = jnp.zeros(len(weight_vect))
 
-    # Calculating the weights based on the Gaussian distribution
-    for i in range(ens_vect.shape[1]):
-        innovation = obs_vect[:, 0] - h_matrix @ ens_vect[:, i]
-        prob_dens = prob_dens.at[i].set(
-            norm_factor
-            * jnp.exp(
-                -(1 / 2) * ((innovation.T @ jnp.linalg.inv(cov_matrix) @ innovation))
-            )
-        )
-        weight_mixt = weight_mixt.at[i].set(prob_dens[i] * weight_vect[i])
+    # Invert the covariance once, then evaluate every ensemble member at once.
+    cov_inv = jnp.linalg.inv(cov_matrix)
+
+    # innovations[:, i] = obs - H @ ens_vect[:, i]  -> shape (n_obs, n_ens)
+    innovations = obs_vect[:, 0:1] - h_matrix @ ens_vect
+
+    # Per-member quadratic form: innovation_i.T @ cov_inv @ innovation_i
+    quad_form = jnp.einsum("ai,ab,bi->i", innovations, cov_inv, innovations)
+
+    prob_dens = norm_factor * jnp.exp(-0.5 * quad_form)
+    weight_mixt = prob_dens * weight_vect
 
     # Normalizing the weights
     weight_final = weight_mixt / jnp.sum(weight_mixt)

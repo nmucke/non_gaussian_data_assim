@@ -1,6 +1,6 @@
+import abc
 import functools
 from abc import abstractmethod
-import pdb
 from typing import Any, Callable, Optional
 
 import jax
@@ -8,9 +8,34 @@ import jax.numpy as jnp
 import numpy as np
 
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
+from non_gaussian_data_assim.localization import distance_based_localization
 from non_gaussian_data_assim.observations.observation_operator import (
     ObservationOperator,
 )
+
+
+def make_localization_fn(
+    localization_distance: Optional[int],
+    state_dim: int,
+    num_states: int,
+    periodic: bool,
+) -> Callable[[jnp.ndarray], jnp.ndarray]:
+    """Build the covariance localization closure shared by all filters.
+
+    When ``localization_distance`` is ``None`` the returned function is the
+    identity; otherwise it applies distance-based localization to the prior
+    covariance. Kept in one place so EnKF, AGMF and PFF cannot diverge.
+    """
+    if localization_distance is None:
+        return lambda x: x
+
+    return lambda x: distance_based_localization(
+        r_influ=localization_distance,  # type: ignore[arg-type]
+        state_dim=state_dim,
+        cov_prior=x,
+        num_states=num_states,
+        periodic=periodic,
+    )
 
 
 def da_rollout(
@@ -25,7 +50,10 @@ def da_rollout(
         da_model: The data assimilation model callable that takes
             (prior_ensemble, obs_vect, rng_key) and returns the posterior ensemble.
         observations: Array of observations with shape (num_steps, obs_dim).
-            The first observation (index 0) is the initial observation at time 0.
+            The scan forecasts the ensemble one step BEFORE assimilating each
+            observation, so observations[0] is the first observation to be
+            assimilated (at the first forecast time), not an observation of the
+            initial state.
         rng_key: JAX random key for random operations.
         include_initial_state: Whether to include the initial state in the output.
             If True, output has shape (ensemble_size, num_steps, ...).
@@ -69,8 +97,13 @@ def da_rollout(
     return da_rollout_fn
 
 
-class BaseDataAssimilationMethod:
+class BaseDataAssimilationMethod(abc.ABC):
     """Base class for data assimilation methods."""
+
+    # Stateful filters mutate ``self`` inside ``_analysis_step`` (e.g. AGMF's
+    # weight recursion) and therefore cannot be safely traced by jax.lax.scan
+    # in ``rollout``. Such subclasses override this to True.
+    is_stateful: bool = False
 
     def __init__(
         self,
@@ -162,26 +195,36 @@ class BaseDataAssimilationMethod:
         observations: jnp.ndarray,
         rng_key: Optional[jax.random.PRNGKey] = None,
         return_model_integration_steps: bool = False,
-        **kwargs: Any,
     ) -> jnp.ndarray:
-        """Rollout the data assimilation method."""
+        """Rollout the data assimilation method over a sequence of observations.
+
+        Note: this scans ``_assimilate_data`` with jax.lax.scan and therefore
+        only supports stateless filters. Stateful filters (``is_stateful=True``,
+        e.g. AGMF) mutate ``self`` during the analysis step and would either
+        corrupt their internal recursion or leak a tracer into ``self`` under
+        the scan, so they are rejected here.
+        """
+
+        if self.is_stateful:
+            raise NotImplementedError(
+                f"{type(self).__name__} is a stateful filter and cannot be run "
+                "via rollout() (jax.lax.scan cannot safely trace the in-place "
+                "state update). Call the filter eagerly, one step at a time."
+            )
 
         if return_model_integration_steps:
-            da_rollout_fn = da_rollout(
-                self._assimilate_data,
-                observations,
-                rng_key,
-                include_initial_state=True,
-                **kwargs,
+            raise NotImplementedError(
+                "rollout(return_model_integration_steps=True) is not implemented; "
+                "da_rollout only returns the per-step analysis ensemble. Set "
+                "return_model_integration_steps=False."
             )
-        else:
-            da_rollout_fn = da_rollout(
-                self._assimilate_data,
-                observations,
-                rng_key,
-                include_initial_state=True,
-                **kwargs,
-            )
+
+        da_rollout_fn = da_rollout(
+            self._assimilate_data,
+            observations,
+            rng_key,
+            include_initial_state=True,
+        )
 
         da_rollout_fn = jax.jit(da_rollout_fn)
         return da_rollout_fn(prior_ensemble)

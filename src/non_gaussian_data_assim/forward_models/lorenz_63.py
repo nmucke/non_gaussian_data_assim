@@ -1,4 +1,3 @@
-import pdb
 from typing import Any, Callable, Tuple
 
 import jax
@@ -10,7 +9,7 @@ from non_gaussian_data_assim.time_integrators import get_stepper
 
 
 def L63_RHS(x: jnp.ndarray, sigma: float, beta: float, rho: float) -> jnp.ndarray:
-    """Lorenz 96 right hand side."""
+    """Lorenz 63 right hand side."""
     return jnp.array(
         [sigma * (x[1] - x[0]), x[0] * (rho - x[2]) - x[1], x[0] * x[1] - beta * x[2]]
     )
@@ -39,11 +38,11 @@ class Lorenz63Model(BaseForwardModel):
         self.integrator = get_stepper(stepper_type, self.dt, self.rhs)
 
     def rhs(self, x: jnp.ndarray) -> jnp.ndarray:
-        """Lorenz 96 right hand side."""
+        """Lorenz 63 right hand side."""
         # Ensure x is 1D for the RHS function
         x_flat = x.flatten()
         return L63_RHS(x_flat, self.sigma, self.beta, self.rho)
 
     def one_step(self, x: jnp.ndarray) -> jnp.ndarray:
-        """Lorenz 96 stepper."""
+        """Lorenz 63 stepper."""
         return self.integrator(x)

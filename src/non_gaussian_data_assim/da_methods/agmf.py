@@ -1,18 +1,18 @@
-import pdb
 from typing import Any, Dict, Optional
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
-from non_gaussian_data_assim.da_methods.base import BaseDataAssimilationMethod
+from non_gaussian_data_assim.da_methods.base import (
+    BaseDataAssimilationMethod,
+    make_localization_fn,
+)
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 from non_gaussian_data_assim.gaussian_mixture import gaussian_mixt
-from non_gaussian_data_assim.localization import distance_based_localization
 from non_gaussian_data_assim.observations.observation_operator import (
     ObservationOperator,
 )
-from non_gaussian_data_assim.rand_utils import randsample
 
 
 def uniform_weights(ensemble_size: int) -> np.ndarray:
@@ -21,11 +21,16 @@ def uniform_weights(ensemble_size: int) -> np.ndarray:
 
 
 class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
+    # AGMF carries the particle weights forward in ``self.w_prev`` across
+    # analysis steps, so it is a stateful filter and must not be run via
+    # BaseDataAssimilationMethod.rollout (jax.lax.scan cannot trace the update).
+    is_stateful: bool = True
+
     def __init__(
         self,
         ensemble_size: int,
         R: np.ndarray,
-        w_prev: np.ndarray,
+        w_prev: Optional[np.ndarray],
         nc_threshold: float,
         obs_operator: ObservationOperator,
         forward_operator: BaseForwardModel,
@@ -50,23 +55,24 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
         self.ensemble_size = ensemble_size
         self.R = R
         self.inflation_factor = inflation_factor
-        self.w_prev = w_prev
+        # Starting weights for a freshly-constructed filter. Configs pass the
+        # uniform weights via ``uniform_weights(ensemble_size)``; fall back to
+        # that here so the recursion always starts from a valid state.
+        self.w_prev = (
+            uniform_weights(ensemble_size) if w_prev is None else w_prev
+        )
         self.nc_threshold = nc_threshold
         self.localization_distance = localization_distance
         self.num_states = forward_operator.num_states
         self.state_dim = forward_operator.state_dim
         self.periodic = periodic
 
-        if self.localization_distance is None:
-            self.localization = lambda x: x
-        else:
-            self.localization = lambda x: distance_based_localization(
-                r_influ=self.localization_distance,  # type: ignore[arg-type]
-                state_dim=self.state_dim,
-                cov_prior=x,
-                num_states=self.num_states,
-                periodic=self.periodic,
-            )
+        self.localization = make_localization_fn(
+            self.localization_distance,
+            self.state_dim,
+            self.num_states,
+            self.periodic,
+        )
 
     def _analysis_step(
         self,
@@ -128,6 +134,11 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
 
         # Adjusting weights
         w_t = w_t * alpha + (1 - alpha) * (1 / self.ensemble_size)
+        # Carry the weights forward for the next analysis step. This in-place
+        # update makes AGMF stateful and is only valid under the eager
+        # ``da_model(...)`` path (a fresh filter is built per experiment, so the
+        # recursion restarts from the constructor's w_prev). It must not run
+        # under jax.lax.scan; ``rollout`` rejects stateful filters (is_stateful).
         self.w_prev = w_t
 
         # Resampling if necessary
@@ -169,17 +180,6 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
             cov_posterior,
             w_t,
         )
-
-        # Result output
-        # agmf_output = {
-        #     "posterior": posterior_vect,
-        #     "kalman_gain": kalman_gain,
-        #     "innovation": innovation,
-        #     "mean_post": mean_posterior,
-        #     "cov_post": cov_posterior,
-        #     "weights": w_t,
-        #     "alpha": alpha,
-        # }
 
         posterior_ensemble = posterior_ensemble.T
         posterior_ensemble = posterior_ensemble.reshape(

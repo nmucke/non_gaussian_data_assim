@@ -1,13 +1,14 @@
-import pdb
 from typing import Any, Callable, Dict, Optional
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
-from non_gaussian_data_assim.da_methods.base import BaseDataAssimilationMethod
+from non_gaussian_data_assim.da_methods.base import (
+    BaseDataAssimilationMethod,
+    make_localization_fn,
+)
 from non_gaussian_data_assim.forward_models.base import BaseForwardModel
-from non_gaussian_data_assim.localization import distance_based_localization
 from non_gaussian_data_assim.observations.observation_operator import (
     ObservationOperator,
 )
@@ -47,16 +48,12 @@ class EnsembleKalmanFilter(BaseDataAssimilationMethod):
         self.localization_distance = localization_distance
         self.periodic = periodic
 
-        if self.localization_distance is None:
-            self.localization = lambda x: x
-        else:
-            self.localization = lambda x: distance_based_localization(
-                r_influ=self.localization_distance,  # type: ignore[arg-type]
-                state_dim=self.state_dim,
-                cov_prior=x,
-                num_states=self.num_states,
-                periodic=self.periodic,
-            )
+        self.localization = make_localization_fn(
+            self.localization_distance,
+            self.state_dim,
+            self.num_states,
+            self.periodic,
+        )
 
     def _analysis_step(
         self,
@@ -119,17 +116,3 @@ class EnsembleKalmanFilter(BaseDataAssimilationMethod):
         )
 
         return posterior_ensemble
-
-
-# Compute mean and covariance of the posterior
-# mean_posterior = np.mean(posterior_ensemble, axis=0)
-# cov_posterior = np.cov(posterior_ensemble.T)
-
-# Return a dictionary of EnKF outputs
-# enkf_output = {
-#     "posterior": posterior_vect,
-#     "kalman_gain": kalman_gain,
-#     "innovation": innovation,
-#     "mean_post": mean_posterior,
-#     "cov_post": cov_posterior,
-# }
