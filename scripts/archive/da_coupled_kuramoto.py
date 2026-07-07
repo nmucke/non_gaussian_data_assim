@@ -68,7 +68,7 @@ NUM_SKIP_OBS = 2  # Spatial points to skip between observations
 
 # Observation ids
 OBS_IDS = np.arange(0, STATE_DIM, NUM_SKIP_OBS)
-OBS_STATES = (0, )
+OBS_STATES = (0,)
 NUM_OBS = len(OBS_STATES) * len(OBS_IDS)
 
 # Observation error covariance matrix
@@ -77,10 +77,14 @@ R = jnp.eye(NUM_OBS) * 0.1
 # spatial grid
 x = jnp.linspace(start=0, stop=DOMAIN_LENGTH, num=STATE_DIM)
 
+
 # initial condition function
 def X_0_FN(magnitude):
-    state = magnitude * jnp.cos((2 * jnp.pi * x) / DOMAIN_LENGTH) + magnitude * jnp.cos((4 * jnp.pi * x) / DOMAIN_LENGTH)
+    state = magnitude * jnp.cos((2 * jnp.pi * x) / DOMAIN_LENGTH) + magnitude * jnp.cos(
+        (4 * jnp.pi * x) / DOMAIN_LENGTH
+    )
     return jnp.stack([state, state])
+
 
 def main() -> None:
     """Main function."""
@@ -99,7 +103,10 @@ def main() -> None:
 
     # Define the observation operator
     obs_operator = LinearObservationOperator(
-        obs_states=OBS_STATES, obs_indices=OBS_IDS, state_dim=STATE_DIM, num_states=NUM_STATES
+        obs_states=OBS_STATES,
+        obs_indices=OBS_IDS,
+        state_dim=STATE_DIM,
+        num_states=NUM_STATES,
     )
 
     # Generate observations
@@ -176,13 +183,11 @@ def main() -> None:
     mape = MAPE(ensemble_aggregation="mean", time_aggregation="mean")
     crps = CRPS(time_aggregation="mean")
 
-
     rmse = RMSE(ensemble_aggregation="mean", time_aggregation=None)
 
     plt.figure()
     plt.plot(rmse(prior_ensemble, true_sol[0]))
     plt.show()
-
 
     prior_error = {
         "rmse": rmse(prior_ensemble, true_sol[0]),

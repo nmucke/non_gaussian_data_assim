@@ -44,7 +44,14 @@ def spinup_ensemble(
     X_spunup = rolled if return_model_integration_steps else rolled[:, -1]
 
     if return_natural_variability:
-        natural_variability = jnp.std(rolled, ddof=1)
+        # Compute natural variability PER STATE: reduce over ensemble, time and
+        # space (axes 0, 1, 3) but NOT over the num_states axis (axis 2). This
+        # avoids mixing very different scales in a multi-state system (e.g.
+        # coupled KS: fast atmosphere + slow ocean). The result is reshaped to
+        # [num_states, 1] so it broadcasts correctly as a per-state `scale`
+        # against WhiteNoise's [ensemble, num_states, state_dim] draws. For a
+        # single-state system this reduces to the previous scalar behavior.
+        natural_variability = jnp.std(rolled, axis=(0, 1, 3), ddof=1)[:, None]
         return X_spunup, natural_variability
     else:
         return X_spunup

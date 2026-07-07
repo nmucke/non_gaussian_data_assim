@@ -90,13 +90,28 @@ def get_forward_euler(dt: float, rhs: Callable) -> Callable[[jnp.ndarray], jnp.n
 def get_backward_euler(
     dt: float, rhs: Callable
 ) -> Callable[[jnp.ndarray], jnp.ndarray]:
-    """Get the Backward Euler time integrator using automatic differentiation."""
+    """Get the Backward Euler time integrator using automatic differentiation.
+
+    DEMO-ONLY implicit stepper. Two important limitations:
+
+    - The Newton convergence tolerance (``tol = 1e-10``) is effectively
+      unreachable in float32, so the ``while_loop`` never triggers its
+      convergence exit and always runs the fixed ``max_iter = 10`` Newton
+      iterations.
+    - Each Newton iteration forms a dense Jacobian via ``jax.jacfwd`` and
+      solves it with ``jnp.linalg.solve``, which is O(d^3) per step. This is
+      unsuitable for large states (e.g. KS-sized systems); use an explicit
+      stepper (``runge_kutta_4`` / ``forward_euler``) for those.
+    """
 
     def stepper(x: jnp.ndarray) -> jnp.ndarray:
         """Backward Euler time integration.
 
         Solves the implicit equation: x_{n+1} = x_n + dt * rhs(x_{n+1})
         using Newton's method with automatic differentiation.
+
+        Demo-only: runs a fixed 10 Newton iterations (float32 tolerance is
+        effectively unreachable) with a dense O(d^3) Jacobian solve per step.
         """
         # Store original shape
         original_shape = x.shape

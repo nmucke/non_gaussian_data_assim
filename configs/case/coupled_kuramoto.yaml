@@ -49,6 +49,23 @@ case:
         stop: ${case.state_dim}
         step: 15
 
+  # Validation operator: offset grid points (not assimilated) for both states,
+  # so the information-metric evaluation variable Z is spatially independent.
+  val_obs_operator:
+    _target_: non_gaussian_data_assim.observations.observation_operator.LinearObservationOperator
+    state_dim: ${case.state_dim}
+    num_states: ${case.num_states}
+    obs_states: [0, 1]
+    obs_indices:
+      - _target_: numpy.arange
+        start: 20
+        stop: ${case.state_dim}
+        step: 45
+      - _target_: numpy.arange
+        start: 7
+        stop: ${case.state_dim}
+        step: 15
+
 
   # --- Ground-truth initial state: profile + spin-up.
   true_initial_state:

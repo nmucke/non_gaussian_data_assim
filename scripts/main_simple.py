@@ -29,17 +29,17 @@ from non_gaussian_data_assim.forward_models.base import BaseForwardModel
 
 # ============================= configuration =============================
 SEED = 0
-STATE_DIM = 40          # number of grid points
+STATE_DIM = 40  # number of grid points
 NUM_STATES = 1
 ENSEMBLE_SIZE = 50
-DA_STEPS = 60           # number of assimilation cycles
-MODEL_STEPS = 5         # inner integration steps per assimilation cycle
-DT = 0.05               # inner time step
-SPEED = 1.0             # advection speed
-DX = 1.0                # grid spacing
-OBS_EVERY = 2           # observe every OBS_EVERY-th grid point
-OBS_NOISE_STD = 0.1     # observation noise standard deviation
-INFLATION = 1.02        # multiplicative covariance inflation
+DA_STEPS = 60  # number of assimilation cycles
+MODEL_STEPS = 5  # inner integration steps per assimilation cycle
+DT = 0.05  # inner time step
+SPEED = 1.0  # advection speed
+DX = 1.0  # grid spacing
+OBS_EVERY = 2  # observe every OBS_EVERY-th grid point
+OBS_NOISE_STD = 0.1  # observation noise standard deviation
+INFLATION = 1.02  # multiplicative covariance inflation
 # =========================================================================
 
 
@@ -65,7 +65,6 @@ class SimpleAdvectionModel(BaseForwardModel):
         """Advance the field ``u`` ([num_states, state_dim]) by one inner step."""
         u_upwind = jnp.roll(u, 1, axis=-1)  # u[i-1], periodic boundary
         return u - self.speed * self.dt / self.dx * (u - u_upwind)
-
 
 
 class SimpleObservationOperator:
@@ -170,12 +169,12 @@ def main():
     # ----- compare posterior (at cycle boundaries) against the truth -----
     # posterior built as: initial state + DA_STEPS blocks of MODEL_STEPS each,
     # so the analysis states sit at indices 0, MODEL_STEPS, 2*MODEL_STEPS, ...
-    analysis = posterior[:, ::MODEL_STEPS]  # [ensemble, DA_STEPS + 1, num_states, state_dim]
+    analysis = posterior[
+        :, ::MODEL_STEPS
+    ]  # [ensemble, DA_STEPS + 1, num_states, state_dim]
     analysis_mean = analysis.mean(axis=0)  # [DA_STEPS + 1, num_states, state_dim]
 
-    rmse_per_step = jnp.sqrt(
-        jnp.mean((analysis_mean - true_states) ** 2, axis=(1, 2))
-    )
+    rmse_per_step = jnp.sqrt(jnp.mean((analysis_mean - true_states) ** 2, axis=(1, 2)))
     print(f"Initial RMSE: {rmse_per_step[0]:.4f}")
     print(f"Final RMSE:   {rmse_per_step[-1]:.4f}")
 

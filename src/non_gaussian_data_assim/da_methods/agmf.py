@@ -38,6 +38,7 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
         inflation_factor: float = 1.0,
         localization_distance: Optional[int] = None,
         periodic: bool = False,
+        bandwidth: float = 0.1,
     ) -> None:
         """
         Initialize the Adaptive Gaussian Mixture Filter.
@@ -55,12 +56,11 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
         self.ensemble_size = ensemble_size
         self.R = R
         self.inflation_factor = inflation_factor
+        self.bandwidth = bandwidth
         # Starting weights for a freshly-constructed filter. Configs pass the
         # uniform weights via ``uniform_weights(ensemble_size)``; fall back to
         # that here so the recursion always starts from a valid state.
-        self.w_prev = (
-            uniform_weights(ensemble_size) if w_prev is None else w_prev
-        )
+        self.w_prev = uniform_weights(ensemble_size) if w_prev is None else w_prev
         self.nc_threshold = nc_threshold
         self.localization_distance = localization_distance
         self.num_states = forward_operator.num_states
@@ -84,10 +84,19 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
         """Analysis step of the Adaptive Gaussian Mixture Filter."""
 
         # Preparing the prior state vector (ensemble matrix)
-        prior_ensemble = prior_ensemble.reshape(self.ensemble_size, -1).T
+        ens = prior_ensemble.reshape(self.ensemble_size, -1).T
 
-        # Calculating the mean and covariance of the prior
-        cov_prior = (self.inflation_factor**2) * jnp.cov(prior_ensemble)
+        # Multiplicative inflation of the forecast ensemble ANOMALIES (shared
+        # convention with EnKF/PFF: inflation_factor scales the std -> lambda^2
+        # on the covariance, and it inflates the actual member spread). The
+        # inflated members are used as the forecast members x_i^f everywhere
+        # downstream (Kalman update AND the mixture weight computation).
+        mean = jnp.mean(ens, axis=1, keepdims=True)
+        ens = mean + self.inflation_factor * (ens - mean)
+        prior_ensemble = ens
+
+        # Calculating the covariance of the (inflated) prior
+        cov_prior = jnp.cov(ens)
         cov_prior = self.localization(cov_prior)
 
         # Filter and perturb the observation vector
@@ -118,14 +127,18 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
 
         cov_posterior = jnp.cov(posterior_ensemble)
 
-        # Recalculating weights
+        # Recalculating weights. The AGMF mixture weight update uses the
+        # FORECAST (prior) members x_i^f, the actual UNPERTURBED observation y,
+        # and the innovation covariance S = H cov_prior H^T + R (= k_right).
+        # Using posterior members / perturbed obs / R alone would double-count
+        # the observation and make the weights far too peaked.
         w_t = gaussian_mixt(
             self.w_prev,
             self.obs_operator.num_obs,  # type: ignore[attr-defined]
-            posterior_ensemble,
-            obs_vect_perturbed,
+            prior_ensemble,
+            obs_vect,
             obs_matrix,
-            self.R,
+            k_right,
         )
 
         # Evaluating degeneracy and calculating the bridging alpha
@@ -134,12 +147,6 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
 
         # Adjusting weights
         w_t = w_t * alpha + (1 - alpha) * (1 / self.ensemble_size)
-        # Carry the weights forward for the next analysis step. This in-place
-        # update makes AGMF stateful and is only valid under the eager
-        # ``da_model(...)`` path (a fresh filter is built per experiment, so the
-        # recursion restarts from the constructor's w_prev). It must not run
-        # under jax.lax.scan; ``rollout`` rejects stateful filters (is_stateful).
-        self.w_prev = w_t
 
         # Resampling if necessary
         def resample_fn(
@@ -149,15 +156,27 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
             w_t: jnp.ndarray,
         ) -> tuple[jnp.ndarray, jnp.ndarray]:
             """Resample the ensemble when degeneracy is detected."""
+            dofs = posterior_ensemble.shape[0]
+            # Split the key BEFORE ``choice`` so the resampling draw and the
+            # jitter noise use distinct, independent subkeys (no key reuse).
+            choice_key, jitter_key = jax.random.split(rng_key)
             J = jax.random.choice(
-                rng_key, jnp.arange(self.ensemble_size), (self.ensemble_size,), p=w_t
+                choice_key,
+                jnp.arange(self.ensemble_size),
+                (self.ensemble_size,),
+                p=w_t,
             )
-            rng_key, key = jax.random.split(rng_key)
-            epsc = jax.random.normal(key, (self.ensemble_size,)) * 0.1
+            # Fresh independent jitter per state-component AND per member:
+            # noise ~ N(0, bandwidth^2 * diag(P)), shape (dofs, N). The old code
+            # used one scalar per member, perturbing every member along the same
+            # direction (rank-one jitter).
+            std = self.bandwidth * jnp.sqrt(jnp.diag(cov_posterior))[:, None]
+            noise = std * jax.random.normal(jitter_key, (dofs, self.ensemble_size))
             # Resample: replace each column i with column J[i] plus noise
-            noise = jnp.sqrt(jnp.diag(cov_posterior))[:, None] * epsc[None, :]
             posterior_ensemble = posterior_ensemble[:, J] + noise
-            cov_posterior = (self.inflation_factor**2) * jnp.cov(posterior_ensemble)
+            # The resampling jitter already supplies fresh spread, so do NOT
+            # re-apply the inflation factor here.
+            cov_posterior = jnp.cov(posterior_ensemble)
             return posterior_ensemble, cov_posterior
 
         def no_resample_fn(
@@ -180,6 +199,17 @@ class AdaptiveGaussianMixtureFilter(BaseDataAssimilationMethod):
             cov_posterior,
             w_t,
         )
+
+        # Carry weights forward for the next analysis step. When resampling
+        # occurs the observation has been absorbed into the (equally weighted)
+        # resampled ensemble, so the carried weights must be reset to uniform;
+        # otherwise next step's w_prev would double-count this observation.
+        # This in-place update makes AGMF stateful and is only valid under the
+        # eager ``da_model(...)`` path (a fresh filter is built per experiment,
+        # so the recursion restarts from the constructor's w_prev). It must not
+        # run under jax.lax.scan; ``rollout`` rejects stateful filters.
+        uniform = jnp.full(self.ensemble_size, 1.0 / self.ensemble_size)
+        self.w_prev = jnp.where(should_resample, uniform, w_t)
 
         posterior_ensemble = posterior_ensemble.T
         posterior_ensemble = posterior_ensemble.reshape(

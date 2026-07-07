@@ -23,7 +23,7 @@ class Lorenz63Model(BaseForwardModel):
         dt: float,
         model_integration_steps: int,
         sigma: float = 10.0,
-        beta: float = 2.6666666,
+        beta: float = 8.0 / 3.0,
         rho: float = 28.0,
         stepper_type: str = "runge_kutta_4",
     ) -> None:

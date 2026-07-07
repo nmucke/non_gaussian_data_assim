@@ -1,8 +1,13 @@
 # @package _global_
-data_assimilation_steps: 40
+data_assimilation_steps: 400
 model_integration_steps: 10
 ensemble_size: 20
-inflation_factor: 1.2
+# NOTE: with the corrected multiplicative inflation (which now inflates the
+# ensemble anomalies each analysis step, not just the Kalman gain), values that
+# were tuned against the old, effectively-underinflating behavior are too
+# aggressive: >=1.1 drives the KS filter to divergence. 1.05 is stable to the
+# full 40-step run for all filters.
+inflation_factor: 1.05
 localization_distance: 100
 spinup_steps: 10 # spinup run for spinup_steps * model_integration_steps
 forecast_steps: 15

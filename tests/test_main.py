@@ -29,9 +29,21 @@ CASE_EXTRA_OVERRIDES: dict[str, list[str]] = {
 
 
 # (case, da_method) combos that don't currently run end-to-end.
-# pff's kernel assumes a flat state of size `state_dim`, so it breaks for cases
-# with `num_states > 1` (e.g. coupled_kuramoto). Tracked separately from this
-# smoke test.
+#
+# The old shape bug (pff's kernel used eye(state_dim) and so crashed for
+# num_states > 1) is FIXED: the kernel now operates on the full flattened state
+# of size `dofs` with a scale-aware median-heuristic bandwidth, and the
+# rank-deficient prior covariance is regularized by default. The pff flow now
+# runs and reaches the analysis for these cases.
+#
+# The remaining failure is numerical divergence, not a shape/flatten error: on
+# the high-dimensional stiff Kuramoto-Sivashinsky states (dofs = 512 / 256,
+# far larger than the ensemble size) the Gaussian-prior particle flow blows up
+# to NaN during assimilation. coupled_kuramoto diverges on the first analysis
+# step; kuramoto diverges after ~8 steps (and additionally exposes a shared
+# forecast/metrics trajectory-length mismatch that also fails for enkf on this
+# case). These need a stabilized flow / better preconditioning of the prior
+# score in dofs >> N regimes and are out of scope for the current math fixes.
 KNOWN_FAILURES: set[tuple[str, str]] = {
     ("coupled_kuramoto", "pff"),
     ("kuramoto", "pff"),

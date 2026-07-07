@@ -32,7 +32,7 @@ from non_gaussian_data_assim.metrics.innovation_metrics import (
 )
 from non_gaussian_data_assim.metrics.trajectory_metrics import (
     MAE,
-    MAPE,
+    NRMSE,
     RMSE,
     ensemble_spread,
     print_metrics_table,
@@ -222,13 +222,30 @@ def main(cfg: DictConfig) -> None:
             return_model_integration_steps=True,
         )
         if jnp.isnan(posterior_next).any():
-            print(f"NaN in posterior_next at time {i}")
-            break
+            # A NaN means the filter diverged. Fail loudly here: silently
+            # break-ing leaves the posterior trajectory shorter than the truth,
+            # which later surfaces as a cryptic vmap shape mismatch in the
+            # metrics rather than the actual cause.
+            raise RuntimeError(
+                f"Filter '{cfg.da_method['name']}' diverged: NaN in the posterior "
+                f"at assimilation step {i} (of {cfg.data_assimilation_steps}). "
+                "This usually means inflation is too strong or the step/"
+                "regularization needs tuning for this case."
+            )
 
-        # ------------Track:  Prior ensemble (in obs space)    -----------
-        # Get model-state in obs-space
-        HXf = da_model.obs_operator(prior_current)  # shape: (EnsSize, N_obs)
-        HXf_val = val_obs_operator(prior_current)  # shape: (EnsSize, N_obs)
+        # ------------Track:  Forecast ensemble (in obs space) at the obs time -----------
+        # The innovation diagnostics (chi^2, whitened innovations) must compare the
+        # observation against the FORECAST valid AT the observation time -- the
+        # ensemble propagated one full outer step from the previous analysis -- not
+        # the pre-forecast analysis `prior_current`, which is `model_integration_steps`
+        # inner steps stale (that misalignment made the primary spread-consistency
+        # check meaningless). Propagate one outer step and take the last inner step;
+        # this reproduces the forecast da_model forms internally before its analysis.
+        forecast_at_obs = forward_model(
+            prior_current, return_model_integration_steps=True, is_ensemble=True
+        )[:, -1]
+        HXf = da_model.obs_operator(forecast_at_obs)  # shape: (EnsSize, N_obs)
+        HXf_val = val_obs_operator(forecast_at_obs)  # shape: (EnsSize, N_obs)
         predicted_prior_obs.append(HXf)
         validation_obs.append(HXf_val)
         # -----------------------------------------------------------------
@@ -298,7 +315,7 @@ def main(cfg: DictConfig) -> None:
     # Metrics.
     rmse = RMSE(ensemble_aggregation="mean", time_aggregation="mean")
     mae = MAE(ensemble_aggregation="mean", time_aggregation="mean")
-    mape = MAPE(ensemble_aggregation="mean", time_aggregation="mean")
+    nrmse = NRMSE(ensemble_aggregation="mean", time_aggregation="mean")
     crps = CRPS(time_aggregation="mean")
     rmse_time = RMSE(ensemble_aggregation="mean", time_aggregation="none")
     crps_time = CRPS(time_aggregation="none")
@@ -313,7 +330,7 @@ def main(cfg: DictConfig) -> None:
         metrics = {
             "rmse": rmse(ensemble, true_sol),
             "mae": mae(ensemble, true_sol),
-            "mape": mape(ensemble, true_sol),
+            "nrmse": nrmse(ensemble, true_sol),
             "crps": crps(ensemble, true_sol),
             "rmse_time": rmse_time(ensemble, true_sol),
             "spread_time": ensemble_spread(ensemble, state_dim=state_dim),
@@ -407,23 +424,23 @@ def main(cfg: DictConfig) -> None:
     # ==========================================================================================================================
 
     # ======================== Plotting  ======================================
-    # # --- Plot Hovmöller diagrams and assim-time-series
-    # logger.info(f"Plotting...")
-    # plotter = instantiate(plotter_cfg)
-    # plotter(
-    #     true_sol=true_sol,
-    #     reference_ensemble=reference_ensemble,
-    #     posterior_ensemble=posterior_ensemble,
-    #     title=cfg.case.title,
-    #     da_method_name=cfg.da_method.name,
-    #     ensemble_size=cfg.ensemble_size,
-    #     reference_metrics=reference_metrics,
-    #     posterior_metrics=posterior_metrics,
-    #     state_dim=cfg.case.state_dim,
-    #     data_assimilation_steps=cfg.data_assimilation_steps,
-    #     model_integration_steps=cfg.model_integration_steps,
-    #     path_savefig=path_savefig,
-    # )
+    # --- Plot Hovmöller diagrams and assim-time-series
+    logger.info(f"Plotting...")
+    plotter = instantiate(plotter_cfg)
+    plotter(
+        true_sol=true_sol,
+        reference_ensemble=reference_ensemble,
+        posterior_ensemble=posterior_ensemble,
+        title=cfg.case.title,
+        da_method_name=cfg.da_method.name,
+        ensemble_size=cfg.ensemble_size,
+        reference_metrics=reference_metrics,
+        posterior_metrics=posterior_metrics,
+        state_dim=cfg.case.state_dim,
+        data_assimilation_steps=cfg.data_assimilation_steps,
+        model_integration_steps=cfg.model_integration_steps,
+        path_savefig=path_savefig,
+    )
 
     # --- Plot time-series of errors
     post_metrics_all = [posterior_metrics] + post_metric_states

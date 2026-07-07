@@ -19,6 +19,17 @@ def distance_based_localization(
 
     Returns:
     jax.numpy.array: Localized covariance matrix.
+
+    Notes:
+    The taper is the Gaspari-Cohn (1999, eq. 4.10) 5th-order piecewise-rational
+    correlation function, which is compactly supported AND positive
+    semi-definite by construction. This guarantees the Schur (elementwise)
+    product with the sample covariance stays PSD (unlike a hard-truncated
+    Gaussian, which is not a valid correlation function).
+
+    ``r_influ`` is interpreted as the CUTOFF radius: the taper is exactly 0
+    for distances > r_influ. Internally the Gaspari-Cohn half-width is
+    ``c = r_influ / 2`` so that the support ``d <= 2c`` equals ``r_influ``.
     """
 
     # -- Check assumption of num_state=1 is correct if that if no num_state is passed!!
@@ -45,11 +56,29 @@ def distance_based_localization(
     if periodic:
         dist = jnp.minimum(dist, state_dim - dist)
 
-    # --- Create mask with Gaussian-like taper-off with a decay-factor r_influ
-    mask = jnp.exp(-(dist**2) / r_influ**2)
-    mask = jnp.where(
-        dist <= 3 * r_influ, mask, 0.0
-    )  # Enforce 0 a certain distance away
+    # --- Create mask with the Gaspari-Cohn 5th-order correlation function.
+    # r_influ is the cutoff radius; support is d <= r_influ (== 2c), so c=r_influ/2.
+    dist = dist.astype(jnp.float32)
+    c = r_influ / 2.0
+    z = dist / c
+
+    # Safe z for the 1<z<=2 branch to avoid nan/inf at z=0 poisoning the where.
+    z_safe = jnp.where(dist > 0, z, 1.0)
+
+    gc_near = -0.25 * z**5 + 0.5 * z**4 + (5.0 / 8.0) * z**3 - (5.0 / 3.0) * z**2 + 1.0
+    gc_far = (
+        (1.0 / 12.0) * z**5
+        - 0.5 * z**4
+        + (5.0 / 8.0) * z**3
+        + (5.0 / 3.0) * z**2
+        - 5.0 * z
+        + 4.0
+        - 2.0 / (3.0 * z_safe)
+    )
+
+    mask = jnp.where(z <= 1.0, gc_near, jnp.where(z <= 2.0, gc_far, 0.0))
+    # Clamp tiny negative round-off to keep entries in [0, 1].
+    mask = jnp.clip(mask, 0.0, 1.0)
 
     # Apply the localization mask to the prior covariance matrix.
     # Each (state_dim x state_dim) block is multiplied by the same mask, so

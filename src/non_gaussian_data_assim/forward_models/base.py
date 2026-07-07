@@ -44,11 +44,18 @@ class BaseForwardModel(ABC):
         """Return a cached jitted rollout for the given flags."""
         key = (return_model_integration_steps, is_ensemble)
         if key not in self._call_cache:
+            # include_initial_state only affects the output when
+            # return_model_integration_steps is True (otherwise rollout returns
+            # just the last step and ignores the flag). For this inner rollout we
+            # never want the initial state prepended to the trajectory, so it is
+            # always False. (Previously written as `not return_model_integration_steps`,
+            # which was equivalent but confusing: the `True` branch only occurred
+            # in the non-trajectory case where the flag is ignored anyway.)
             rollout_fn = rollout(
                 self.one_step,
                 self.model_integration_steps,
                 return_model_integration_steps=return_model_integration_steps,
-                include_initial_state=not return_model_integration_steps,
+                include_initial_state=False,
             )
             if is_ensemble:
                 rollout_fn = jax.vmap(rollout_fn)

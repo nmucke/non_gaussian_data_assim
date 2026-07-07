@@ -67,7 +67,11 @@ class InitialState:
 
         # --- Natural variability fallback for the no-spin-up case; the spin-up
         # branch below overrides it with the value measured over the trajectory.
-        self.natural_variability = jnp.std(state, ddof=1)
+        # Computed per state (shape [num_states, 1]) so that, like spinup's
+        # estimate, it does not mix distinct-scale states (e.g. the coupled-KS
+        # fast atmosphere vs. slow ocean) into a single scalar. `state` has shape
+        # [1, num_states, state_dim]; reduce over everything but the state axis.
+        self.natural_variability = jnp.std(state, axis=(0, 2), ddof=1)[:, None]
 
         # --- Optional spin-up so the raw state lies on the model attractor.
         if self.spinup_steps:

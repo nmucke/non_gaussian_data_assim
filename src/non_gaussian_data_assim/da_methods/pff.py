@@ -64,9 +64,7 @@ def get_likelihood_score_fn_with_non_linear_obs_operator(
         # -J^T R^-1 (h(x) - y), matching the linear form -H^T R^-1 (H x - y).
         obs_jacobian = obs_operator.grad_obs_operator(x_s)
         return (
-            -obs_jacobian.T
-            @ obs_cov_inv
-            @ (obs_operator._obs_operator(x_s) - obs_vect)
+            -obs_jacobian.T @ obs_cov_inv @ (obs_operator._obs_operator(x_s) - obs_vect)
         )
 
     return likelihood_score_fn
@@ -130,7 +128,7 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         stepper: str = "forward_euler",
         return_pff_trajectory: bool = False,
         inflation_factor: float = 1.0,
-        prior_cov_regularization: Optional[float] = None,
+        prior_cov_regularization: Optional[float] = 1e-2,
         periodic: bool = False,
     ) -> None:
         """
@@ -144,13 +142,18 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
             localization_distance (int): Localization distance.
             num_pseudo_time_steps (int): Number of pseudo-time steps.
             step_size (float): Step size.
-            alpha (float): Alpha parameter.
+            alpha (float): Currently unused. The kernel bandwidth is set by a
+                scale-aware median heuristic computed from the ensemble at each
+                analysis step (see ``_analysis_step``), so ``alpha`` is accepted
+                for backward compatibility but has no effect.
             kernel_type (str): Type of kernel to use.
             stepper (str): Type of stepper to use.
             prior_cov_regularization: If not None, add
                 ``prior_cov_regularization * mean(diag(prior_cov)) * I`` to the
                 localized prior covariance before inversion. Stabilizes the
-                inverse when the empirical covariance is rank-deficient.
+                inverse when the empirical covariance is rank-deficient (which is
+                always the case when dofs >= ensemble_size), so this defaults to a
+                small positive value. Pass None to disable regularization.
         """
         super().__init__(name, obs_operator, forward_operator)
         self.ensemble_size = ensemble_size
@@ -187,14 +190,20 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
         **kwargs: Any,
     ) -> np.ndarray:
 
-        x_s = prior_ensemble.reshape(self.ensemble_size, -1)  # [dofs, ensemble]
+        x_s = prior_ensemble.reshape(self.ensemble_size, -1)  # [ensemble, dofs]
+
+        # Inflate the ensemble anomalies (standard convention shared with
+        # EnKF/AGMF): mean + lambda * (x - mean). This inflates the actual
+        # particle spread that the flow evolves and yields lambda^2 inflation on
+        # the empirical covariance below.
+        ens_mean = x_s.mean(axis=0, keepdims=True)
+        x_s = ens_mean + self.inflation_factor * (x_s - ens_mean)
 
         if prior_mean is None:
             prior_mean = jnp.mean(x_s, axis=0)
         if prior_cov is None:
             prior_cov = jnp.cov(x_s.T)
         prior_cov = self.localization(prior_cov)
-        prior_cov = self.inflation_factor * prior_cov
         # Ensure prior_cov is 2-D before inverting: for a 1-dof problem
         # jnp.cov returns a 0-d scalar, which jnp.linalg.inv cannot handle.
         if len(prior_cov.shape) == 0:
@@ -204,8 +213,27 @@ class ParticleFlowFilter(BaseDataAssimilationMethod):
             prior_cov = prior_cov + eps * jnp.eye(prior_cov.shape[0])
         prior_cov_inv = jnp.linalg.inv(prior_cov)
 
-        # distance_weight_matrix = jnp.linalg.inv(self.alpha * prior_cov)
-        distance_weight_matrix = jnp.eye(self.state_dim) * jnp.pi
+        # Kernel bandwidth via a scale-aware median heuristic. The kernel acts on
+        # the FULL flattened state of size ``dofs`` (not ``state_dim``), so the
+        # distance-weight matrix must be ``eye(dofs)``. A fixed bandwidth (e.g.
+        # pi * I) is not scale-aware: for O(10) states the squared distances are
+        # O(100) so exp(-0.5 * pi * 100) ~ 0 and all kernel interactions vanish.
+        # Setting A = I / h2 with h2 = median pairwise squared distance makes the
+        # interaction scale track the ensemble spread. The 0.5 factor in the
+        # kernel exp(-0.5 (x-y)^T A (x-y)) is absorbed by the median heuristic.
+        # Pairwise squared distances from x_s [ensemble, dofs].
+        sq_dists = jnp.sum(
+            (x_s[:, None, :] - x_s[None, :, :]) ** 2, axis=-1
+        )  # [ensemble, ensemble]
+        # Use only the strict upper triangle (i < j): the diagonal is 0 (self
+        # distances) and the matrix is symmetric, so this is the set of distinct
+        # pairwise distances. triu_indices with a static n is jit-safe.
+        n = x_s.shape[0]
+        iu = jnp.triu_indices(n, k=1)
+        upper = sq_dists[iu]
+        # Guard against identical particles (median == 0) with a small eps.
+        h2 = jnp.median(upper) + 1e-8
+        distance_weight_matrix = jnp.eye(self.dofs) / h2
 
         obs_cov_inv = jnp.linalg.inv(self.R)
 
