@@ -453,7 +453,7 @@ If you add a new case or DA method, extend `CASES` / `DA_METHODS` at the top of 
 │   └── archive/                      # older, unmaintained standalone scripts
 ├── src/non_gaussian_data_assim/
 │   ├── da_methods/                   # EnKF, AGMF, PFF, ParticleFilter, base class
-│   ├── forward_models/               # Lorenz 63/96, (coupled) Kuramoto–Sivashinsky, linear, …
+│   ├── forward_models/               # Lorenz 63/96, (coupled) Kuramoto–Sivashinsky, linear/identity/sine (analytical harness), bk_rsf_1d (standalone earthquake model), base class
 │   ├── ensemble_generation/          # InitialState, InitialEnsembleGenerator
 │   ├── perturbations/                # white noise, red noise, breeding (+ base)
 │   ├── initial_profiles.py           # constant / white-noise / cosine / pseudo-1D profiles
