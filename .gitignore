@@ -189,3 +189,12 @@ figures/*
 # ----- Ignore Max's scratch-paper notebooks
 /notebooks/max_notebooks/*
 /experiments/**
+
+# Reports
+reports/
+
+# macOS
+.DS_Store
+
+# Benjamin case data
+benjamin_case/
