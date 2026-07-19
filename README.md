@@ -1,5 +1,7 @@
 # non_gaussian_data_assim
 
+[![CI](https://github.com/nmucke/non_gaussian_data_assim/actions/workflows/ci.yml/badge.svg)](https://github.com/nmucke/non_gaussian_data_assim/actions/workflows/ci.yml)
+
 A library and experiment harness for ensemble data assimilation (DA) with non-Gaussian filters. Companion code to *"Ensemble Kalman, Adaptive Gaussian Mixture, and Particle Flow Filters for Optimized Earthquake Forecasting"* (Computers and Geosciences).
 
 It provides:
