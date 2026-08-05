@@ -93,29 +93,6 @@ class CRPS(EnsembleMetric):
         return jnp.mean(pointwise)
 
 
-def _log_score_diagonal_gaussian(
-    ensemble: jnp.ndarray, truth: jnp.ndarray
-) -> jnp.ndarray:
-    """
-    Mean negative log score per state component under
-
-        q(x) = product_i Normal(mu_i, variance_i).
-
-    The total joint log score is obtained by replacing mean() with sum().
-    """
-    ensemble = ensemble.reshape(ensemble.shape[0], -1)
-    truth = truth.reshape(-1)
-
-    mean = jnp.mean(ensemble, axis=0)
-    variance = jnp.var(ensemble, axis=0, ddof=1)
-    variance = jnp.maximum(variance)
-
-    component_scores = 0.5 * (
-        jnp.log(2 * jnp.pi * variance) + (truth - mean) ** 2 / variance
-    )
-    return jnp.sum(component_scores)
-
-
 class LogScore(EnsembleMetric):
     """
     Log-score or dawid-sebastiani score using diagonal covariance matrix:
