@@ -93,6 +93,44 @@ class CRPS(EnsembleMetric):
         return jnp.mean(pointwise)
 
 
+class LogScore(EnsembleMetric):
+    """
+    Log-score or dawid-sebastiani score using diagonal covariance matrix:
+
+    S(x,q) = log|P| + ||x-\overline{x}||^2_P + d log(2 pi)
+
+    where P = \sigma_ii^2
+    """
+
+    def __init__(self, time_aggregation: Optional[str] = None) -> None:
+        super().__init__("logscore", time_aggregation)
+
+    def compute(
+        self,
+        ensemble: jnp.ndarray,
+        truth: jnp.ndarray,
+    ) -> jnp.ndarray:
+        """
+        Negative Gaussian log score using a diagonal covariance matrix
+        This equals 0.5 * (DSS + d * log(2*pi))
+
+        Inputs and dimensions:
+            ensemble: (n_ensemble, n_variables, n_grid_boxes)
+            truth:    (n_variables, n_grid_boxes)
+
+        Returns:
+            Joint log score
+        """
+        mean = jnp.mean(ensemble, axis=0)
+        variance = jnp.var(ensemble, axis=0, ddof=1)
+
+        component_scores = 0.5 * (
+            jnp.log(2 * jnp.pi * variance) + (truth - mean) ** 2 / variance
+        )
+
+        return jnp.sum(component_scores)
+
+
 ## Max: My method of computing crps,
 def crps_ensemble_1d(x: np.ndarray, y: np.ndarray) -> np.ndarray:
     """
